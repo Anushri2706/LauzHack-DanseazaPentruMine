@@ -9,7 +9,8 @@ class OneOff:
     month: int
     amount: float  # positive = cash out
     label: str
-    kind: str  # "tuition" | "relocation" | "other"
+    kind: str  # "tuition" | "relocation" | "moving" | "purchase" | "trip" | "home_fee" | "other"
+    joy: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,20 @@ class State:
     has_master: bool = False
     last_switch: int | None = None  # month of the last big move (cooldown rule)
     scheduled: tuple[OneOff, ...] = field(default_factory=tuple)
+    # Game extensions (defaults reproduce the original engine exactly).
+    habits: tuple[tuple[str, int], ...] = ()   # ((habit_id, level), ...), level 0 never stored
+    flat_factor: float = 1.0                    # rent factor from "Change flat"
+    home_id: str | None = None
+    home_price: float = 0.0                     # purchase price (basis for amortization/maintenance)
+    home_value: float = 0.0
+    mortgage: float = 0.0
+    work_share: float = 1.0                     # 0.8 after "reduce to 80%"
+    last_raise_ask: int | None = None
+    retiree: bool = False                       # studying after retirement: pension continues, returns to retired
+
+    @property
+    def owner(self) -> bool:
+        return self.home_id is not None
 
     @property
     def age(self) -> float:

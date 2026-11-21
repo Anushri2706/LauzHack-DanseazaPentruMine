@@ -10,7 +10,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from ..engine.assumptions import ALEXIA_DEFAULTS, LIVING_BY_HOUSEHOLD
+from ..engine.catalogue import CANTON_PRICE_LEVEL, HOMES, home_price_key
+from ..engine.assumptions import (ALEXIA_DEFAULTS, COST_SHARE_BY_HOUSEHOLD, LIVING_BY_HOUSEHOLD,
+                                  LIVING_SHARE_OF_INCOME)
 
 DATA_DIR = Path(__file__).resolve().parents[4] / "Data"
 AS_OF = pd.Timestamp("2025-01-01")
@@ -90,6 +92,16 @@ def load_dataset(data_dir: str | None = None) -> Dataset:
     return Dataset(profiles, assets, liabilities, goals, scen, snap.reset_index())
 
 
+def _peer_salary(ds: Dataset, age: int, household: str) -> float:
+    """Median net income of EMPLOYED people of similar age (±5y) in the data: a peer reference,
+    used as the salary someone could earn when (re)starting work."""
+    prof = ds.profiles
+    q = prof[(prof.employment_status == "employed") & ((prof.age_at_start - age).abs() <= 5)]
+    if len(q) < 10:
+        q = prof[prof.employment_status == "employed"]
+    return float(q.reference_monthly_net_income_chf.median())
+
+
 def _goals_for(ds: Dataset, pid: str) -> tuple[dict, ...]:
     g = ds.goals[ds.goals.profile_id == pid]
     return tuple({"goal_id": r.goal_id, "name": r.goal_name, "target": float(r.target_amount_chf),
@@ -115,31 +127,39 @@ def build_persona(pid: str, ds: Dataset | None = None) -> Persona:
     else:
         params = {k: float(v) for k, (v, _) in ALEXIA_DEFAULTS.items()}
         tags = {k: ("ours" if tag == "profile" else tag) for k, (_, tag) in ALEXIA_DEFAULTS.items()}
-        living = float(LIVING_BY_HOUSEHOLD.get(r.household_type, 1600))
+        share = COST_SHARE_BY_HOUSEHOLD.get(r.household_type, 1.0)
+        floor = float(LIVING_BY_HOUSEHOLD.get(r.household_type, 1600)) * share
         set_ = lambda k, v, tag: (params.__setitem__(k, float(v)), tags.__setitem__(k, tag))  # noqa: E731
-        set_("rent", rent, "profile")
-        set_("living_studying", living * 0.75, "ours")
-        set_("living_working", living, "ours")
-        set_("living_working_master", living * 2200 / 2100, "ours")
-        set_("abroad_rent", rent * 1100 / 900, "ours")
-        set_("abroad_living", living * 1800 / 2100, "ours")
+        set_("rent", rent * share, "profile" if share == 1.0 else "ours")
+        set_("abroad_rent", rent * share * 1100 / 900, "ours")
+        if status in ("studying", "unemployed"):
+            work = _peer_salary(ds, int(r.age_at_start), r.household_type)
+            set_("salary_work", work, "peer")
+        else:
+            work = income
+            set_("salary_work", income, "profile")
+        set_("salary_master", work * 4800 / 4200, "ours")
+        set_("abroad_income", work * 3700 / 4200, "ours")
+        living_work = max(floor, LIVING_SHARE_OF_INCOME * work)
+        set_("living_working", living_work, "ours")
+        set_("living_working_master", living_work * 2200 / 2100, "ours")
+        set_("abroad_living", living_work * 1800 / 2100, "ours")
+        set_("living_studying", floor * 0.75, "ours")
         if status == "studying":
             set_("student_income", income, "profile")
-        elif status == "working":
-            set_("salary_work", income, "profile")
-            set_("salary_master", income * 4800 / 4200, "ours")
-            set_("abroad_income", income * 3700 / 4200, "ours")
-        elif status == "unemployed":
-            set_("salary_work", income / params["unemployment_benefit_rate"], "ours")
-            set_("salary_master", params["salary_work"] * 4800 / 4200, "ours")
-            set_("abroad_income", params["salary_work"] * 3700 / 4200, "ours")
         elif status == "retired":
             set_("pension_income", income, "profile")
+            # Retirees: living costs scale with the pension (editable as "living while working").
+            set_("living_working", max(floor, LIVING_SHARE_OF_INCOME * income), "ours")
     params["opening_cash"], tags["opening_cash"] = float(r.cash), "profile"
     params["opening_investments"], tags["opening_investments"] = float(r.investments), "profile"
     params["opening_debt"], tags["opening_debt"] = debt, "profile"
     params["opening_debt_rate"], tags["opening_debt_rate"] = debt_rate, "profile"
     params["start_age"], tags["start_age"] = float(r.age_at_start), "profile"
+
+    level = CANTON_PRICE_LEVEL.get(str(r.canton), 1.0)
+    for hid, home in HOMES.items():  # Lausanne prices scaled by a rough canton price level (ours)
+        params[home_price_key(hid)] = home.price * level
 
     sa = ds.scenario_assumptions[ds.scenario_assumptions.profile_id == pid]
     for row in sa.itertuples():
@@ -150,7 +170,9 @@ def build_persona(pid: str, ds: Dataset | None = None) -> Persona:
 
     start_salary = {"studying": params["student_income"], "working": params["salary_work"],
                     "unemployed": income, "retired": params["pension_income"]}[status]
-    start_living = params["living_studying"] if status == "studying" else params["living_working"]
+    start_living = {"studying": params["living_studying"], "working": params["living_working"],
+                    "unemployed": params["living_studying"],  # leaner budget between jobs (ours)
+                    "retired": params["living_working"]}[status]
     return Persona(
         profile_id=pid, name=str(r.display_name), age=int(r.age_at_start), city=str(r.city),
         canton=str(r.canton), employment_status=str(r.employment_status), status=status,

@@ -39,7 +39,9 @@ def decision_reasons(state: State, t: int) -> list[str]:
 def complete_programs(state: State, t: int) -> State:
     """A master's that ends this month is marked complete before the decision is taken."""
     if state.program is not None and state.program_end == t:
-        return replace(state, program=None, program_start=None, program_end=None, has_master=True)
+        state = replace(state, program=None, program_start=None, program_end=None, has_master=True)
+        if state.retiree:  # back to retirement; the pension never stopped
+            state = replace(state, status="retired", retiree=False)
     return state
 
 
@@ -81,7 +83,6 @@ def options(state: State, t: int, p: dict) -> dict:
     """
     choices: list[dict] = []
     cool = _cooldown_ok(state, t, p)
-    age = state.age
     work_salary, work_living = _work_terms(state, p)
     work_preview = (f"Income {_money(work_salary)}/month, costs about "
                     f"{_money(p['rent'] + work_living)}/month (today's prices).")
@@ -96,9 +97,10 @@ def options(state: State, t: int, p: dict) -> dict:
     if state.status == "studying" and state.program is not None:
         choices.append(_choice("continue", "Carry on with the master's.", default=True))
         if t - (state.program_start or 0) >= 12:
-            choices.append(_choice("drop_out", "Remaining tuition is cancelled; " + work_preview))
+            after = "you go back to retirement." if state.retiree else work_preview
+            choices.append(_choice("drop_out", "Remaining tuition is cancelled; " + after))
     elif state.status == "studying":
-        can_stay = (not state.has_master) and age < 24
+        can_stay = not state.has_master
         choices.append(_choice("start_work", work_preview, default=not can_stay))
         if can_stay:
             choices.append(_choice("stay_student", f"Income {_money(state.salary)}/month as now.", default=True))
@@ -109,7 +111,7 @@ def options(state: State, t: int, p: dict) -> dict:
             choices.append(_choice("move_abroad", abroad_preview))
     elif state.status == "working":
         choices.append(_choice("continue", "Stay in your job.", default=True))
-        if not state.has_master and age < 45 and cool:
+        if not state.has_master and cool:
             choices.append(_choice("master_ft", ft_preview))
             choices.append(_choice("master_pt", pt_preview))
         if cool:
@@ -121,10 +123,14 @@ def options(state: State, t: int, p: dict) -> dict:
     elif state.status == "unemployed":
         choices.append(_choice("start_work", work_preview, default=True))
         choices.append(_choice("continue", "Keep looking for the right job.", default=False))
-        if not state.has_master and age < 45:
+        if not state.has_master:
             choices.append(_choice("master_ft", ft_preview))
     elif state.status == "retired":
         choices.append(_choice("continue", "Keep your current routine.", default=True))
+        if not state.has_master and cool:
+            choices.append(_choice("master_ft", (
+                f"{int(p['master_ft_months'])} months of study; your pension of {_money(state.salary)}/month "
+                f"continues, tuition {_money(_tuition_total(p))} in total; afterwards you return to retirement.")))
     else:  # pragma: no cover - guarded by STATUSES
         raise InvalidDecision(f"Unknown status {state.status}")
 
@@ -172,6 +178,11 @@ def apply_decision(state: State, d: Decision, p: dict) -> State:
     elif d.choice == "start_work":
         sal, living = _work_terms(s, p)
         s = _start_job(s, t, "working", sal, p["rent"], living)
+    elif d.choice == "master_ft" and s.status == "retired":
+        dur = int(p["master_ft_months"])  # pension, rent and living costs carry on unchanged
+        s = replace(s, status="studying", retiree=True, program="master_ft", program_start=t,
+                    program_end=t + dur, last_switch=t,
+                    scheduled=s.scheduled + _tuition_schedule(t, dur, p))
     elif d.choice == "master_ft":
         dur = int(p["master_ft_months"])
         s = replace(s, status="studying", salary=p["student_income"], salary_start=t, rent=p["rent"],
@@ -194,7 +205,11 @@ def apply_decision(state: State, d: Decision, p: dict) -> State:
     elif d.choice == "drop_out":
         kept = tuple(o for o in s.scheduled if not (o.kind == "tuition" and o.month >= t))
         s = replace(s, scheduled=kept)
-        s = _start_job(s, t, "working", p["salary_work"], p["rent"], p["living_working"])
+        if s.retiree:
+            s = replace(s, status="retired", retiree=False, program=None, program_start=None,
+                        program_end=None, last_switch=t)
+        else:
+            s = _start_job(s, t, "working", p["salary_work"], p["rent"], p["living_working"])
     else:  # pragma: no cover
         raise InvalidDecision(d.choice)
 
@@ -208,14 +223,22 @@ def apply_decision(state: State, d: Decision, p: dict) -> State:
             raise InvalidDecision("A new loan is only available when you have no debt")
         if not 0 < d.loan_amount <= p["loan_max"]:
             raise InvalidDecision(f"loan_amount must be in (0, {p['loan_max']}]")
-        # Loan disbursement: cash and debt rise by the same amount, so net worth is unchanged.
-        s = replace(s, cash=s.cash + d.loan_amount, debt=s.debt + d.loan_amount, debt_rate=p["loan_rate"],
-                    debt_payment=annuity_payment(d.loan_amount, p["loan_rate"], int(p["loan_term_months"])))
+        s = take_loan(s, d.loan_amount, p)
     if d.repay_debt:
         if s.debt <= 0:
             raise InvalidDecision("There is no debt to repay")
         if s.cash < s.debt:
             raise InvalidDecision("Not enough cash to repay the debt in full")
-        # Repayment: cash and debt fall by the same amount, so net worth is unchanged.
-        s = replace(s, cash=s.cash - s.debt, debt=0.0, debt_payment=0.0)
+        s = repay_all(s)
     return s
+
+
+def take_loan(s: State, amount: float, p: dict) -> State:
+    """Loan disbursement: cash and debt rise by the same amount, so net worth is unchanged."""
+    return replace(s, cash=s.cash + amount, debt=s.debt + amount, debt_rate=p["loan_rate"],
+                   debt_payment=annuity_payment(amount, p["loan_rate"], int(p["loan_term_months"])))
+
+
+def repay_all(s: State) -> State:
+    """Repayment: cash and debt fall by the same amount, so net worth is unchanged."""
+    return replace(s, cash=s.cash - s.debt, debt=0.0, debt_payment=0.0)

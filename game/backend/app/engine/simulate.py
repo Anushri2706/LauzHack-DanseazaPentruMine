@@ -3,13 +3,17 @@
 Monthly update order (see README for the equations):
   1. decision effects (already applied to the state before step_month is called)
   2. income       = salary × (1 − tax_rate − social_rate)      (+ raise every 12 months in a job)
-  3. expenses     = (rent + living) × (1 + inflation) ** (t / 12)
+  3. expenses     = (rent × flat_factor + living) × (1 + inflation) ** (t / 12)   (rent = 0 when owning)
+     lifestyle    = Σ habit costs × (1 + inflation) ** (t / 12)
+     purchases    = one-off items/trips due this month (consumption, never an asset)
+     housing      mortgage interest = mortgage × r_m/12 and maintenance are expenses;
+                  amortization reduces cash and mortgage equally (transfer); home value × (1+g)^(1/12)
   4. debt         interest = debt × r / 12 ; principal = payment − interest ; debt −= principal
   5. cash        += income − expenses − one_offs − debt_payment
      if cash < 0 and investments > 0: sell investments to cover (transfer, net worth unchanged)
   6. if cash > buffer: move savings_rate × (cash − buffer) to investments (transfer)
   7. investments ×= 1 + r_month
-  8. outputs: net worth = cash + investments − debt, buffer months, flags
+  8. outputs: net worth = cash + investments + home value − debt − mortgage, buffer months, flags, joy
 """
 from dataclasses import dataclass, replace
 
@@ -18,6 +22,27 @@ from .decisions import (InvalidDecision, apply_decision, complete_programs, deci
                         default_decision, options)
 from .finance import annuity_payment, inflation_factor, monthly_compound_rate
 from .state import Decision, State
+
+CONSUMPTION_KINDS = ("purchase", "trip")
+
+
+def habit_cost(habits: tuple, p: dict) -> float:
+    """Monthly habit cost in month-0 prices (level 0 = nothing on top of base living costs)."""
+    return sum(p[f"habit_{hid}_{lv}_cost"] for hid, lv in habits if lv > 0)
+
+
+def month_joy(s: State, due: list, p: dict) -> float:
+    """Joy points this month: status + habits + one-off purchases/trips. Not money."""
+    if not p["joy_enabled"]:
+        return 0.0
+    joy = p[f"joy_{s.status}"] if f"joy_{s.status}" in p else 0.0
+    joy += sum(p[f"habit_{hid}_{lv}_joy"] for hid, lv in s.habits if lv > 0)
+    joy += sum(o.joy for o in due)
+    if s.owner:
+        joy += p["joy_home_owner"]
+    if s.status == "working" and s.work_share < 1:
+        joy += p["joy_reduced_hours"]
+    return joy
 
 
 def initial_state(p: dict, status: str = "studying", salary: float | None = None,
@@ -38,8 +63,14 @@ def initial_state(p: dict, status: str = "studying", salary: float | None = None
     )
 
 
-def step_month(s: State, p: dict) -> tuple[State, dict]:
-    """Advance one month from opening state `s` (decisions already applied). Returns (next, row)."""
+def step_month(s: State, p: dict, ret_month: float | None = None, income_mult: float = 1.0,
+               rent_mult: float = 1.0) -> tuple[State, dict]:
+    """Advance one month from opening state `s` (decisions already applied). Returns (next, row).
+
+    The optional shock arguments come from a Monte Carlo "world" (see montecarlo.py):
+    ret_month overrides the expected monthly return, income_mult scales job income during an
+    income-loss spell, rent_mult scales rent after a rent rise. Defaults = no shock.
+    """
     t = s.t
     salary = s.salary
     # Raise every full year in the same job (working or abroad).
@@ -47,10 +78,28 @@ def step_month(s: State, p: dict) -> tuple[State, dict]:
         salary = salary * (1.0 + p["raise_annual"])
 
     income = salary * (1.0 - p["tax_rate"] - p["social_rate"])
-    expenses = (s.rent + s.living) * inflation_factor(p["inflation_annual"], t)
+    if s.status in ("working", "abroad"):
+        income *= income_mult
+    infl = inflation_factor(p["inflation_annual"], t)
+    rent_now = 0.0 if s.owner else s.rent * rent_mult * s.flat_factor
+    expenses = (rent_now + s.living) * infl
+    lifestyle = habit_cost(s.habits, p) * infl
 
     due = [o for o in s.scheduled if o.month == t]
-    one_offs = sum(o.amount for o in due)
+    one_offs = sum(o.amount for o in due if o.kind not in CONSUMPTION_KINDS and o.kind != "home_fee")
+    purchases = sum(o.amount for o in due if o.kind in CONSUMPTION_KINDS)
+    home_fees = sum(o.amount for o in due if o.kind == "home_fee")
+
+    # Housing (owner): interest and maintenance are expenses, amortization is a transfer.
+    mortgage_interest = maintenance = amortization = appreciation = 0.0
+    mortgage, home_value = s.mortgage, s.home_value
+    if s.owner:
+        mortgage_interest = mortgage * p["mortgage_rate"] / 12.0
+        amortization = min(mortgage, s.home_price * p["amortization_annual"] / 12.0)
+        maintenance = s.home_price * p["maintenance_annual"] / 12.0
+        mortgage = mortgage - amortization
+        if mortgage < 0.005:
+            mortgage = 0.0
 
     interest = s.debt * s.debt_rate / 12.0
     payment = min(s.debt_payment, s.debt + interest) if s.debt > 0 else 0.0
@@ -61,6 +110,7 @@ def step_month(s: State, p: dict) -> tuple[State, dict]:
     debt_payment = s.debt_payment if debt > 0 else 0.0
 
     cash = s.cash + income - expenses - one_offs - payment
+    cash = cash - lifestyle - purchases - home_fees - mortgage_interest - maintenance - amortization
     investments = s.investments
 
     sold = 0.0
@@ -76,8 +126,13 @@ def step_month(s: State, p: dict) -> tuple[State, dict]:
         cash -= invested
         investments += invested
 
-    ret = investments * monthly_compound_rate(p["return_annual"])
+    r_m = monthly_compound_rate(p["return_annual"]) if ret_month is None else ret_month
+    ret = investments * r_m
     investments += ret
+    if s.owner:
+        appreciation = home_value * monthly_compound_rate(p["home_growth_annual"])
+        home_value += appreciation
+    net_worth = cash + investments - debt + home_value - mortgage
 
     flags = []
     if cash < 0:
@@ -86,7 +141,9 @@ def step_month(s: State, p: dict) -> tuple[State, dict]:
         flags.append("below_buffer")
 
     nxt = replace(s, t=t + 1, cash=cash, investments=investments, debt=debt, debt_payment=debt_payment,
-                  salary=salary, scheduled=tuple(o for o in s.scheduled if o.month > t))
+                  salary=salary, scheduled=tuple(o for o in s.scheduled if o.month > t),
+                  mortgage=mortgage, home_value=home_value)
+    joy = month_joy(s, due, p)
     row = {
         "t": t, "age": round(s.age, 4), "status": s.status, "program": s.program,
         "income": income, "expenses": expenses, "one_offs": one_offs,
@@ -94,7 +151,12 @@ def step_month(s: State, p: dict) -> tuple[State, dict]:
         "interest": interest, "principal": principal, "debt_payment": payment,
         "invested": invested, "sold_investments": sold, "investment_return": ret,
         "cash": cash, "investments": investments, "debt": debt,
-        "net_worth": cash + investments - debt,
+        "net_worth": net_worth,
+        "lifestyle": lifestyle, "purchases": purchases, "home_fees": home_fees,
+        "purchase_labels": [o.label for o in due if o.kind in CONSUMPTION_KINDS],
+        "mortgage_interest": mortgage_interest, "maintenance": maintenance, "amortization": amortization,
+        "home_appreciation": appreciation, "home_value": home_value, "mortgage": mortgage,
+        "rent": rent_now * infl, "joy": joy,
         "buffer_target": buffer_target,
         "buffer_months": (cash / expenses) if expenses > 0 else None,
         "flags": flags,
@@ -111,8 +173,13 @@ class BranchRun:
     final_state: State
 
 
-def run_branch(p: dict, decisions: list[Decision], start: State | None = None) -> BranchRun:
-    """Replay a branch from month 0. Deterministic by construction (no randomness yet)."""
+def run_branch(p: dict, decisions: list[Decision], start: State | None = None,
+               world: dict | None = None) -> BranchRun:
+    """Replay a branch from month 0. Pure: same inputs (incl. world) ⇒ identical output.
+
+    `world` (optional) holds per-month shock arrays: ret, income_mult, rent_mult.
+    Shocks never change which decisions are valid, so every world replays the same choices.
+    """
     validate_params(p)
     horizon = int(p["horizon_months"])
     months = [d.month for d in decisions]
@@ -144,7 +211,11 @@ def run_branch(p: dict, decisions: list[Decision], start: State | None = None) -
                            "repay_debt": d.repay_debt})
         elif t in by_month:
             raise InvalidDecision(f"Month {t} is not a decision point")
-        s, row = step_month(s, p)
+        if world is None:
+            s, row = step_month(s, p)
+        else:
+            s, row = step_month(s, p, float(world["ret"][t]), float(world["income_mult"][t]),
+                                float(world["rent_mult"][t]))
         rows.append(row)
     if by_month:
         raise InvalidDecision(f"Decisions outside the horizon or not at decision points: {sorted(by_month)}")

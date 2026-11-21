@@ -30,3 +30,20 @@ def test_every_persona_builds_and_runs():
         start = initial_state(p.params, p.status, p.start_salary, p.start_living)
         run = run_branch(p.params, [], start=start)
         assert len(run.rows) == 120
+
+
+def test_persona_defaults_are_plausible():
+    """Calibration sanity: costs scale with income and household, so typical workers neither
+    get rich implausibly fast nor go broke; the engine must not be steered by bad defaults."""
+    import statistics
+    ds = load_dataset()
+    gains = []
+    for pid in ds.profiles[ds.profiles.employment_status == "employed"].profile_id.head(80):
+        p = build_persona(pid, ds)
+        start = initial_state(p.params, p.status, p.start_salary, p.start_living)
+        rows = run_branch({**p.params, "return_annual": 0.0}, [], start=start).rows
+        gains.append((rows[-1]["net_worth"] - p.card()["net_worth"]) / 120 / p.reference_income)
+    saving_rate = statistics.median(gains)
+    assert 0.1 < saving_rate < 0.4, saving_rate   # share of net income saved, before returns
+    p = build_persona("P00762", ds)  # unemployed family member: restarts at a peer salary
+    assert p.tags["salary_work"] == "peer" and p.params["salary_work"] > p.reference_income

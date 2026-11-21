@@ -12,6 +12,8 @@ therefore default to 0 so nothing is taxed twice.
 """
 from dataclasses import dataclass
 
+from .catalogue import catalogue_assumptions
+
 
 @dataclass(frozen=True)
 class AssumptionMeta:
@@ -69,9 +71,20 @@ META: dict[str, AssumptionMeta] = {
     "loan_term_months": AssumptionMeta("Loan term (new and existing debt)", "months", "Borrowing", 1, 360,
                                        note="Existing debt in the data has no payment schedule; we amortize it over this term."),
     "loan_max": AssumptionMeta("Largest loan you can take", "CHF", "Borrowing", 0),
+    # Uncertainty (Monte Carlo worlds; ranges under our assumptions, not real probabilities)
+    "return_volatility": AssumptionMeta("Investment volatility", "%/year (std. dev.)", "Uncertainty", 0, 0.6),
+    "crash_prob_annual": AssumptionMeta("Chance of a market drop per year", "%/year", "Uncertainty", 0, 1),
+    "crash_size": AssumptionMeta("Size of a market drop", "% of portfolio", "Uncertainty", 0, 0.9),
+    "job_loss_prob_annual": AssumptionMeta("Chance of losing income per year", "%/year", "Uncertainty", 0, 1,
+                                           note="While working or abroad; lasts 3-9 months on unemployment benefit."),
+    "rent_shock_prob_annual": AssumptionMeta("Chance of a rent rise per year", "%/year", "Uncertainty", 0, 1),
+    "rent_shock_size": AssumptionMeta("Size of a rent rise", "% of rent", "Uncertainty", 0, 1),
     # Rules
     "switch_cooldown_months": AssumptionMeta("Minimum months between big moves", "months", "Rules", 0, 60),
 }
+
+for _key, _default, _label, _unit, _group, _lo, _hi, _note in catalogue_assumptions():
+    META[_key] = AssumptionMeta(_label, _unit, _group, _lo, _hi, _note)
 
 # Alexia (P00001): values from the starter kit and the scenario CSV.
 # Starter-kit "monthly_expenses_chf" are TOTAL costs including rent, so we split them as
@@ -114,11 +127,28 @@ ALEXIA_DEFAULTS: dict[str, tuple[float, str]] = {
     "loan_term_months": (60, "ours"),
     "loan_max": (30000, "ours"),
     "switch_cooldown_months": (12, "ours"),
+    "return_volatility": (0.15, "ours"),
+    "crash_prob_annual": (0.05, "ours"),
+    "crash_size": (0.2, "ours"),
+    "job_loss_prob_annual": (0.05, "ours"),
+    "rent_shock_prob_annual": (0.1, "ours"),
+    "rent_shock_size": (0.1, "ours"),
 }
+# Game catalogue (habits, items, homes, flats, housing rules, joy table): all our assumptions.
+for _key, _default, *_rest in catalogue_assumptions():
+    ALEXIA_DEFAULTS[_key] = (_default, "ours")
 
 # Rough "other living costs" (excluding rent) by household type for personas that have no
 # starter-kit figures. These are our labelled assumptions, not Swiss statistics.
 LIVING_BY_HOUSEHOLD = {"single": 1600, "shared_housing": 1400, "couple": 2600, "family": 3600}
+
+# The data gives an INDIVIDUAL net income but a HOUSEHOLD rent. For couples and families we assume
+# the persona pays this share of household rent and living costs (a partner covers the rest).
+# Other living costs (excluding rent) rise with income: we assume 50% of net income, never below the
+# household minimum above. With median rent ≈ 26% of income this leaves ≈ 20-25% saved.
+LIVING_SHARE_OF_INCOME = 0.5
+
+COST_SHARE_BY_HOUSEHOLD = {"single": 1.0, "shared_housing": 1.0, "couple": 0.5, "family": 0.6}
 
 
 def assumption_table(values: dict[str, float], tags: dict[str, str]) -> list[dict]:

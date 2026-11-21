@@ -200,3 +200,19 @@ def test_goals_checked_in_priority_order_without_double_counting():
              {"goal_id": "c", "name": "C", "target": 1, "month": 50, "priority": "high"}]
     out = {g["goal_id"]: g["status"] for g in check_goals(goals, rows)}
     assert out == {"a": "met", "b": "not_met", "c": "beyond_horizon"}
+
+
+def test_net_worth_bridge_is_exact(params):
+    from app.engine.metrics import net_worth_bridge
+    rows = run_branch({**params, "opening_debt": 3000, "opening_debt_rate": 0.05},
+                      [D(0, "master_ft"), D(24, "move_abroad", loan_amount=None)]).rows
+    b = net_worth_bridge(rows, 8000 - 3000)
+    total = b["opening"] + b["income"] + b["expenses"] + b["one_offs"] + b["interest"] + b["investment_return"]
+    assert total == pytest.approx(b["closing"])
+
+
+def test_worlds_do_not_depend_on_decisions(params):
+    from app.engine.montecarlo import make_worlds
+    w1 = make_worlds(params, 20, 7)
+    w2 = make_worlds({**params, "tuition_annual": 99_999}, 20, 7)
+    assert all((a["ret"] == b["ret"]).all() and a["events"] == b["events"] for a, b in zip(w1, w2))
