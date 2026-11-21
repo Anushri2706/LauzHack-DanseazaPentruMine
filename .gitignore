@@ -7,3 +7,4 @@ venv/
 !.env.example
 .pytest_cache/
 .DS_Store
+backend/artifacts/person_months.csv.gz

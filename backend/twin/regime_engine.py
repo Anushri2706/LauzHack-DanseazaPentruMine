@@ -69,10 +69,11 @@ def fit_emissions(cash_balances: pd.DataFrame, profiles: pd.DataFrame, family: s
     """Fit per-regime emission distributions on the 28.8k person-months.
 
     TODO(Victor):
-    1. Build person-months (data.person_months): ratio = net / reference income, state from
-       employment_status, is_december flag. Hold out ``holdout_frac`` of *profiles* (not rows).
-    2. December offset per state = median(ratio | Dec) - median(ratio | not Dec); fit the
-       distribution on December-adjusted ratios.
+    1. Data prep is done: ``data.prepare_data(holdout_frac=..., seed=...)`` gives the person-month
+       table with ``spend_ratio`` (the emission), the profile holdout split (``holdout_ids``), the
+       body rows (``train_body``: train, non-December, outliers removed) and the shock rows.
+    2. December: ``train_december["dec_bonus_income"]`` is the bump in income units (employed
+       median 0.30, spread ~U(0, 1.1)); sample it separately rather than as a spend_ratio offset.
     3. Per state, fit Student-t (scipy.stats.t.fit) or a 2-component GMM (sklearn) on the raw
        pooled ratios, so between-person spread stays in the emission (hierarchical variant later).
     4. Robustness: winsorise at P0.5/P99.5 for the fit, keep the raw tails for the shock state.

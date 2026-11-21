@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .data import ASSUMPTIONS_DIR
+from .data import AGE_BINS, AGE_LABELS, ASSUMPTIONS_DIR
 from .types import STATE_INDEX, Intervention, Profile
 
 E, P, J, S, R = (STATE_INDEX[s] for s in ["employed", "part_time", "job_search", "student", "retired"])
@@ -105,7 +105,6 @@ def fit_baseline_levels(profiles: pd.DataFrame) -> pd.DataFrame:
     TODO(team): decide whether entry_salary_chf should come from this table (synthetic data)
     or from BFS LSE (public, citable). The synthetic table is fine for spread; cite BFS for levels.
     """
-    bands = pd.cut(profiles["age_at_start"], [17, 25, 35, 50, 65, 120],
-                   labels=["18-25", "26-35", "36-50", "51-65", "65+"])
+    bands = pd.cut(profiles["age_at_start"], AGE_BINS, labels=AGE_LABELS)
     g = profiles.groupby([profiles["employment_status"], bands], observed=True)["reference_monthly_net_income_chf"]
     return g.describe(percentiles=[0.25, 0.5, 0.75])[["count", "25%", "50%", "75%"]].reset_index()
