@@ -54,6 +54,10 @@ def test_assumptions_replace_placeholders():
     assert "rent_step_factor,1.4" in expense and "purchase_deposit_fraction,0.15" in expense
     assert expense.split("rent_step_factor")[1].split("\n")[0].split(",")[4] == "prior"
     assert expense.split("purchase_deposit_fraction")[1].split("\n")[0].split(",")[4] == "prior"
+    assert table["parental_leave_replacement"] == pytest.approx(0.80)
+    assert table["parental_leave_months"] == pytest.approx(12)
+    assumptions = (ASSUMPTIONS_DIR / "income_assumptions.csv").read_text()
+    assert assumptions.count("EO is more complicated") == 1
 
     priors = load_transition_priors()
     assert priors.hazards[E, J] == pytest.approx(0.005)
@@ -539,6 +543,57 @@ def test_filter_on_alexia_and_a_shift(engine):
     shocked[-6:] = [employed_net] * 6
     moved = engine.filter(alexia, shocked)
     assert moved["employed"] > belief["employed"] + 0.2
+
+
+def test_parental_leave_prior_pays_eighty_percent_and_holds_housing():
+    table = IncomeTable.from_csv()
+    worker = _worker(age=22, income=5000)
+    states = np.full((1, 30), E)
+    leave = [Intervention("parental_leave", 14)]
+    inc = table.income_paths(states, worker, leave)[0]
+    paid = 5000 * (1 + table.params["annual_experience_growth"])
+    assert inc[13] == pytest.approx(paid)
+    assert inc[14:26] == pytest.approx(0.80 * paid)
+    # The anniversary inside the leave does not raise the wage she returns to.
+    assert inc[26] == pytest.approx(paid)
+    scaled = table.with_overrides({"scaled_spending": 1})
+    housing, other = scaled.consumption_paths(states, worker, leave)
+    assert np.allclose(housing[0, 14:26], housing[0, 13])
+    assert np.allclose(other[0, 14:26], other[0, 13])
+    assert np.allclose(housing[0, 26], housing[0, 13])
+
+
+def test_stub_parental_leave_returns_to_employed():
+    engine = RegimeEngine.stub()
+    worker = _worker(age=30, income=8000)
+    paths = engine.simulate(
+        worker, horizon_months=8, n_paths=3,
+        interventions=[Intervention("parental_leave", 2, 3)],
+    )
+    assert (paths.states[:, 2:5] == E).all()
+    assert (paths.states[:, 5:] == E).all()
+    assert paths.income_chf[:, 2:5] == pytest.approx(0.80 * 8000)
+    assert paths.income_chf[:, 5] == pytest.approx(8000)
+
+
+def test_parental_leave_pins_employed_and_skips_the_bonus(engine):
+    worker = _worker(age=35, income=10000, rent=1800)
+    iv = [Intervention("parental_leave", 0, 12)]
+    paths = engine.simulate(
+        worker, horizon_months=14, n_paths=25, seed=0, interventions=iv,
+        assumption_overrides={
+            "dirichlet": 0, "scaled_spending": 1,
+            "job_loss_hazard": 0, "employed_to_part_time": 0,
+        },
+    )
+    assert (paths.states == E).all()
+    assert paths.income_chf[:, :12] == pytest.approx(8000)
+    assert paths.income_chf[:, 12] == pytest.approx(10000)
+    table = engine.income_table.with_overrides({"scaled_spending": 1})
+    housing, other = table.consumption_paths(paths.states, worker, iv)
+    assert np.allclose(housing, housing[:, :1])
+    expected = paths.income_chf - housing - other - paths.lump_chf
+    assert np.allclose(paths.net_flow_chf, expected)
 
 
 def test_held_out_emission_report_and_calibration(fitted):
