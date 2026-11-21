@@ -1,0 +1,11 @@
+parameter,value,unit,applies_to,source,notes
+masters_annual_tuition_chf,8000,CHF/year,masters decision,Data/scenario-assumptions.csv S001 (synthetic challenge data),"Default annual tuition when the player does not give one. Same default as backend/regime/twin_session.py. Synthetic data, not a fee schedule of a real university."
+masters_duration_months,24,months,masters decision,Modelling assumption,"Default length of a full-time master's when the player does not give one (TwinSession default)."
+move_abroad_relocation_cost_chf,6500,CHF,move_abroad decision,Illustrative (backend/regime/twin_session.py default),"One-off moving cost abroad, today's CHF."
+relocate_cost_chf,5000,CHF,relocate decision,Illustrative (twin/assumptions.py relocation_one_off),"One-off cost of moving canton, today's CHF."
+self_employed_setup_cost_chf,10000,CHF,self_employed decision,Illustrative (twin/assumptions.py self_employed_setup),"One-off business setup cost, today's CHF."
+family_rent_factor,1.25,fraction,family decision,Illustrative (twin/assumptions.py child_rent_factor),"Housing bill multiplier for a larger home after a child arrives."
+downturn_job_loss_factor,2.0,fraction,downturn decision,Illustrative (backend/regime/twin_session.py default),"Multiplier on the employed -> job_search hazard during a downturn stress test."
+keep_factor,1.0,fraction,wealth layer,Illustrative (twin/calibration.py),"Share of surplus months' net flow that stays in cash. 1.0 = no calibration. The twin calibration found a median near 0.16 when matching the synthetic wealth table; that fit is not reproduced here."
+event_major_expense_annual_prob,0.10,probability/year,unexpected_major_expense event,Placeholder,"Placeholder chance per year of an unplanned major expense (repair, medical excess). Converted to a monthly probability as 1-(1-p)^(1/12). Not from data. Event is off unless the player enables it."
+event_major_expense_cost_chf,3000,CHF,unexpected_major_expense event,Placeholder,"Placeholder cost of one unplanned major expense, today's CHF. Not from data."

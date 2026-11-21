@@ -1,9 +1,0 @@
-numpy>=1.26
-pandas>=2.0
-scipy>=1.11
-pytest>=7.4
-matplotlib>=3.8      # run_alexia_*.py charts (one test imports a script)
-# Optional
-openai>=1.40        # agent.py (reads OPENAI_API_KEY from the environment)
-# scikit-learn>=1.4 # 2-GMM emissions, if chosen over Student-t
-# hmmlearn>=0.3     # only as a cross-check of the numpy forward filter

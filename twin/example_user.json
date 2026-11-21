@@ -1,9 +1,0 @@
-{
-  "name": "Example new user",
-  "cash": 15000,
-  "income": 5200,
-  "rent": 1600,
-  "age": 27,
-  "employment": "employed",
-  "goals": [{"name": "Housing deposit", "target": 60000, "month": 60, "priority": "high"}]
-}
