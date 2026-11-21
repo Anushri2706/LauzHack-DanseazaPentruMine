@@ -362,6 +362,10 @@ class IncomeTable:
         offer. Parental leave does not sign a new lease and does not move non-housing
         off the last wage.
 
+        ``lease_term_months`` (expense assumptions, default 0): 0 keeps the lease until the
+        next spell of study. A positive term, e.g. 36, re-signs it every term off the wage
+        then in force (merged from feature/hmm-lease-renewal). A bought home is never re-signed.
+
         ``lease_signed_on`` is set to ``[n, T]``: the gross wage the lease then in
         force was signed on, or 0 while she is a student. Abroad multiplies the
         housing bill by the Germany factor, and a Zurich move multiplies it by
@@ -386,9 +390,11 @@ class IncomeTable:
         base = float(p["nonhousing_base_chf"])
         rate = float(p["nonhousing_rate"])
         step_factor = float(p["rent_step_factor"])
+        term = int(p.get("lease_term_months", 0))
         earnings = self._capacity_earnings(states, profile, ivs, experience)
         signed = np.zeros(n, dtype=bool)
         signed_wage = np.zeros(n)
+        months_into_term = np.zeros(n, dtype=np.int32)
         lease_net = np.zeros(n)
         lease_wage = np.zeros((n, T))
         housing = np.empty((n, T))
@@ -405,12 +411,16 @@ class IncomeTable:
             gross = np.where(earnings[:, t] > 1.0, earnings[:, t], offer)
             # Not recomputed when the wage later grows, and unemployment does not cut it.
             need = ~studentish & ~signed
+            if term > 0 and mortgage is None:
+                need = need | (~studentish & signed & (months_into_term >= term))
             if np.any(need):
+                months_into_term = np.where(need, 0, months_into_term)
                 lease_net = np.where(need, self.rent_from_earnings(gross), lease_net)
                 signed_wage = np.where(need, gross, signed_wage)
                 signed = signed | need
             other[:, t] = np.where(studentish, student_other, base + rate * gross)
             lease_wage[:, t] = np.where(studentish, 0.0, signed_wage)
+            months_into_term = np.where(signed, months_into_term + 1, 0)
             if mortgage is not None:
                 housing[:, t] = mortgage
                 continue

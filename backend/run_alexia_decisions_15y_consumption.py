@@ -2,7 +2,8 @@
 """15-year fans under the expense-priors recipe. Same three decisions as run_alexia_paths.py.
 
 While studying, spend is the EPFL living budget (rent 900 inside it). After school the
-lease is clip(1007, 1376, 1084 * (gross/6413)**0.27) plus 200 charges, signed once.
+lease is clip(1007, 1376, 1084 * (gross/6413)**0.27) plus 200 charges, re-signed every
+36 months off the current wage. Between renewals the rent stays put.
 Non-housing is 540 + 0.25 * gross. The yearly cash hit is only (L - 3300).
 """
 from __future__ import annotations
@@ -29,12 +30,13 @@ HORIZON = 180
 N_PATHS = 4000
 SEED = 0
 GRADUATION_MONTH = 24
-OVERRIDES = {"scaled_spending": 1}
-ARTIFACT = ROOT / "artifacts" / "alexia-decisions-15y-consumption.png"
+ARTIFACT = ROOT / "artifacts" / "alexia-15y-lease-renewal.png"
 STORE_PNG = Path(
     "/Users/victorracu/Library/Application Support/Cursor/AgentStores/"
-    "cursor_agent_stores/bc-e3d1c389-9d7a-4206-a8d2-334e3178188b/files/media/alexia-decisions-15y-consumption.png"
+    "cursor_agent_stores/bc-e3d1c389-9d7a-4206-a8d2-334e3178188b/files/media/alexia-15y-lease-renewal.png"
 )
+LEASE_TERM = 36
+OVERRIDES = {"scaled_spending": 1, "lease_term_months": LEASE_TERM}
 DECISIONS = [
     ("Stay a student", [], "#4C78A8"),
     (
@@ -63,7 +65,10 @@ def main() -> None:
         f"Lausanne, opening {alexia.opening_cash:.0f} CHF, income {alexia.ref_income:.0f}, "
         f"rent {alexia.rent:.0f}"
     )
-    print(f"engine mode {engine.mode}, expense-priors recipe, {N_PATHS} paths, {HORIZON} months, seed {SEED}")
+    print(
+        f"engine mode {engine.mode}, lease renewed every {LEASE_TERM} months, "
+        f"{N_PATHS} paths, {HORIZON} months, seed {SEED}"
+    )
     table = engine.income_table.with_overrides(OVERRIDES)
 
     fans = []
@@ -81,6 +86,7 @@ def main() -> None:
     _check(fans, table, alexia)
     _print_table(fans)
     _breakdown(alexia, table, fans[1])
+    _rent_at_year_15(alexia, table, fans[1])
     _plot(fans)
 
 
@@ -100,9 +106,17 @@ def _check(fans, table, alexia) -> None:
     housing, _other = table.consumption_paths(masters.states, alexia, fans[1][4])
     if not np.allclose(housing[:, :GRADUATION_MONTH], alexia.rent):
         raise RuntimeError("student rent was not held at 900")
-    signed = housing[0, GRADUATION_MONTH]
-    if not np.allclose(housing[:, GRADUATION_MONTH:], signed):
-        raise RuntimeError("the post-school lease was recomputed")
+    signed_at = GRADUATION_MONTH
+    first = housing[:, signed_at]
+    first_term = housing[:, signed_at:signed_at + LEASE_TERM]
+    if not np.allclose(first_term, first[:, None]):
+        raise RuntimeError("the lease moved inside its 3-year term")
+    renewed = housing[:, signed_at + LEASE_TERM]
+    if not np.median(renewed) > np.median(first) + 1.0:
+        raise RuntimeError("the 3-year renewal did not raise the master's lease")
+    second_term = housing[:, signed_at + LEASE_TERM:signed_at + 2 * LEASE_TERM]
+    if not np.allclose(second_term, renewed[:, None]):
+        raise RuntimeError("the renewed lease moved inside its term")
 
 
 def _print_table(fans) -> None:
@@ -141,6 +155,23 @@ def _breakdown(alexia, table, fan) -> None:
     )
 
 
+def _rent_at_year_15(alexia, table, fan) -> None:
+    _name, _colour, paths, _cash, interventions = fan
+    housing, _other = table.consumption_paths(paths.states, alexia, interventions)
+    # Year 15 closes at month 179. The master's lease was signed at month 24 and
+    # last renewed at month 168, so this bill is the fourth renewal, held since then.
+    bill = housing[:, HORIZON - 1]
+    print(
+        "master's rent at year 15 (monthly housing, net lease + charges): "
+        f"median {np.median(bill):,.2f}, "
+        f"p10 {np.quantile(bill, 0.10):,.2f}, "
+        f"p90 {np.quantile(bill, 0.90):,.2f}"
+    )
+    renewals = [GRADUATION_MONTH + k * LEASE_TERM for k in range(0, 5)]
+    parts = [f"m{t} {np.median(housing[:, t]):,.2f}" for t in renewals if t < HORIZON]
+    print("master's median rent at each signing: " + ", ".join(parts))
+
+
 def _plot(fans) -> None:
     months = np.arange(HORIZON)
     fig, ax = plt.subplots(figsize=(10.2, 5.8), dpi=140)
@@ -162,7 +193,7 @@ def _plot(fans) -> None:
         ha="left", va="bottom", fontsize=9, color="#333333",
     )
     ax.set_xlim(-6, HORIZON - 1)
-    ax.set_title("Alexia: 15 years, consumption recipe")
+    ax.set_title("Alexia: 15 years, lease renewed every 3 years")
     ax.set_xlabel("Month")
     ax.set_ylabel("Cash (CHF)")
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: f"{v:,.0f}"))

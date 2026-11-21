@@ -285,12 +285,24 @@ def test_scaled_spending_uses_the_expense_priors_recipe():
     assert rent[2] == pytest.approx(entry_net + p["rent_charges_chf"])
     assert rent[3] == pytest.approx(rent[2])
 
-    # The lease is signed at the starting wage and does not follow later raises.
+    # By default (lease_term_months = 0) the lease stays at the starting wage, including a month
+    # of unemployment, and is never re-signed while she stays out of school.
     seq = np.full((1, 14), E)
     seq[0, 13] = J
     grown = table.rent_paths(seq, _worker(age=22, income=5000))[0]
     assert grown[12] == pytest.approx(grown[0])
     assert grown[13] == pytest.approx(grown[0])
+
+    kept = table.rent_paths(np.full((1, 37), E), _worker(age=22, income=5000))[0]
+    assert kept[36] == pytest.approx(kept[0])
+
+    # With a 36-month term it is re-signed at month 36 off the wage then in force (three raises).
+    termed = table.with_overrides({"lease_term_months": 36})
+    renewed = termed.rent_paths(np.full((1, 37), E), _worker(age=22, income=5000))[0]
+    assert renewed[35] == pytest.approx(renewed[0])
+    wage = 5000.0 * (1.0 + p["annual_experience_growth"]) ** 3
+    assert renewed[36] == pytest.approx(float(table.rent_from_earnings(wage)) + p["rent_charges_chf"])
+    assert renewed[36] != pytest.approx(renewed[0])
 
     rich = float(table.rent_paths(np.full((1, 1), E), _worker(income=80000))[0, 0])
     assert rich == pytest.approx(p["rent_cap_chf"] + p["rent_charges_chf"])
