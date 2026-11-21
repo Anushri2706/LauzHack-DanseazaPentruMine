@@ -207,7 +207,8 @@ class TwinSession:
     # ------------------------------------------------------------- internals
 
     def assumption_names(self) -> set[str]:
-        names = set(self.engine.priors.names) | set(self.engine.income_table.params)
+        pri = self.engine.priors
+        names = set(pri.names) | set(getattr(pri, "age_names", {})) | set(self.engine.income_table.params)
         names |= {f"savings_rate_{s}" for s in STATES}
         return names
 
@@ -224,6 +225,8 @@ class TwinSession:
         if name in s.assumptions:
             return s.assumptions[name]
         pri = self.engine.priors
+        if name in getattr(pri, "age_names", {}):
+            return float(pri.age_hazard(name))
         if name in pri.names:
             return float(pri.hazards[pri.names[name]])
         if name in self.engine.income_table.params:

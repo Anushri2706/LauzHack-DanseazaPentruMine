@@ -31,7 +31,9 @@ def test_stub_simulate_contract(alexia):
     assert np.allclose(paths.net_flow_chf, paths.savings_rate * paths.income_chf)
     assert (paths.states[:, :24] == STATE_INDEX["student"]).all()
     assert (paths.states[:, 24:] == STATE_INDEX["employed"]).all()
-    assert paths.income_chf[0, 0] == 1200 and paths.income_chf[0, 24] == pytest.approx(4200 * 1.14)
+    table = engine.income_table.params
+    assert paths.income_chf[0, 0] == alexia.ref_income
+    assert paths.income_chf[0, 24] == pytest.approx(table["entry_salary_chf"] * (1 + table["masters_premium_pct"]))
     belief = engine.filter(alexia, [-700.0] * 6)
     assert pytest.approx(sum(belief.values())) == 1.0 and max(belief, key=belief.get) == "student"
 

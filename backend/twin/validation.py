@@ -1,19 +1,21 @@
 """Validation checks to show judges (docs/hmm-digital-twin.md §3.5).
 
-Implemented now: deterministic equivalence with the starter kit, analytic occupancy rows,
-transition-matrix sanity, cash reconciliation. TODO(Victor): emission fit and calibration.
+Deterministic equivalence with the starter kit, transition and occupancy checks,
+the emission fit against the held-out profiles, and a 2025-filter / 2026-simulate
+calibration backtest.
 """
 from __future__ import annotations
 
 import importlib.util
 import json
+from dataclasses import replace
 
 import numpy as np
 
 from . import cash_engine
 from .cash_engine import OneOff
-from .data import STARTER_KIT_DIR
-from .regime_engine import analytic_occupancy
+from .data import STARTER_KIT_DIR, prepare_data
+from .regime_engine import RegimeEngine, analytic_occupancy, fit_emissions
 from .transitions import TransitionPriors
 from .types import K, Profile, RegimePaths
 
@@ -83,15 +85,131 @@ def check_occupancy(priors: TransitionPriors, pi0: np.ndarray, horizon: int = 60
     return {"rows_sum_to_one": bool(np.allclose(occ.sum(1), 1.0)), "final": occ[-1].round(4).tolist()}
 
 
-def emission_fit_report(holdout_frac: float = 0.2, seed: int = 0) -> dict:
-    """TODO(Victor): per regime, KS statistic and QQ quantiles of simulated vs held-out ratios."""
-    raise NotImplementedError
+def emission_fit_report(holdout_frac: float = 0.2, seed: int = 0, model=None) -> dict:
+    """Per regime: Student-t parameters, KS statistic and QQ quantiles on the held-out profiles.
+
+    The comparison is household-adjusted spend/rent, outliers and Decembers removed, so it
+    tests the body that was fit. Self-employed is reported separately from employees.
+    """
+    if model is None:
+        model = fit_emissions(family="student_t", holdout_frac=holdout_frac, seed=seed)
+    diag = model.diagnostics
+    by_state = {}
+    for state, block in diag["by_state"].items():
+        by_state[state] = {
+            "n_train": block["n_train"],
+            "n_holdout": block["n"],
+            "median_spend_ratio": block["median_spend_ratio"],
+            "df": block["df"],
+            "loc": block["loc"],
+            "scale": block["scale"],
+            "within_sd": block["within_sd"],
+            "ks_stat": block["ks_stat"],
+            "ks_pvalue": block["ks_pvalue"],
+            "qq_probabilities": block["qq_probabilities"],
+            "qq_holdout": block["qq_holdout"],
+            "qq_model": block["qq_model"],
+        }
+    return {
+        "family": model.family,
+        "by_state": by_state,
+        "self_employed": diag["self_employed"],
+        "self_employed_scale_ratio": diag["self_employed_scale_ratio"],
+        "self_employed_within_sd_ratio": diag["self_employed_within_sd_ratio"],
+        "household_shift": diag["household_shift"],
+        "december_bonus_median": diag["december_bonus_median"],
+        "holdout_profiles": {s: len(v) for s, v in diag["holdout_ids"].items()},
+    }
 
 
-def calibration_backtest(level: float = 0.9) -> dict:
-    """TODO(Victor): filter on 2025, simulate 2026 per held-out profile; share of real 2026
-    closing cash inside the central ``level`` band (target ≈ level). Also report band width."""
-    raise NotImplementedError
+def calibration_backtest(level: float = 0.9, n_paths: int = 250, seed: int = 0, model=None,
+                         prepared=None) -> dict:
+    """Filter each held-out profile on 2025, simulate 2026, and score the real closing cash.
+
+    The ledger has no regime switches, so the simulation uses A = I and no retirement.
+    The emission is shrunk to that profile's 2025 non-December spend ratios (kappa = 6).
+    ``level`` is the central band (0.90 -> P5 to P95). The target coverage is ``level``.
+    """
+    if prepared is None:
+        prepared = prepare_data()
+    if model is None:
+        model = fit_emissions(prepared=prepared)
+    lo = (1.0 - level) / 2.0
+    hi = 1.0 - lo
+    pm = prepared.person_months
+    ids = [pid for group in prepared.holdout_ids.values() for pid in group]
+    priors = TransitionPriors(
+        hazards=np.zeros((K, K)),
+        concentration=np.full(K, 1e6),
+        names={},
+        age_bounds={},
+        table=None,
+        age_hazards=[],
+        age_names={},
+    )
+    engine = RegimeEngine(model, priors, mode="hmm")
+    flat = {"annual_experience_growth": 0.0, "experience_growth_30_40": 0.0,
+            "experience_growth_40_50": 0.0, "experience_growth_50_plus": 0.0,
+            "retirement_age": 200.0, "dirichlet": 0.0}
+    inside = []
+    widths = []
+    filter_hits = []
+    by_state: dict[str, list[tuple[bool, float]]] = {}
+    for i, pid in enumerate(ids):
+        g = pm.loc[pm["profile_id"] == pid].sort_values("t")
+        if len(g) < 24:
+            continue
+        row = g.iloc[0]
+        state = str(row["state"])
+        flows = g["net_transactions_chf"].to_numpy(dtype=float)
+        y2025 = g.loc[(g["t"] < 12) & ~g["is_december"] & ~g["is_outlier"], "spend_ratio"].to_numpy()
+        household = row["household_type"]
+        se = str(row["employment_status"]) == "self_employed"
+        personal = model.personalize(state, y2025, household=household, self_employed=se)
+        opening = float(g.loc[g["t"] == 11, "closing_cash_chf"].iloc[0])
+        actual = float(g.loc[g["t"] == 23, "closing_cash_chf"].iloc[0])
+        profile = Profile(
+            age=int(row["age_at_start"]),
+            employment=str(row["employment_status"]),
+            ref_income=float(row["reference_monthly_net_income_chf"]),
+            rent=float(row["reference_monthly_rent_chf"]),
+            attributes={"household_type": household, "has_masters": False, "abroad": False,
+                        "canton": row["canton"]},
+            profile_id=pid,
+            opening_cash=opening,
+            start_month_of_year=1,
+        )
+        engine.emissions = model
+        belief = engine.filter(profile, flows[:12].tolist(), flat)
+        filter_hits.append(max(belief, key=belief.get) == state)
+        engine.emissions = personal
+        future = replace(profile, age=profile.age + 1)
+        paths = engine.simulate(future, horizon_months=12, n_paths=n_paths, assumption_overrides=flat,
+                                initial_belief=belief, seed=seed + i)
+        cash = opening + np.cumsum(paths.net_flow_chf, axis=1)[:, -1]
+        p_lo, p_hi = np.quantile(cash, [lo, hi])
+        hit = bool(p_lo <= actual <= p_hi)
+        width = float(p_hi - p_lo)
+        inside.append(hit)
+        widths.append(width)
+        by_state.setdefault(state, []).append((hit, width))
+    def _pack(rows: list[tuple[bool, float]]) -> dict:
+        if not rows:
+            return {"n": 0, "coverage": None, "median_band_width_chf": None}
+        return {"n": len(rows), "coverage": float(np.mean([h for h, _ in rows])),
+                "median_band_width_chf": float(np.median([w for _, w in rows]))}
+    return {
+        "level": level,
+        "n_profiles": len(inside),
+        "n_paths": n_paths,
+        "coverage": float(np.mean(inside)) if inside else None,
+        "median_band_width_chf": float(np.median(widths)) if widths else None,
+        "mean_band_width_chf": float(np.mean(widths)) if widths else None,
+        "by_state": {s: _pack(rows) for s, rows in by_state.items()},
+        "filter_accuracy": float(np.mean(filter_hits)) if filter_hits else None,
+        "personalised": True,
+        "transitions": "A = I and retirement off; the ledger has no regime changes",
+    }
 
 
 def simulated_vs_analytic_occupancy(paths: RegimePaths, pi0: np.ndarray, A: np.ndarray) -> float:

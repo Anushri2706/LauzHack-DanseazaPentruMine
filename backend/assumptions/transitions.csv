@@ -1,11 +1,19 @@
 assumption_name,from_state,to_state,monthly_hazard,row_concentration,age_min,age_max,source,notes
-job_loss_hazard,employed,job_search,0.004,200,,,PLACEHOLDER - SECO monthly inflow to registered unemployment / employed labour force,~0.3-0.5%/month; verify and cite before demo
-employed_to_part_time,employed,part_time,0.002,200,,,PLACEHOLDER - BFS SAKE labour-market flows,Voluntary or involuntary reduction in hours
-employed_to_student,employed,student,0.0005,200,18,35,PLACEHOLDER - assumption,Rare return to education; decisions use force_state instead
-job_search_exit_rate,job_search,employed,0.15,50,,,PLACEHOLDER - SECO mean duration of registered unemployment (~6-8 months),Exit to employment; 1/rate = mean months in job search
-job_search_to_part_time,job_search,part_time,0.02,50,,,PLACEHOLDER - assumption,Re-entry via part-time work
-part_time_to_employed,part_time,employed,0.02,100,,,PLACEHOLDER - BFS SAKE flows,Return to full-time
-part_time_job_loss_hazard,part_time,job_search,0.005,100,,,PLACEHOLDER - SECO,Slightly higher hazard than full-time
-student_to_job_search,student,job_search,0.0,20,,,PLACEHOLDER - assumption,Graduation is scheduled (HSMM / force_state) not a hazard; edit only for open-ended study
-student_to_employed,student,employed,0.0,20,,,PLACEHOLDER - assumption,See above; graduation timing comes from the decision layer
-retired_absorbing,retired,retired,1.0,1000,,,Modelling assumption,Retired is absorbing; retirement at 65 is a deterministic age rule (retirement_age in income_assumptions.csv)
+job_loss_hazard,employed,job_search,0.005,200,,,Eurostat lfsi_long_q 2025Q3 via DBnomics,"All-ages employed to unemployed. Quarterly flow 1.5% converts as 1-(1-0.015)^(1/3) = 0.50%/month. The 2010-2025 average quarterly flow of 1.3% is 0.44%/month. ILO flows, not SECO registered unemployment. Vaud's registered rate was about 1.5x the Swiss rate in Dec 2025; that scale is not applied here (use scale_hazard for a Lausanne scenario)."
+job_loss_18_24,employed,job_search,0.010,200,18,24,EST from BFS SAKE ILO unemployment by age,"s = f*u/(1-u) with the 15-24 ILO rate 8.8% and the age-specific exit, then halved: much youth unemployment is inflow from education, not job loss. Range 0.8-2.0%/month. Applied when floor(age) is in [18, 24]; the slider job_loss_hazard scales every age band in proportion."
+job_loss_25_34,employed,job_search,0.006,200,25,34,EST from BFS SAKE 2025,"25-39 ILO rate 5.4% and an exit near 13%/month gives about 0.6-0.7%/month. 0.60% used."
+job_loss_35_49,employed,job_search,0.0045,200,35,49,EST from BFS SAKE 2025,"40-54 ILO rate 4.1% and an exit near 11%/month gives about 0.45%/month."
+job_loss_50_64,employed,job_search,0.0033,200,50,64,EST from BFS SAKE 2025,"55-64 ILO rate 3.6% and an exit near 8%/month gives 0.30-0.35%/month. 0.33% used. Turning 65 is the retirement rule, not this hazard."
+employed_to_part_time,employed,part_time,0.004,200,,,EST calibrated to BFS SAKE part-time stocks 2024,"No official full-time to part-time flow. 0.40%/month. Together with the 1%/month return to full-time, the steady-state part-time share is about 29%, close to the 25-39 stock of 33% (BFS Teilzeiterwerbstätigkeit 2024). Job-to-job hour changes in BFS mobility are only about 2.2%/year and miss within-job changes."
+employed_to_student,employed,student,0,200,,,Modelling assumption,"No official rate. Going back to school is a force_state decision, not a standing hazard."
+job_search_exit_rate,job_search,employed,0.09,50,,,Eurostat lfsi_long_q 2025Q3 via DBnomics,"All-ages ILO unemployed to employment is 11%/month (29% quarterly; the 2010-25 average quarterly flow of 33.2% is 12.6%/month). This cell is the full-time part, 9%. The part-time cell is 2%, and 9+2=11. A spell that has already lasted 12 months has both exit cells multiplied by long_term_unemployment_multiplier (0.5)."
+job_search_exit_18_24,job_search,employed,0.18,50,18,24,EST from SECO durations by age (Lage Dez 2025),"National exit scaled by SECO mean elapsed duration (total 6.3 months, 15-24 is 3.4). Full-time 18% plus part-time 2% is the 20% youth exit."
+job_search_exit_25_34,job_search,employed,0.11,50,25,34,EST from SECO durations by age,"Full-time 11% plus part-time 2% is the 13% exit for 25-34."
+job_search_exit_35_49,job_search,employed,0.09,50,35,49,EST from SECO durations by age,"Full-time 9% plus part-time 2% is the 11% exit for 35-49."
+job_search_exit_50_64,job_search,employed,0.06,50,50,64,EST from SECO durations by age,"50-64 mean elapsed duration 8.1 months. Full-time 6% plus part-time 2% is the 8% exit."
+job_search_to_part_time,job_search,part_time,0.02,50,,,Modelling assumption,"No official split of re-entry into full-time versus part-time. 2%/month so that full-time plus part-time equals the ILO exit at each age."
+part_time_to_employed,part_time,employed,0.01,100,,,EST calibrated to BFS SAKE part-time stocks 2024,"1.0%/month return to full-time. See employed_to_part_time."
+part_time_job_loss_hazard,part_time,job_search,0.006,100,,,Modelling assumption,"No official part-time separation series. Set slightly above the all-ages full-time hazard of 0.50%/month."
+student_to_job_search,student,job_search,0,20,,,Modelling assumption,"Graduation is a pinned phase (force_state / HSMM), not a monthly hazard. BFS: 55% of university masters are in qualified work within 3 months, about 25-30%/month once the job search has started; that clock starts when the pin ends."
+student_to_employed,student,employed,0,20,,,Modelling assumption,"Same as student_to_job_search. The master's decision exits into employed."
+retired_absorbing,retired,retired,1,1000,,,BSV AHV 21,"Retired is absorbing. Reference age 65 for men and for women from 2028 (AHV 21). The move into retired is the age rule in the income table, not a hazard."

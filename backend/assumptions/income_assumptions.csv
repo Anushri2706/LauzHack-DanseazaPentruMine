@@ -1,13 +1,29 @@
 parameter,value,unit,applies_to,source,notes
-student_income_chf,1200,CHF/month,student,Data/synthetic-profiles.csv P00001 reference income,Part-time job / support while studying
-entry_salary_chf,4200,CHF/month net,employed,starter-kit/scenario_config.json (Start working),PLACEHOLDER - replace with BFS LSE entry salary by education level
-masters_premium_pct,0.14,fraction,employed,starter-kit/scenario_config.json (4800 vs 4200),PLACEHOLDER - BFS graduate survey entry salaries master vs bachelor
-annual_experience_growth,0.02,fraction/year,employed;part_time,PLACEHOLDER - BFS LSE age-earnings profile,Applied per 12 months employed
-part_time_fraction,0.6,fraction of full-time,part_time,PLACEHOLDER - assumption,Matches S002 (work 60%)
-ui_replacement_rate,0.75,fraction of last salary,job_search,PLACEHOLDER - AVIG Art. 22 (70% or 80% of insured salary),Paid as net income during job search
-ui_max_months,18,months,job_search,PLACEHOLDER - AVIG Art. 27 (260-520 daily allowances),After this income drops to job_search_floor_chf
-job_search_floor_chf,0,CHF/month,job_search,Modelling assumption,No social assistance modelled
-retired_income_fraction,0.6,fraction of last salary,retired,PLACEHOLDER - AHV/BVG replacement ~60%,Used only when a path transitions into retirement
-retirement_age,65,years,all,AHV reference age,Deterministic age rule
-abroad_income_multiplier,0.88,fraction,employed;part_time,starter-kit/scenario_config.json (3700 vs 4200),PLACEHOLDER - abroad city salary level vs Lausanne
-abroad_cost_multiplier,0.97,fraction,all,starter-kit/scenario_config.json (2900 vs 3000),PLACEHOLDER - cost-of-living index; consumed by cash engine
+student_income_chf,1200,CHF/month,student,Synthetic profiles median; Alexia P00001,"Default stipend when a non-student enters the student state. A person who already is a student keeps their own reference income. EPFL's published budget is a cost of living (2,393/month), not an income."
+entry_salary_chf,6128.79,CHF/month,employed,BFS EHA bachelor band and UH master median,"Monthly salary before the master's premium. 6,128.79 * 1.10 * 12 = 80,900, the BFS EHA 2023 median annual income of a university master one year after graduation. The implied bachelor level is about 73,500/year, inside the 70-75k band (cohort 2018: men 75,000, women 68,200). Survey earnings, spread over 12 months because the December bonus is sampled separately. Not a tax-net figure; tax is outside this engine."
+masters_premium_pct,0.1,fraction,employed,BFS EHA,"+10% at entry (recommended). The 2018 cohort shows about +9% to +15% at one year and +12% to +18% after five years. Applied when has_masters is set. Also multiplies the job-loss hazard by masters_hazard_factor."
+masters_hazard_factor,0.81,fraction,employed,BFS EHA 2023 ILO unemployment one year after a UH master,"3.9% graduate unemployment against the 4.8% all-age ILO rate in 2025. Applied to employed to job_search while has_masters is set."
+annual_experience_growth,0.068,fraction/year,employed;part_time,BFS EHA and BFS Swiss wage index 2025,"Age under 30. Individual real growth about 5%/year for graduates in years 1-5 (EHA: about +21% to +25% over four years) plus 1.8% economy-wide nominal wage growth (SLI 2025). Applied once per 12 months of work."
+experience_growth_30_40,0.038,fraction/year,employed;part_time,EST on BFS EHA and SLI 2025,"2% real + 1.8% nominal."
+experience_growth_40_50,0.028,fraction/year,employed;part_time,EST on BFS EHA and SLI 2025,"1% real + 1.8% nominal."
+experience_growth_50_plus,0.018,fraction/year,employed;part_time,BFS SLI 2025,"0% real + 1.8% nominal."
+part_time_fraction,0.6,fraction of full-time,part_time,Modelling assumption,"Scenario S002 works 60%. BFS defines part-time as under 90% and publishes no single average fraction."
+ui_replacement_rate,0.7,fraction of insured earnings,job_search,AVIG Art. 22,"70% of insured earnings. Insured earnings are the last wage, capped at ui_insured_earnings_cap_chf."
+ui_replacement_with_dependents,0.8,fraction of insured earnings,job_search,AVIG Art. 22,"80% if there is a maintenance duty for children, if insured earnings are at most 3,797/month, or if a disability pension is at least 40%. The engine uses 80% for household_type family and whenever the last wage is at most ui_low_earnings_threshold_chf."
+ui_low_earnings_threshold_chf,3797,CHF/month,job_search,AVIG Art. 22,"Insured earnings at or below this use the 80% rate."
+ui_insured_earnings_cap_chf,12350,CHF/month,job_search,AVIG Art. 23,"Maximum insured earnings 148,200/year = 12,350/month (UVG cap). The maximum 70% benefit is about 8,645/month."
+ui_max_months,18.4,months,job_search,AVIG Art. 27,"400 daily allowances / 21.7 working days, the adult case with 18-24 contribution months. The spell counter stops paying once it reaches this length."
+ui_max_months_under_25,9.2,months,job_search,AVIG Art. 27,"200 daily allowances if under 25 without children (12-24 contribution months). About 9.2 months."
+job_search_floor_chf,0,CHF/month,job_search,Modelling assumption,"No social assistance after the benefit is exhausted."
+graduate_waiting_months,5.5,months,job_search,AVIG Art. 14 and AVIV,"120 waiting days, about 5.5 months, before the contribution-exempt graduate allowance. Used only when the path has never been employed or part-time. Someone who starts unemployed keeps their reference income instead."
+graduate_benefit_months,4.1,months,job_search,AVIG Art. 14,"90 daily allowances, about 4.1 months, after the waiting period."
+graduate_benefit_under_25_chf,1330,CHF/month,job_search,AVIG Art. 14 and AVIV Art. 40-41,"Flat insured earnings 153/day, halved under 25, times 80% (the low-earnings rate) times 21.7 days: about 1,330/month."
+graduate_benefit_chf,2660,CHF/month,job_search,AVIG Art. 14 and AVIV Art. 40-41,"153/day times 80% times 21.7 days: about 2,660/month from age 25."
+long_term_unemployment_multiplier,0.5,fraction,job_search,EST from the ILO long-term share,"After long_term_unemployment_months in job search, both exit hazards are multiplied by 0.5. A constant 11%/month exit would leave only about 25% still unemployed at 12 months; the ILO long-term share is 33% (2025). Range 0.4-0.7."
+long_term_unemployment_months,12,months,job_search,EST,"Duration dependence starts once the spell has reached 12 months."
+retired_income_fraction,0.475,fraction of last salary,retired,OECD Pensions at a Glance 2025,"Net replacement rate of mandatory pensions for an average earner, full career from 22. Gross is 42.4%. High earners are lower (about 25% net at 2x earnings); that is not switched on here."
+retirement_age,65,years,all,BSV AHV 21,"Deterministic. Employed and part-time move to retired at 65. Women reach 65 in 2028."
+abroad_income_multiplier,0.51,fraction,employed;part_time,OECD average wages 2024 and Eurostat PLI tec00120,"Germany as the default destination. PPP wage DE/CH = 74,854/92,161 = 0.81, price level 108.8/173.0 = 0.63, nominal CHF wage about 0.81*0.63 = 0.51. Applied when abroad is set."
+abroad_cost_multiplier,0.63,fraction,all,Eurostat price level index 2024,"Germany/Switzerland household price level 108.8/173.0. Multiplies rent, and therefore spending, while abroad. Not applied again in the cash engine."
+student_rent_chf,900,CHF/month,student,EPFL Financement des études,"The rent line in the Lausanne student budget (total cost of living excluding tuition 2,393/month). Charged while in the student state, unless the person is already a student with their own rent."
+employed_rent_chf,1546,CHF/month,employed;part_time,BFS household budget survey HABE 2024,"Housing and energy, 1,546/month, 29.5% of consumption (5,244). A student who takes a first job moves from the student rent to this. Someone who already works keeps their own reference rent. National household mean, not a Lausanne market rent."
