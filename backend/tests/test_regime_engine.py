@@ -2,7 +2,8 @@
 import numpy as np
 import pytest
 
-from twin import RegimeEngine, load_profile, load_transition_priors
+from twin import RegimeEngine, cash_engine, load_profile, load_transition_priors
+from twin.cash_engine import CashPaths
 from twin.data import ASSUMPTIONS_DIR, load_cash_balances, load_profiles
 from twin.income import IncomeTable
 from twin.regime_engine import emission_loglik, fit_emissions, forward_filter, sample_yearly_lump
@@ -43,6 +44,12 @@ def test_assumptions_replace_placeholders():
     assert table["employed_rent_chf"] == pytest.approx(1546)
     assert table["entry_salary_chf"] * (1 + table["masters_premium_pct"]) * 12 == pytest.approx(80900, rel=1e-4)
     assert table["long_term_unemployment_multiplier"] == pytest.approx(0.5)
+    assert table["rent_step_factor"] == pytest.approx(1.4)
+    assert table["purchase_deposit_fraction"] == pytest.approx(0.15)
+    expense = (ASSUMPTIONS_DIR / "expense_assumptions.csv").read_text()
+    assert "rent_step_factor,1.4" in expense and "purchase_deposit_fraction,0.15" in expense
+    assert expense.split("rent_step_factor")[1].split("\n")[0].split(",")[4] == "prior"
+    assert expense.split("purchase_deposit_fraction")[1].split("\n")[0].split(",")[4] == "prior"
 
     priors = load_transition_priors()
     assert priors.hazards[E, J] == pytest.approx(0.005)
@@ -149,6 +156,72 @@ def test_scaled_spending_uses_the_expense_priors_recipe():
 
     shocks = sample_yearly_lump(np.random.default_rng(0), 20000, 12, p).sum(axis=1)
     assert shocks.mean() == pytest.approx(0.0, abs=150)
+
+
+def test_rent_step_lifts_the_two_room_cap_and_purchase_keeps_the_bill():
+    table = IncomeTable.from_csv().with_overrides({"scaled_spending": 1})
+    p = table.params
+    rich = _worker(age=30, income=80000)
+    states = np.full((1, 80), E)
+    keep = table.rent_paths(states, rich)[0]
+    assert keep[0] == pytest.approx(p["rent_cap_chf"] + p["rent_charges_chf"])
+    stepped = table.rent_paths(
+        states, rich, [Intervention("set_attribute", 72, attribute=("rent_step", True))],
+    )[0]
+    assert stepped[:72] == pytest.approx(keep[:72])
+    stepped_net = p["rent_cap_chf"] * p["rent_step_factor"]
+    assert stepped_net > p["rent_cap_chf"]
+    assert stepped[72] == pytest.approx(stepped_net + p["rent_charges_chf"])
+    assert stepped[79] == pytest.approx(stepped[72])
+    # Unemployment does not cut the stepped lease.
+    gap = states.copy()
+    gap[0, 75] = J
+    stepped_gap = table.rent_paths(
+        gap, rich, [Intervention("set_attribute", 72, attribute=("rent_step", True))],
+    )[0]
+    assert stepped_gap[75] == pytest.approx(stepped[72])
+
+    owned = table.rent_paths(
+        states, rich, [Intervention("set_attribute", 72, attribute=("owns_home", True))],
+    )[0]
+    assert owned == pytest.approx(keep)
+
+    alexia = load_profile("P00001")
+    seq = np.full((1, 80), E)
+    seq[0, :24] = S
+    masters = [
+        Intervention("force_state", 0, 24, state="student"),
+        Intervention("set_attribute", 24, attribute=("has_masters", True)),
+    ]
+    base = table.rent_paths(seq, alexia, masters)[0]
+    step = table.rent_paths(
+        seq, alexia, masters + [Intervention("set_attribute", 72, attribute=("rent_step", True))],
+    )[0]
+    bought = table.rent_paths(
+        seq, alexia, masters + [Intervention("set_attribute", 72, attribute=("owns_home", True))],
+    )[0]
+    assert base[:24] == pytest.approx(alexia.rent)
+    assert np.allclose(base[24:], base[24])
+    net = base[24] - p["rent_charges_chf"]
+    assert p["rent_floor_chf"] < net < p["rent_cap_chf"]
+    assert net * p["rent_step_factor"] > p["rent_cap_chf"]
+    assert step[:72] == pytest.approx(base[:72])
+    assert step[72] == pytest.approx(net * p["rent_step_factor"] + p["rent_charges_chf"])
+    assert bought == pytest.approx(base)
+
+
+def test_purchase_deposit_is_a_fraction_of_cash_that_month():
+    cash = np.array([[1000.0, 2500.0, 4000.0], [-100.0, -50.0, 10.0]])
+    net = np.array([[1000.0, 1500.0, 1500.0], [-100.0, 50.0, 60.0]])
+    cp = CashPaths(0.0, cash, {"net_flow_chf": net, "one_off_costs_chf": np.zeros_like(cash)})
+    assert cash_engine.reconciles(cp)
+    out, deposit = cash_engine.apply_fractional_drop(cp, 1, 0.15)
+    assert deposit == pytest.approx([375.0, 0.0])
+    assert out.cash[:, 0] == pytest.approx(cash[:, 0])
+    assert out.cash[:, 1] == pytest.approx([2125.0, -50.0])
+    assert out.cash[:, 2] == pytest.approx([3625.0, 10.0])
+    assert cash_engine.reconciles(out)
+    assert cash_engine.reconciles(cp)
 
 
 def test_forward_filter_matches_a_hand_calculation():
