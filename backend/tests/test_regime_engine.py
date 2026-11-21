@@ -1,12 +1,15 @@
 """HMM regime engine: emissions, transitions, interventions, filter, held-out checks."""
+from datetime import date
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from twin import RegimeEngine, cash_engine, load_profile, load_transition_priors
 from twin.cash_engine import CashPaths
-from twin.data import ASSUMPTIONS_DIR, load_cash_balances, load_profiles
+from twin.data import ASSUMPTIONS_DIR, load_cash_balances, load_goals, load_profiles
 from twin.income import IncomeTable
+from twin.metrics import goal_hit_rate
 from twin.regime_engine import _schedule, emission_loglik, fit_emissions, forward_filter, sample_yearly_lump
 from twin.types import STATE_INDEX, STATES, Intervention, Profile
 from twin import validation
@@ -728,3 +731,68 @@ def test_first_job_after_masters_pins_and_pays_the_graduate_wait():
     seventh = table.income_paths(stayed, alexia, by_name["Search 6 months, then work"])[0, HIRED_MONTH]
     assert alexia.age + HIRED_MONTH / 12.0 < 25
     assert seventh == pytest.approx(table.params["graduate_benefit_under_25_chf"])
+
+
+def test_goal_hit_rate_on_a_known_fan_and_the_csv_row():
+    """Hit rate is the share at the goal month. The crossing month is where the median stays above.
+
+    Quantiles are NumPy's linear method. A goal past the horizon is scored on the
+    last simulated month, and that choice is reported.
+    """
+    cash = np.array([
+        [0.0, 10.0, 10.0, 40.0, 40.0],
+        [0.0, 30.0, 10.0, 60.0, 80.0],
+        [0.0, 50.0, 10.0, 80.0, 120.0],
+    ])
+    # Cross-sectional median: 0, 30, 10, 60, 80. Target 50, so it stays from month 3.
+    goal = {"goal_name": "Buffer", "target_amount_chf": 50.0, "target_date": "2025-04-30", "priority": "high"}
+    scored = goal_hit_rate(cash, "2025-01", goal)
+    assert scored["goal_month"] == 3 and scored["evaluated_month"] == 3
+    assert scored["evaluated_at"] == "goal_month" and scored["evaluated_label"] == "2025-04"
+    assert scored["hit_rate"] == pytest.approx(2 / 3)
+    assert scored["median_cross_month"] == 3 and scored["median_cross_label"] == "2025-04"
+    assert scored["median_cash_at_goal"] == pytest.approx(60)
+    assert scored["p10_cash_at_goal"] == pytest.approx(44)
+    assert scored["p90_cash_at_goal"] == pytest.approx(76)
+    assert scored["target_amount_chf"] == pytest.approx(50) and scored["goal_name"] == "Buffer"
+
+    # A one-month blip does not count. A later dip cancels an earlier crossing.
+    blip = np.array([[0.0, 80.0, 0.0, 80.0, 10.0]])
+    blipped = goal_hit_rate(blip, date(2025, 1, 1), (50.0, "2025-02"))
+    assert blipped["goal_month"] == 1 and blipped["hit_rate"] == pytest.approx(1.0)
+    assert blipped["median_cross_month"] is None and blipped["median_cross_label"] is None
+    held = goal_hit_rate(np.array([[49.0, 50.0, 50.0]]), "2025-01", (50.0, date(2025, 3, 31)))
+    assert held["median_cross_month"] == 1
+    assert held["hit_rate"] == pytest.approx(1.0)
+    assert held["median_cash_at_goal"] == pytest.approx(50)
+
+    short = cash[:, :2]
+    clipped = goal_hit_rate(CashPaths(0.0, short, {}), "2025-01", goal)
+    assert clipped["goal_month"] == 3 and clipped["evaluated_month"] == 1
+    assert clipped["evaluated_at"] == "last_simulated_month"
+    assert clipped["evaluated_label"] == "2025-02"
+    # Last month is 10, 30, 50. Only one path meets 50.
+    assert clipped["hit_rate"] == pytest.approx(1 / 3)
+    assert clipped["median_cash_at_goal"] == pytest.approx(30)
+    assert clipped["median_cross_month"] is None
+    early = goal_hit_rate(cash, "2025-01", {"amount_chf": 50, "date": "2024-06-01"})
+    assert early["goal_month"] == -7 and early["evaluated_at"] == "before_start"
+    assert early["evaluated_month"] == 0 and early["hit_rate"] == pytest.approx(0.0)
+
+    goals = load_goals()
+    alexia = goals.loc[goals["profile_id"] == "P00001"]
+    row = alexia.iloc[0]
+    wide = np.full((4, 60), 0.0)
+    wide[:, 59] = [0.0, 12800.0, 12800.0, 20000.0]
+    from_row = goal_hit_rate(wide, "2025-01", row)
+    from_tuple = goal_hit_rate(wide, date(2025, 1, 1), next(alexia.itertuples(index=False)))
+    assert row["goal_name"] == "Emergency savings" and row["target_amount_chf"] == pytest.approx(12800)
+    assert from_row["target_date"] == "2029-12-31" and from_row["priority"] == "high"
+    assert from_row["goal_month"] == 59 and from_row["evaluated_at"] == "goal_month"
+    assert from_row["evaluated_label"] == "2029-12"
+    assert from_row["hit_rate"] == pytest.approx(0.75)
+    assert from_row["median_cash_at_goal"] == pytest.approx(12800)
+    assert from_tuple["hit_rate"] == from_row["hit_rate"]
+    assert from_tuple["goal_month"] == from_row["goal_month"]
+    with pytest.raises(TypeError):
+        goal_hit_rate(wide, "2025-01", alexia)
