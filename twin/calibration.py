@@ -119,9 +119,21 @@ def fit(ids=None, horizons=HORIZONS):
             out.append({**cell, "keep": 1.0, "n": 0})
             continue
         k = _solve(lambda k: st.median(gaps(items, k)))
-        row = {**cell, "keep": round(k, 4), "n": len(items),
+        surplus = st.median(float((r.net() > 0).mean()) for _, r, _ in items)
+        row = {**cell, "keep": round(k, 4), "fitted": True, "n": len(items),
+               "share_months_in_surplus": round(surplus, 2),
                "median_engine_net_flow_chf_month": round(st.median(
                    float(r.flows(1.0)[:, :12].mean()) for _, r, _ in items))}
+        if k <= 1e-3 or k >= K_MAX - 1e-3:
+            # The factor hit a bound: no keep factor in 0..K_MAX matches the peers. Scaling surplus months
+            # cannot fix a gap made in deficit months, so the cell is left uncalibrated and says why.
+            gap = st.median(gaps(items, 1.0))
+            row.update(keep=1.0, fitted=False, keep_at_bound=round(k, 4),
+                       reason=(f"the engine is in surplus only {surplus:.0%} of months here and its "
+                               f"median wealth is CHF {abs(gap):,.0f} {'below' if gap < 0 else 'above'} similar older "
+                               f"people; scaling surplus (even x{K_MAX:g}) cannot close a gap made in deficit "
+                               f"months (mostly retirement on 47.5% of the last wage with unchanged spending)"))
+            k = 1.0
         for h in horizons:
             if not all(h in ts for *_, ts in items):
                 continue
@@ -137,8 +149,28 @@ def fit(ids=None, horizons=HORIZONS):
 
 
 def table_of(res):
-    """(age lo, age hi, keep) or (age lo, age hi, income lo, income hi, keep) per cell."""
-    return tuple((b["band"][0], b["band"][1], *b.get("income", ()), b["keep"]) for b in res["bands"])
+    """(age lo, age hi, keep) [sim] or (age lo, age hi, income lo, income hi, keep, fitted) [regime] per cell."""
+    return tuple((b["band"][0], b["band"][1], b["keep"]) if "income" not in b else
+                 (b["band"][0], b["band"][1], *b["income"], b["keep"], b.get("fitted", True))
+                 for b in res["bands"])
+
+
+def _keep(cell):
+    return cell[4] if len(cell) == 6 else cell[-1]
+
+
+def _fitted(cell):
+    return cell[5] if len(cell) == 6 else True
+
+
+@lru_cache(maxsize=None)
+def reasons(engine="regime"):
+    """{(age lo, income lo): reason} for cells left uncalibrated."""
+    f = FILES[engine]
+    if not f.exists():
+        return {}
+    return {(b["band"][0], b.get("income", [0])[0]): b["reason"] for b in json.loads(f.read_text())["bands"]
+            if b.get("fitted") is False}
 
 
 @lru_cache(maxsize=None)
@@ -162,22 +194,28 @@ def _band(age, table=None, income=None):
 
 
 def keep_factor(age, table=None, income=None):
-    return _band(age, table, income)[-1]
+    return _keep(_band(age, table, income))
 
 
 def apply(p, table=None):
     """Calibrate profile p in place (sets calibration_rate and keep_factor) and tag it. Returns p."""
     from .scenarios import working_income
     cell = _band(p["age"], table, working_income(p))
-    lo, hi, k = cell[0], cell[1], cell[-1]
+    lo, hi, k = cell[0], cell[1], _keep(cell)
     p["calibration_rate"] = 1.0 - k
     p["keep_factor"] = k
     ages = f"{lo}-{hi - 1}" if hi < 200 else f"{lo}+"
-    if len(cell) == 5:
+    if len(cell) == 6:
         ages += f", income CHF {cell[2]:,}-{cell[3]:,}/mo" if cell[3] < 10 ** 9 else f", income CHF {cell[2]:,}+/mo"
+    p["calibration"] = {"keep": k, "fitted": _fitted(cell), "group": ages,
+                        "reason": None if _fitted(cell) else reasons().get((cell[0], cell[2]))}
+    if not _fitted(cell):
+        p["tags"]["saving calibration"] = f"none for your group (ages {ages}): " + (
+            p["calibration"]["reason"] or "the keep factor could not be fitted")
+        return p
     what = "of any monthly surplus" if k <= 1 else "times the modelled monthly surplus"
-    p["tags"]["saving calibration"] = (f"you keep {k:.0%} {what} (fitted for ages {ages} so a simulated "
-                                       f"decade matches similar people 10 years older)")
+    p["tags"]["saving calibration"] = (f"you keep {k:.0%} {what} (fitted for ages {ages} so simulated wealth "
+                                       f"after 10 and 20 years matches similar people that much older)")
     return p
 
 
@@ -195,11 +233,15 @@ def report(res):
         cols = "".join(f"{b[f'y{y}']['median_target_chf']:>13,}{b[f'y{y}']['median_sim_raw_chf']:>12,}"
                        f"{b[f'y{y}']['median_sim_calibrated_chf']:>12,}" if f"y{y}" in b else f"{'-':>13}{'-':>12}{'-':>12}"
                        for y in h)
-        print(f"{f'{lo}-{hi - 1}' if hi < 200 else f'{lo}+':<7}{inc:>14}{b['n']:>5}{b['keep']:>7.0%}"
+        keep = f"{b['keep']:.0%}" if b.get("fitted", True) else "none"
+        print(f"{f'{lo}-{hi - 1}' if hi < 200 else f'{lo}+':<7}{inc:>14}{b['n']:>5}{keep:>7}"
               f"{b['median_engine_net_flow_chf_month']:>9,}{cols}")
-    ks = [b["keep"] for b in res["bands"] if b["n"]]
-    print(f"\nkeep factor: median {st.median(ks):.0%}, range {min(ks):.0%}-{max(ks):.0%} "
-          f"(100% = engine needs no correction; the cap is {K_MAX:.0%})")
+    ks = [b["keep"] for b in res["bands"] if b["n"] and b.get("fitted", True)]
+    print(f"\nkeep factor (fitted cells): median {st.median(ks):.0%}, range {min(ks):.0%}-{max(ks):.0%} "
+          f"(100% = engine needs no correction)")
+    for b in res["bands"]:
+        if b.get("fitted") is False:
+            print(f"ages {b['band'][0]}+, income from CHF {b['income'][0]:,}: {b['reason']}")
 
 
 if __name__ == "__main__":

@@ -12,7 +12,9 @@
     4531
    ],
    "keep": 0.1467,
+   "fitted": true,
    "n": 42,
+   "share_months_in_surplus": 0.97,
    "median_engine_net_flow_chf_month": 1807,
    "y10": {
     "median_target_chf": 47778,
@@ -35,7 +37,9 @@
     7647
    ],
    "keep": 0.0955,
+   "fitted": true,
    "n": 41,
+   "share_months_in_surplus": 0.97,
    "median_engine_net_flow_chf_month": 2268,
    "y10": {
     "median_target_chf": 46477,
@@ -58,7 +62,9 @@
     1000000000
    ],
    "keep": 0.0388,
+   "fitted": true,
    "n": 60,
+   "share_months_in_surplus": 0.98,
    "median_engine_net_flow_chf_month": 5773,
    "y10": {
     "median_target_chf": 46537,
@@ -81,7 +87,9 @@
     4531
    ],
    "keep": 0.4412,
+   "fitted": true,
    "n": 52,
+   "share_months_in_surplus": 0.8,
    "median_engine_net_flow_chf_month": 289,
    "y10": {
     "median_target_chf": 106606,
@@ -104,7 +112,9 @@
     7647
    ],
    "keep": 0.1605,
+   "fitted": true,
    "n": 74,
+   "share_months_in_surplus": 0.97,
    "median_engine_net_flow_chf_month": 2344,
    "y10": {
     "median_target_chf": 92948,
@@ -127,7 +137,9 @@
     1000000000
    ],
    "keep": 0.0639,
+   "fitted": true,
    "n": 75,
+   "share_months_in_surplus": 0.98,
    "median_engine_net_flow_chf_month": 6379,
    "y10": {
     "median_target_chf": 97793,
@@ -150,7 +162,9 @@
     4531
    ],
    "keep": 0.2709,
+   "fitted": true,
    "n": 45,
+   "share_months_in_surplus": 0.71,
    "median_engine_net_flow_chf_month": 284,
    "y10": {
     "median_target_chf": 107880,
@@ -173,7 +187,9 @@
     7647
    ],
    "keep": 0.1244,
+   "fitted": true,
    "n": 80,
+   "share_months_in_surplus": 0.94,
    "median_engine_net_flow_chf_month": 2205,
    "y10": {
     "median_target_chf": 111512,
@@ -196,7 +212,9 @@
     1000000000
    ],
    "keep": 0.048,
+   "fitted": true,
    "n": 82,
+   "share_months_in_surplus": 0.98,
    "median_engine_net_flow_chf_month": 5804,
    "y10": {
     "median_target_chf": 111573,
@@ -219,7 +237,9 @@
     4531
    ],
    "keep": 0.4378,
+   "fitted": true,
    "n": 37,
+   "share_months_in_surplus": 0.63,
    "median_engine_net_flow_chf_month": 553,
    "y10": {
     "median_target_chf": 136323,
@@ -242,7 +262,9 @@
     7647
    ],
    "keep": 0.193,
+   "fitted": true,
    "n": 72,
+   "share_months_in_surplus": 0.77,
    "median_engine_net_flow_chf_month": 2393,
    "y10": {
     "median_target_chf": 136079,
@@ -265,7 +287,9 @@
     1000000000
    ],
    "keep": 0.0622,
+   "fitted": true,
    "n": 89,
+   "share_months_in_surplus": 0.92,
    "median_engine_net_flow_chf_month": 6199,
    "y10": {
     "median_target_chf": 135460,
@@ -287,18 +311,22 @@
     0,
     4531
    ],
-   "keep": 2.0,
+   "keep": 1.0,
+   "fitted": false,
    "n": 46,
+   "share_months_in_surplus": 0.15,
    "median_engine_net_flow_chf_month": 45,
+   "keep_at_bound": 2.0,
+   "reason": "the engine is in surplus only 15% of months here and its median wealth is CHF 157,011 below similar older people; scaling surplus (even x2) cannot close a gap made in deficit months (mostly retirement on 47.5% of the last wage with unchanged spending)",
    "y10": {
     "median_target_chf": 140221,
     "median_sim_raw_chf": 45761,
-    "median_sim_calibrated_chf": 72325
+    "median_sim_calibrated_chf": 45761
    },
    "y20": {
     "median_target_chf": 163043,
     "median_sim_raw_chf": -147221,
-    "median_sim_calibrated_chf": -125970
+    "median_sim_calibrated_chf": -147221
    }
   },
   {
@@ -311,7 +339,9 @@
     7647
    ],
    "keep": 0.9345,
+   "fitted": true,
    "n": 65,
+   "share_months_in_surplus": 0.38,
    "median_engine_net_flow_chf_month": 2490,
    "y10": {
     "median_target_chf": 144157,
@@ -334,7 +364,9 @@
     1000000000
    ],
    "keep": 0.1054,
+   "fitted": true,
    "n": 84,
+   "share_months_in_surplus": 0.82,
    "median_engine_net_flow_chf_month": 6196,
    "y10": {
     "median_target_chf": 145664,
@@ -356,13 +388,17 @@
     0,
     4531
    ],
-   "keep": 2.0,
+   "keep": 1.0,
+   "fitted": false,
    "n": 137,
+   "share_months_in_surplus": 0.15,
    "median_engine_net_flow_chf_month": -205,
+   "keep_at_bound": 2.0,
+   "reason": "the engine is in surplus only 15% of months here and its median wealth is CHF 65,805 below similar older people; scaling surplus (even x2) cannot close a gap made in deficit months (mostly retirement on 47.5% of the last wage with unchanged spending)",
    "y10": {
     "median_target_chf": 163750,
     "median_sim_raw_chf": 92156,
-    "median_sim_calibrated_chf": 114661
+    "median_sim_calibrated_chf": 92156
    }
   },
   {
@@ -375,7 +411,9 @@
     7647
    ],
    "keep": 0.472,
+   "fitted": true,
    "n": 53,
+   "share_months_in_surplus": 0.6,
    "median_engine_net_flow_chf_month": 799,
    "y10": {
     "median_target_chf": 163043,
@@ -393,7 +431,9 @@
     1000000000
    ],
    "keep": 0.9052,
+   "fitted": true,
    "n": 10,
+   "share_months_in_surplus": 0.7,
    "median_engine_net_flow_chf_month": 986,
    "y10": {
     "median_target_chf": 147512,

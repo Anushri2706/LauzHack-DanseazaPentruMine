@@ -134,7 +134,7 @@ def _share(v):
 def report(res):
     print(f"Held-out profiles checked: {res['subjects']} (aged <= 40, employed or student; saving calibration "
           f"fitted at 10 and 20 years on the other half)")
-    ks = [c[-1] for c in res["table"]]
+    ks = [c[4] for c in res["table"] if c[5]]
     print(f"Keep factor (held-out fit, {len(ks)} cells): median {st.median(ks):.0%}, "
           f"range {min(ks):.0%}-{max(ks):.0%}")
     for y, r in res["by_years"].items():

@@ -6,6 +6,7 @@ python3 -m twin.chat --profile P00001                  # chat with a synthetic p
 python3 -m twin "What if I do a master's degree?" --profile P00001     # one-shot report, no LLM
 python3 -m twin "What if I lose my job for 6 months?" --inputs twin/example_user.json
 python3 -m unittest twin.test_engine -v                # sanity tests (must pass)
+python3 -m twin.limits --all                           # model simplifications + every placeholder / estimate
 python3 -m twin.calibration                            # refit the saving calibration (writes calibration.json, ~1 min)
 python3 -m twin.validate_decisions                     # check decisions against peers in that state (~1 min)
 python3 -m twin.explore --profile P00001               # NSGA-II trade-off front: decision x start month x levers
@@ -24,8 +25,8 @@ python3 -m twin "When should I do a master's?" --profile P00001
    11-29%. So the synthetic wealth table disagrees with both, the data wins, and the factor is shown
    openly. One keep factor (share of any monthly surplus kept) per age band x income tertile is fitted so
    the median simulated wealth after 10 and 20 years matches peers 10 and 20 years older. Fitted
-   values: median 18%, 4-15% for working ages with mid/high income, higher for low income; the 55-64 and
-   65+ low-income cells hit the 200% cap (their deficits are untouched by the factor). Income cells are
+   values: median 15% (fitted cells), 4-15% for working ages with mid/high income, higher for low income;
+   the 55-64 and 65+ low-income cells cannot be fitted and are left uncalibrated (see Known limits). Income cells are
    needed because in this data wealth barely rises with income. Deficit months are untouched. The old
    engine (`sim.py`, still behind the CLI, chat and explorer) keeps its own factors in `calibration_sim.json`.
 2. **Decisions** (`scenarios.py`) change income, spending or one-off costs on the calibrated baseline:
@@ -118,11 +119,23 @@ so use fictional details only.
 - **Analysis:** `peer_correlations.py` (which young traits move with older peers' finances).
 
 ## Known limits
-- Synthetic data and illustrative assumptions; not advice or a forecast.
-- No retirement yet: income continues unchanged past 65 (a warning is shown).
-- The ledger implies far more saving than the data's wealth levels; the saving calibration fixes the
-  average level, not individual profiles (`--raw` shows the uncalibrated result).
-- Decision parameters are illustrative; a master's in another canton is the only combined what-if.
-- Moving canton disagrees with peers (people in expensive cantons are richer in the data): the engine
-  does not assume a move raises pay.
-- Rent by canton comes from synthetic medians, not official data and not student-specific.
+
+`limits.py` holds the list shown by `python3 -m twin.limits`, the chat's `limits` command and the CLI; every
+chat answer ends with a one-line summary of it.
+- **Calibrated vs uncalibrated is always visible.** A code-written banner above every result says whether it
+  is calibrated, the keep factor and the group it was fitted on, and gives the uncalibrated median next to
+  the calibrated one (the search's banner does the same for the as-is plan).
+- **The calibration is a group correction, not your path.** Older peers are different people; one factor
+  per age band x income third makes medians match, not individuals (held-out: ~46% inside the peers'
+  middle 50%).
+- **Groups it cannot fit are left uncalibrated.** Low-income people aged 55+ are in surplus only ~15% of
+  simulated months (retirement on 47.5% of the last wage, spending unchanged), so no factor up to 200%
+  closes the gap; those cells used to sit at the 200% cap. They now keep 100%, say "NOT CALIBRATED" and
+  give the reason (calibration.json `fitted: false`).
+- **Wealth engine simplifications:** interest-only debt (principal constant), normal monthly returns,
+  three inflation regimes with hand-set switching, no individual cash flows for investments or debts, no
+  pillar 2/3 capital. Nothing shows these return or inflation assumptions predict real outcomes.
+- **Assumption register:** 111 assumptions across `backend/assumptions/*.csv` and the decision costs in
+  `assumptions.py`: 42 sourced (law or official statistics), 30 estimates (incl. the Vaud income tax
+  curve), 36 placeholders (incl. all market assumptions), 3 switches. `--all` lists the 66 to validate.
+- Synthetic data; not advice or a forecast. Moving canton changes housing cost only, not pay.

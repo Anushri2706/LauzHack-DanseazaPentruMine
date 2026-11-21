@@ -139,7 +139,10 @@ class SavingCalibration(unittest.TestCase):
         old = factors("sim")  # sim.py engine: one factor per age band
         self.assertTrue(all(0.0 <= k <= 1.0 for _, _, k in old))
         new = factors()       # regime engine: age band x income tertile
-        self.assertTrue(all(len(c) == 5 and 0.0 <= c[-1] <= K_MAX for c in new))
+        self.assertTrue(all(len(c) == 6 and 0.0 < c[4] <= K_MAX for c in new))
+        # a cell the factor cannot fit is left uncalibrated (100%), never reported at the cap
+        self.assertTrue(all(c[4] == 1.0 for c in new if not c[5]))
+        self.assertTrue(all(c[4] < K_MAX for c in new))
         for age in (16, 20, 30, 50, 70, 90):
             for income in (1000, 6000, 20000):
                 self.assertIsNotNone(keep_factor(age, new, income))
@@ -203,6 +206,21 @@ class Language(unittest.TestCase):
             self.assertEqual(validate({"inputs": {}, "scenario": sc})[1], sc)
 
 
+class Limits(unittest.TestCase):
+    def test_register_labels_every_assumption(self):
+        from .limits import register, status, summary
+        rows = register()
+        self.assertTrue(rows and all(r["status"] in ("sourced", "estimate", "placeholder", "switch") for r in rows))
+        self.assertEqual(sum(summary().values()), len(rows))
+        self.assertEqual(status("Guess"), "placeholder")
+        self.assertEqual(status("EST"), "estimate")
+        self.assertEqual(status("AVIG Art. 22"), "sourced")
+        self.assertEqual(status("internal/expense-priors.md", "[EST] Rounded"), "estimate")
+        files = {r["file"] for r in rows}
+        self.assertIn("backend/assumptions/market_assumptions.csv", files)
+        self.assertIn("backend/assumptions/tax_assumptions.csv", files)
+
+
 class RegimeBridge(unittest.TestCase):
     """twin/engine.py: the regime engine (backend/regime) plus cash, investments, debt and inflation."""
 
@@ -258,6 +276,31 @@ class RegimeBridge(unittest.TestCase):
         self.assertEqual(m["months_in_state"]["student"], 24)
         self.assertEqual(res["median_end_wealth_difference"], m["nw_p50"] - base["nw_p50"])
         self.assertIn("baseline", res["session"].results)
+
+    def test_results_show_calibrated_and_uncalibrated(self):
+        from . import calibration
+        from .run import whatif
+        p = calibration.apply(dict(self.p, tags=dict(self.p["tags"])))
+        res = whatif(p, "part_time", paths=30)
+        self.assertTrue(res["banner"][0].startswith("CALIBRATED"))
+        for row in res["rows"]:
+            self.assertIn("uncalibrated", row)
+            self.assertIn(f"CHF {row['uncalibrated']['nw_p50']:,.0f} uncalibrated", res["banner"][1])
+        if p["keep_factor"] < 1:  # less kept -> less wealth than the engine as-is
+            self.assertLess(res["rows"][0]["nw_p50"], res["rows"][0]["uncalibrated"]["nw_p50"])
+
+    def test_unfittable_group_is_labelled_not_calibrated(self):
+        from . import calibration
+        from .profile import load_profile
+        from .run import whatif
+        cell = next(c for c in calibration.factors() if not c[5])
+        p = next(q for q in (load_profile(f"P{i:05d}") for i in range(1, 400))
+                 if cell[0] <= q["age"] < cell[1] and cell[2] <= q["income"] < cell[3] and q["employment"] != "student")
+        calibration.apply(p)
+        self.assertEqual((p["keep_factor"], p["calibration"]["fitted"]), (1.0, False))
+        res = whatif(p, "baseline", paths=20)
+        self.assertTrue(res["banner"][0].startswith("NOT CALIBRATED"))
+        self.assertTrue(any("NOT calibrated" in w for w in res["warnings"]))
 
     def test_search_front_is_non_dominated_and_times_the_decision(self):
         from regime.explore import dominates

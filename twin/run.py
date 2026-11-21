@@ -1,4 +1,6 @@
 """Run one what-if against the baseline through TwinSession's tools (shared by the CLI and the chat)."""
+import numpy as np
+
 from .engine import scenario
 
 
@@ -9,7 +11,11 @@ def warnings_for(p, key):
     if key == "masters" and p["age"] > 45:
         w.append("A degree late in a career has few working years left to pay off before retirement at 65.")
     k = p.get("keep_factor")
-    if k is not None:
+    cal = p.get("calibration") or {}
+    if cal and not cal.get("fitted", True):
+        w.append(f"Saving is NOT calibrated for your group (ages {cal['group']}): {cal.get('reason') or 'no factor fits'}. "
+                 "Results use the engine's saving as-is and are likely too low for this group.")
+    elif k is not None:
         what = (f"you are assumed to keep {k:.0%} of any monthly surplus" if k <= 1 else
                 f"your modelled monthly surplus is scaled by {k:.0%}")
         w.append(f"Saving is calibrated: {what}, because similar people 10 and 20 years older in the "
@@ -38,6 +44,25 @@ def _row(summary, notes):
             "months_in_state": summary["expected_months_in_state"]}
 
 
+def calibration_banner(p, rows):
+    """Code-written (not LLM) statement of whether results are calibrated, with both values side by side."""
+    cal, k = p.get("calibration") or {}, p.get("keep_factor")
+    years = rows[0]["years"][-1]["year"]
+    both = "; ".join(f"{r['scenario']} CHF {r['nw_p50']:,.0f} calibrated / CHF {r['uncalibrated']['nw_p50']:,.0f} "
+                     f"uncalibrated" for r in rows)
+    if k is None:
+        return [f"UNCALIBRATED results: the engine's saving is used as-is. Median net worth after {years} years: "
+                + "; ".join(f"{r['scenario']} CHF {r['nw_p50']:,.0f}" for r in rows) + "."]
+    if not cal.get("fitted", True):
+        return [f"NOT CALIBRATED for your group (ages {cal['group']}): no keep factor fits it, so results are the engine "
+                f"as-is. Median net worth after {years} years: "
+                + "; ".join(f"{r['scenario']} CHF {r['nw_p50']:,.0f}" for r in rows) + "."]
+    return [f"CALIBRATED results: the engine's monthly surplus is scaled to {k:.0%} so that people like you "
+            f"(ages {cal.get('group', 'your age and income group')}) match the wealth of people 10-20 years older in the "
+            "data. This corrects a group average, not your own path.",
+            f"Median net worth after {years} years: {both}."]
+
+
 def whatif(p, key, params=None, paths=300):
     """Baseline and what-if via TwinSession.simulate / compare. Returns plain data."""
     s, sid, notes = scenario(p, key, params, n_paths=paths)
@@ -45,10 +70,18 @@ def whatif(p, key, params=None, paths=300):
     rows = [_row(s.simulate("baseline"), [baseline_note(p)])]
     out = {"rows": rows, "warnings": warnings_for(p, key), "paths": paths, "horizon_months": s.horizon_months,
            "keep_factor": s.keep_factor}
-    rows[0]["nw_samples"] = s.results["baseline"].wealth.wealth().tolist()
+    ids = ["baseline"]
     if sid != "baseline":
         rows.append(_row(s.simulate(sid), notes))
-        rows[1]["nw_samples"] = s.results[sid].wealth.wealth().tolist()
+        ids.append(sid)
+    for row, i in zip(rows, ids):
+        w = s.results[i].wealth
+        row["nw_samples"] = w.wealth().tolist()
+        raw = w.wealth(1.0)  # same futures, keep factor 100%
+        row["uncalibrated"] = {q: round(float(np.quantile(raw, v))) for q, v in
+                               (("nw_p10", .1), ("nw_p50", .5), ("nw_p90", .9))}
+    out["banner"] = calibration_banner(p, rows)
+    if sid != "baseline":
         out["compare"] = s.compare("baseline", sid)["delta_b_minus_a"]
         out["median_end_wealth_difference"] = out["compare"]["net_worth_real_p50_chf"]
     if p.get("trajectory"):

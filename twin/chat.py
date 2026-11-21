@@ -3,7 +3,7 @@
     python3 -m twin.chat                     # new user: describe yourself, then ask what-ifs
     python3 -m twin.chat --profile P00001    # use a synthetic profile, just ask what-ifs
 
-Type 'state' to see what the twin knows, 'quit' to exit.
+Type 'state' to see what the twin knows, 'limits' for the model's simplifications, 'quit' to exit.
 Flow per message: understand (LLM + validation) -> update state -> engine -> explain (LLM + number check).
 The engine is backend/regime's TwinSession (via twin/engine.py): a what-if calls its simulate and compare
 tools, "explore" / "when should I ...?" calls its explore tool (NSGA-II with a start-month gene).
@@ -13,7 +13,8 @@ import re
 
 from . import calibration
 from .agents import explain, explain_frontier, understand
-from .explore import frontier, highlights, print_front, print_per_decision, print_timing
+from .explore import banner, frontier, highlights, print_front, print_per_decision, print_timing
+from .limits import FOOTER, limits_text
 from .llm import describe
 from .profile import REQUIRED, canton_rent_index, load_profile, profile_from_inputs
 from .run import whatif
@@ -34,8 +35,11 @@ def fmt_table(results):
     lines = []
     for r in results["rows"]:
         goals = "; ".join(f"{g} {v:.0%}" for g, v in r["goals"].items()) or "no goals"
+        raw = r.get("uncalibrated")
         lines.append(f"  {r['scenario']}\n    end wealth P10 {r['nw_p10']:,.0f} | median {r['nw_p50']:,.0f} | "
-                     f"P90 {r['nw_p90']:,.0f}  ·  financing needed {r['p_shortfall']:.0%}  ·  goals: {goals}")
+                     f"P90 {r['nw_p90']:,.0f}  ·  financing needed {r['p_shortfall']:.0%}  ·  goals: {goals}"
+                     + (f"\n    uncalibrated: P10 {raw['nw_p10']:,.0f} | median {raw['nw_p50']:,.0f} | "
+                        f"P90 {raw['nw_p90']:,.0f}" if raw else ""))
     return "\n".join(lines)
 
 
@@ -80,6 +84,7 @@ def run_explore(p, message, only=None):
     import io
     from .run import warnings_for
     res = frontier(p, only=only)
+    head = banner(p, res) + "\n\n"
     text, flags = explain_frontier(p, res, highlights(res), warnings_for(p, "explore"), message)
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
@@ -87,11 +92,11 @@ def run_explore(p, message, only=None):
         print_timing(res)
         print_per_decision(res)
     if text is None:
-        return buf.getvalue() + f"(explanation unavailable: {flags[0]})"
+        return head + buf.getvalue() + f"(explanation unavailable: {flags[0]})\n\n" + FOOTER
     if flags:
-        return (text + f"\n(check: these numbers in the explanation do not match the engine output: "
-                f"{', '.join(flags)} - see the table below)\n" + buf.getvalue())
-    return text
+        return (head + text + f"\n(check: these numbers in the explanation do not match the engine output: "
+                f"{', '.join(flags)} - see the table below)\n" + buf.getvalue() + "\n" + FOOTER)
+    return head + text + "\n\n" + FOOTER
 
 
 def handle(message, state, fixed_profile=None, paths=300):
@@ -200,6 +205,7 @@ def handle(message, state, fixed_profile=None, paths=300):
     out.append(f"{'Re-running' if rerun_only else 'Simulating'} {NAMES[key]}{when} {shown or ''} against your "
                f"baseline over {paths} possible futures...")
     results = whatif(p, key, params, paths)
+    out.extend(results["banner"] + [""])
     text, flags = explain(p, results, message)
     if text is None:
         out.append(fmt_table(results))
@@ -210,6 +216,7 @@ def handle(message, state, fixed_profile=None, paths=300):
             out.append(f"(check: these numbers in the explanation do not match the engine output: "
                        f"{', '.join(flags)} - see the table below)")
             out.append(fmt_table(results))
+    out += ["", FOOTER]
     return "\n".join(out)
 
 
@@ -220,7 +227,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
     fixed = calibration.apply(peer_context(load_profile(a.profile))) if a.profile else None
     print(f"Financial Twin chat  ·  language model: {describe()}")
-    print("Illustrative simulations on synthetic data. Not financial advice. Type 'quit' to exit.\n")
+    print("Illustrative simulations on synthetic data. Not financial advice. "
+          "Type 'limits' for the model's simplifications, 'quit' to exit.\n")
     if fixed:
         print(f"Using profile {fixed['id']} {fixed['name']}, {fixed['age']}, {fixed['employment']}. Ask a what-if.")
     else:
@@ -235,6 +243,9 @@ def main(argv=None):
             continue
         if msg.lower() in ("quit", "exit"):
             break
+        if msg.lower() == "limits":
+            print("twin> " + limits_text().replace("\n", "\n      "))
+            continue
         if msg.lower() == "state":
             print(f"twin> {describe_inputs(state) or 'nothing yet'}")
             continue

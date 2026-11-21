@@ -21,9 +21,28 @@ from .engine import explore_options, session_for
 
 def frontier(p, only=None, max_start_month=36, n_paths=100, gens=30, pop=40):
     """TwinSession.explore for profile p. only: restrict to baseline + one decision kind."""
+    import numpy as np
     s = session_for(p, n_paths=n_paths)
-    return s.explore(explore_options(p, only), max_start_month=max_start_month, n_paths=n_paths,
-                     generations=gens, population=pop)
+    res = s.explore(explore_options(p, only), max_start_month=max_start_month, n_paths=n_paths,
+                    generations=gens, population=pop)
+    s.simulate("baseline")
+    raw = s.results["baseline"].wealth.wealth(1.0)  # same futures, keep factor 100%
+    res["as_is_uncalibrated_median"] = round(float(np.median(raw)))
+    return res
+
+
+def banner(p, res):
+    """Code-written statement of whether the search is calibrated (the front is scored calibrated)."""
+    cal, k = p.get("calibration") or {}, p.get("keep_factor")
+    years = res["settings"]["horizon_months"] // 12
+    if k is None or not cal.get("fitted", True):
+        why = "no keep factor fits your group" if k is not None else "calibration is off"
+        return (f"UNCALIBRATED search ({why}): plans are scored on the engine's saving as-is. As-is median net worth "
+                f"after {years} years: CHF {res['as_is']['wealth_median']:,.0f}.")
+    return (f"CALIBRATED search: every plan is scored with the engine's monthly surplus scaled to {k:.0%} "
+            f"(a group average for {cal.get('group', 'your group')}, not your own path); expense cuts and side "
+            f"income are kept in full. As-is median net worth after {years} years: CHF "
+            f"{res['as_is']['wealth_median']:,.0f} calibrated / CHF {res['as_is_uncalibrated_median']:,.0f} uncalibrated.")
 
 
 def highlights(res):
@@ -86,9 +105,11 @@ if __name__ == "__main__":
     prof = load_profile(a.profile)
     if not a.raw:
         calibration.apply(prof)
-    calib = "" if a.raw else f" · keep factor {prof['keep_factor']:.0%} (calibrated)"
-    print(f"{prof['id']} {prof['name']}, {prof['age']}, {prof['employment']}, {prof['canton']}{calib}\n")
+    print(f"{prof['id']} {prof['name']}, {prof['age']}, {prof['employment']}, {prof['canton']}\n")
     r = frontier(prof, only=a.only)
+    print(banner(prof, r) + "\n")
     print_front(r, limit=15)
     print_timing(r)
     print_per_decision(r)
+    from .limits import FOOTER
+    print("\n" + FOOTER.replace("Type 'limits'", "Run `python3 -m twin.limits`"))

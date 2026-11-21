@@ -64,6 +64,8 @@ Rules:
   chance of needing financing, months below the cash buffer, and goal probabilities.
 - The engine simulates life states month by month (employed, part-time, job search, student, retired).
   If months_in_each_life_state differ between scenarios, say so in one sentence.
+- end_wealth_chf is calibrated; end_wealth_uncalibrated_chf is the engine as-is. The reader already sees both
+  medians above your text, so do not repeat them; use the calibrated values in your explanation.
 - Say which inputs were estimated or defaulted rather than provided.
 - If a peer_path is given, say in one sentence where people at the same percentile are at older ages,
   and that these are different people, not a forecast.
@@ -253,6 +255,8 @@ def _readable(row):
         "scenario": row["scenario"],
         "assumption_notes": row["notes"],
         "end_wealth_chf": {"p10": row["nw_p10"], "median": row["nw_p50"], "p90": row["nw_p90"]},
+        "end_wealth_uncalibrated_chf": {"p10": row["uncalibrated"]["nw_p10"], "median": row["uncalibrated"]["nw_p50"],
+                                        "p90": row["uncalibrated"]["nw_p90"]} if row.get("uncalibrated") else None,
         "chance_of_needing_financing_percent": round(row["p_shortfall"] * 100),
         "median_months_with_negative_cash": row["median_short_months"],
         "bad_case_peak_shortfall_chf": row["p90_peak_shortfall"],

@@ -52,7 +52,11 @@ def main(argv=None):
         print_front(res, limit=15)
         print_timing(res)
         print_per_decision(res)
-        print(f"\nLimits: {LIMITS}")
+        from .explore import banner
+        print("\n" + banner(p, res))
+        print(f"\nLimits: {LIMITS}\n")
+        from .limits import print_limits
+        print_limits()
         return 0
     print(f"Question : {a.question}")
     print(f"Profile  : {p['id']} {p['name']}, {p['age']}, {p['city']} ({p['canton']}), {p['employment']}, {p['household']}")
@@ -65,11 +69,18 @@ def main(argv=None):
 
     res = whatif(p, key, params, a.paths)
     rows = res["rows"]
+    for line in res["banner"]:
+        print(line)
+    print()
     print(f"Results over {p['horizon']} months, {a.paths} simulated futures "
           f"(life regimes, inflation regimes, market returns), regime engine via TwinSession:\n")
     for s in rows:
         print(f"== {s['scenario']}")
-        print(f"   Net worth at end (today's CHF)  P10 {fmt(s['nw_p10'])} | median {fmt(s['nw_p50'])} | P90 {fmt(s['nw_p90'])}")
+        tag = "uncalibrated" if a.raw else "calibrated  "
+        print(f"   Net worth at end, {tag} (today's CHF)  P10 {fmt(s['nw_p10'])} | median {fmt(s['nw_p50'])} | P90 {fmt(s['nw_p90'])}")
+        if not a.raw:
+            u = s["uncalibrated"]
+            print(f"   Net worth at end, uncalibrated (today's CHF)  P10 {fmt(u['nw_p10'])} | median {fmt(u['nw_p50'])} | P90 {fmt(u['nw_p90'])}")
         print(f"   Chance of needing financing (cash < 0): {s['p_shortfall']:.0%}"
               f"  (median {s['median_short_months']:.0f} months; bad case peak CHF {fmt(s['p90_peak_shortfall'])})")
         print(f"   Median months below {A('buffer_months')}-month buffer: {s['median_buffer_months']:.0f}")
@@ -128,7 +139,9 @@ def main(argv=None):
         print("\nAssumptions:")
         for k, (v, why) in ASSUMPTIONS.items():
             print(f"  {k} = {v}  -- {why}")
-    print(f"\nLimits: {LIMITS}")
+    print(f"\nLimits: {LIMITS}\n")
+    from .limits import print_limits
+    print_limits()
     return 0
 
 
