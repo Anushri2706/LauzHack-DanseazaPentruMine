@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7f4">
+  <title>Financial Twin — explore your what-ifs</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#"><span class="brand-mark">✳</span> financial<span>twin</span><small> / LAB</small></a>
+    <span class="top-note"><span class="status-dot"></span> A space to think ahead</span>
+  </header>
+
+  <main>
+    <section class="intro">
+      <div>
+        <div class="eyebrow"><span class="spark">✳</span> YOUR FUTURE, IN PERSPECTIVE</div>
+        <h1>Big decisions.<br><em>Clearer picture.</em></h1>
+        <p>Life doesn't follow a spreadsheet. But a little perspective can help you take the next step with confidence.</p>
+        <a class="intro-link" href="#workspace">Explore your what-if <span>↘</span></a>
+      </div>
+      <div class="intro-art" aria-hidden="true">
+        <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
+        <div class="art-center">YOU<span>are here</span></div>
+        <span class="art-tag tag-one">what if I move? ↗</span>
+        <span class="art-tag tag-two">a new direction ✳</span>
+        <span class="art-dot dot-one"></span><span class="art-dot dot-two"></span>
+      </div>
+    </section>
+
+    <div class="section-heading" id="workspace">
+      <div><div class="eyebrow">THE EXPLORER <span class="heading-line"></span> 01</div><h2>Meet your financial twin<span>.</span></h2></div>
+      <p>Start with a fictional snapshot, then see how one decision could change the path ahead.</p>
+    </div>
+
+    <div class="workspace">
+      <aside class="panel profile-panel">
+        <div class="panel-title"><div><span class="step-number">01 / THE STARTING POINT</span><h3>Your snapshot</h3></div><span class="panel-icon">✳</span></div>
+        <p class="panel-description">A fictional profile to make your own. All values stay in this browser.</p>
+        <form id="inputs" novalidate>
+          <label for="savings">Current savings <span>€</span></label>
+          <input id="savings" name="savings" type="number" min="0" max="10000000" step="any" value="20000" required>
+          <label for="income">Annual take-home income <span>€ / year</span></label>
+          <input id="income" name="income" type="number" min="0" max="10000000" step="any" value="48000" required>
+          <label for="expenses">Living expenses <span>€ / month</span></label>
+          <input id="expenses" name="expenses" type="number" min="0" max="1000000" step="any" value="2500" required>
+          <div class="divider"></div>
+          <div class="assumptions-title">Model assumptions <span>✦</span></div>
+          <div class="input-grid">
+            <div><label for="incomeGrowth">Income growth <span>% / yr</span></label><input id="incomeGrowth" name="incomeGrowth" type="number" min="0" max="20" step="any" value="2" required></div>
+            <div><label for="inflation">Inflation <span>% / yr</span></label><input id="inflation" name="inflation" type="number" min="0" max="20" step="any" value="2" required></div>
+            <div><label for="returnRate">Balance growth <span>% / yr</span></label><input id="returnRate" name="returnRate" type="number" min="0" max="20" step="any" value="1" required></div>
+            <div><label for="years">Time horizon <span>years</span></label><input id="years" name="years" type="number" min="1" max="30" step="1" value="10" required></div>
+          </div>
+          <p id="input-error" class="input-error" role="alert" hidden>Please enter values within the allowed ranges: amounts must be non-negative, rates 0–20%, and the horizon 1–30 whole years.</p>
+        </form>
+        <div class="privacy-note"><span>◌</span> No accounts, no personal data needed.</div>
+      </aside>
+
+      <div class="explore-column">
+        <section class="panel decision-panel">
+          <div class="panel-title"><div><span class="step-number">02 / CHANGE THE STORY</span><h3>Choose a what-if</h3></div><span class="panel-icon">↗</span></div>
+          <p class="panel-description">Pick a life event to compare against staying on your current path.</p>
+          <div id="scenario-options" class="scenario-options" role="group" aria-label="Choose a life event"></div>
+          <div class="scenario-detail"><span>THE ASSUMPTION</span><p id="scenario-assumption"></p></div>
+        </section>
+
+        <section class="panel results-panel" aria-live="polite">
+          <div class="results-heading"><div><span class="step-number">03 / SEE THE POSSIBILITIES</span><h3>Two paths, one starting point<span>.</span></h3><p class="panel-description">Estimated liquid balance over time</p></div><span class="projection-pill">✦ &nbsp; NOT A PREDICTION</span></div>
+          <div class="legend"><span><i class="legend-baseline"></i> Current path</span><span><i class="legend-scenario"></i> <span id="legend-scenario"></span></span></div>
+          <div class="chart-wrap"><svg id="chart" viewBox="0 0 720 250" role="img" aria-labelledby="chart-title chart-desc"><title id="chart-title">Projected liquid balances</title><desc id="chart-desc"></desc></svg></div>
+          <div class="metrics">
+            <div><span>YOUR CURRENT PATH</span><strong id="baseline-final"></strong><small>estimated balance</small></div>
+            <div><span>YOUR WHAT-IF</span><strong id="scenario-final"></strong><small>estimated balance</small></div>
+            <div><span>THE DIFFERENCE</span><strong id="difference"></strong><small>compared to current path</small></div>
+          </div>
+          <div class="insight"><div class="insight-icon">✦</div><div><span>FOOD FOR THOUGHT</span><p id="insight-text"></p><p id="risk-text"></p></div></div>
+        </section>
+      </div>
+    </div>
+    <section class="disclaimer"><span>✳</span><p><strong>A model, not a crystal ball.</strong> These simplified, deterministic projections are not financial advice. They exclude taxes beyond take-home pay, debt repayment, property value, and many real-life surprises. A negative balance represents a funding gap; the same balance growth rate is applied to positive and negative balances. Actual outcomes will differ.</p></section>
+  </main>
+  <footer><span class="brand footer-brand"><span class="brand-mark">✳</span> financial<span>twin</span></span><span>Made for the paths not yet taken. &nbsp; ✦</span></footer>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
