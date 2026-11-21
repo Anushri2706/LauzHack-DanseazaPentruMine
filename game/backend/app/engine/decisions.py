@@ -53,6 +53,8 @@ def _work_terms(state: State, p: dict) -> tuple[float, float]:
     """(salary, other living costs) for a Swiss job, depending on whether a master's is done."""
     if state.has_master:
         return p["salary_master"], p["living_working_master"]
+    if state.no_degree:  # game only: left school without a degree
+        return p["salary_work"] * p["no_degree_wage_factor"], p["living_working"]
     return p["salary_work"], p["living_working"]
 
 

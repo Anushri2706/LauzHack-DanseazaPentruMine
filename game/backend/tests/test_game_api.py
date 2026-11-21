@@ -61,7 +61,7 @@ def test_editing_assumptions_never_unlives_the_past():
 
 
 def test_projection_bands_ghosts_and_no_surprises():
-    req = {"turns": [WORK], "current_month": 12, "world": 137, "n": 60}
+    req = {"turns": [WORK], "current_month": 12, "world": 137, "n": 60, "assumptions": {"horizon_months": 120}}
     p = client.post("/game/projection", json=req).json()
     nw = p["bands"]["net_worth"]
     assert len(nw["p10"]) == 108 and len(p["lived"]["net_worth"]) == 12
@@ -95,7 +95,7 @@ def test_catalogue():
 
 
 def test_projection_at_the_end_still_gives_ranges():
-    req = {"turns": [WORK], "current_month": 120, "world": 9, "n": 40}
+    req = {"turns": [WORK], "current_month": 120, "world": 9, "n": 40, "assumptions": {"horizon_months": 120}}
     p = client.post("/game/projection", json=req)
     assert p.status_code == 200, p.text
     p = p.json()

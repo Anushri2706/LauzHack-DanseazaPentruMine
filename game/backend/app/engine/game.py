@@ -22,12 +22,13 @@ import numpy as np
 from .assumptions import validate_params
 from .catalogue import (FLATS, HABITS, HOMES, ITEMS, flat_factor_key, habit_cost_key, habit_joy_key,
                         home_price_key, item_joy_key, item_price_key)
-from .decisions import (InvalidDecision, apply_decision, complete_programs, options, repay_all,
-                        take_loan)
+from . import regime as rg
+from .decisions import (InvalidDecision, _start_job, _work_terms, apply_decision, complete_programs, options,
+                        repay_all, take_loan)
 from .finance import annuity_payment, inflation_factor
 from .narrative import chf
 from .simulate import initial_state, run_branch, step_month
-from .state import Decision, OneOff, State
+from .state import Decision, OneOff, State, fast_replace
 
 
 class InvalidAction(InvalidDecision):
@@ -42,9 +43,11 @@ LIFE_LABELS = {
     "master_pt": "Part-time master's while working", "move_abroad": "Move abroad",
     "return_home": "Move back to Switzerland", "drop_out": "Leave the master's and start working",
     "quit_job": "Quit your job", "reduce_hours": "Reduce to 80%", "full_hours": "Back to full time",
+    "graduate": "🎓 Get your degree", "quit_school": "🚪 Drop out without a degree",
 }
 LIFE_PLACE = {"start_work": "office", "quit_job": "office", "reduce_hours": "office", "full_hours": "office",
               "master_ft": "university", "master_pt": "university", "drop_out": "university",
+              "graduate": "university", "quit_school": "university",
               "move_abroad": "station", "return_home": "station"}
 PLACES = ("home", "university", "office", "cafe", "shop", "bank", "realestate", "station")
 SAVINGS_PRESETS = (0.0, 0.25, 0.5, 0.75, 1.0)
@@ -101,6 +104,15 @@ def life_reason(s: State, t: int, p: dict, cid: str) -> str | None:
         if s.status != "working":
             return "You need a job in Switzerland first."
         return None if s.work_share < 1 else "You already work full time."
+    if cid in ("graduate", "quit_school"):
+        if s.status != "studying":
+            return "You're not enrolled in school."
+        if cid == "graduate" and s.program is not None:
+            return (f"Your master's finishes by itself in {max(0, (s.program_end or t) - t)} months: "
+                    "keep studying, or drop out.")
+        return None
+    if cid in ("master_ft", "master_pt") and s.no_degree:
+        return "You left school without a degree: a master's needs a bachelor's first."
     if cid not in LEGACY_LIFE:
         return f"Unknown life choice '{cid}'."
     valid = {c["id"] for c in options(s, t, p)["choices"]}
@@ -251,6 +263,16 @@ def _apply_life(s: State, t: int, p: dict, cid: str) -> State:
         if cid in ("move_abroad", "return_home"):
             s = replace(s, flat_factor=1.0)  # new country, new flat
         return s
+    if cid in ("graduate", "quit_school"):
+        # Leave school: remaining tuition is cancelled. A retiree goes back to retirement; anyone else
+        # starts looking for a job (the regime HMM decides when they find one).
+        kept = tuple(o for o in s.scheduled if not (o.kind == "tuition" and o.month >= t))
+        no_degree = s.no_degree or (cid == "quit_school" and s.program is None)
+        s = replace(s, scheduled=kept, program=None, program_start=None, program_end=None, no_degree=no_degree)
+        if s.retiree:
+            return replace(s, status="retired", retiree=False)
+        return replace(s, status="unemployed", salary=0.0, salary_start=t, living=p["living_studying"],
+                       work_share=1.0)
     if cid == "quit_job":
         return replace(s, status="unemployed", salary=s.salary * p["quit_benefit_rate"], salary_start=t,
                        living=p["living_studying"], work_share=1.0, last_switch=t)
@@ -270,7 +292,17 @@ def apply_action(s: State, a: Action, t: int, p: dict, luck: tuple[int, int] = (
     infl = inflation_factor(p["inflation_annual"], t)
     letters: list[dict] = []
     if a.type == "life_choice":
+        was_master = s.program is not None
         s = _apply_life(s, t, p, a.id)
+        if a.id == "graduate":
+            letters.append(_letter(t, "degree", "🎓", "You got your degree!",
+                                   "Congratulations. You're looking for your first job now; "
+                                   f"jobs pay about {chf(_work_terms(s, p)[0])}/month."))
+        elif a.id == "quit_school":
+            kept = "You keep your bachelor's. " if was_master else "You have no degree: a master's is closed to you. "
+            letters.append(_letter(t, "dropped_out", "🚪", "You left school",
+                                   kept + f"Jobs pay about {chf(_work_terms(s, p)[0])}/month; "
+                                   "you're looking for one now."))
     elif a.type == "set_habit":
         kept = tuple(x for x in s.habits if x[0] != a.id)
         lv = int(a.value)
@@ -358,6 +390,106 @@ def _world_letters(t: int, events: list[dict], pre: State, row: dict, p: dict) -
     return out
 
 
+AHV_ADJUST_EVERY = 24   # months; month 0 = Jan 2025, so Jan 2027, Jan 2029, ... (AHVG Art. 33ter)
+AHV_13TH_FIRST = 23     # December 2026
+
+
+def mixed_index(p: dict) -> float:
+    """Swiss AHV mixed index: the average of nominal wage growth and inflation (per year)."""
+    return (p["wage_index_annual"] + p["inflation_annual"]) / 2.0
+
+
+def ahv_max_at(t: int, p: dict) -> float:
+    """Maximum AHV pension in month t: the 2025 value, raised by the mixed index at each adjustment."""
+    return p["ahv_max_pension"] * (1 + mixed_index(p)) ** (2 * (t // AHV_ADJUST_EVERY))
+
+
+def pension_month(s: State, t: int, p: dict) -> tuple[State, float, list[dict]]:
+    """Swiss pension rules for a retiree in month t: AHV indexation every 2 years, 13th AHV pension in December.
+
+    Returns (state, extra income this month, letters)."""
+    letters: list[dict] = []
+    ahv, bvg = s.pension_ahv, s.pension_bvg
+    if ahv <= 0 and bvg <= 0 and s.salary > 0:  # retired from the start: split the pension once
+        ahv = min(s.salary, ahv_max_at(t, p))
+        bvg = s.salary - ahv
+        s = fast_replace(s, pension_ahv=ahv, pension_bvg=bvg)
+    if t > 0 and t % AHV_ADJUST_EVERY == 0 and ahv > 0:
+        f = (1 + mixed_index(p)) ** 2
+        ahv *= f
+        s = fast_replace(s, pension_ahv=ahv, salary=ahv + bvg)
+        letters.append(_letter(t, "pension_indexed", "📈", "AHV pension adjusted",
+                               f"The Federal Council adjusts AHV pensions to the mixed index (+{f - 1:.1%} over two "
+                               f"years). Your AHV pension is now {chf(ahv)}/month; your BVG pension of {chf(bvg)} "
+                               "stays the same."))
+    extra = ahv if p["ahv_13th_pension"] >= 0.5 and t >= AHV_13TH_FIRST and t % 12 == 11 else 0.0
+    return s, extra, letters
+
+
+def life_regime(s: State, t: int, p: dict, world: dict | None) -> tuple[State, float, float, list[dict]]:
+    """This month's regime from the HMM chain, its effect on the player and the letters it sends.
+
+    Returns (state, income multiplier, extra income, letters). Runs after the player's actions."""
+    letters: list[dict] = []
+    age = s.start_age + t / 12.0
+    in_labour = s.status in ("working", "abroad", "unemployed") or (s.status == "studying" and s.program is None)
+    if age >= p["retirement_age"] and in_labour:
+        base = s.salary / s.work_share if s.status in ("working", "abroad") else _work_terms(s, p)[0]
+        pension = max(p["pension_income"], base * p["pension_replacement_rate"])
+        ahv = min(pension, ahv_max_at(t, p))
+        letters.append(_letter(t, "retired", "🌅", "You retired",
+                               f"At {int(age)} you leave the labour market (AHV age rule). Your pension is "
+                               f"{chf(pension)}/month, {p['pension_replacement_rate']:.1%} of your last full salary: "
+                               f"AHV {chf(ahv)} (adjusted to the mixed index every 2 years, plus a 13th AHV "
+                               f"pension each December) and BVG {chf(pension - ahv)} (not indexed)."))
+        s = fast_replace(s, status="retired", salary=pension, salary_start=t, work_share=1.0,
+                         regime="retired", regime_dwell=0, pension_ahv=ahv, pension_bvg=pension - ahv)
+    if s.status == "retired" or s.retiree:  # a retiree studying keeps the pension (and its rules)
+        s, extra, ls = pension_month(s, t, p)
+        reg = "retired" if s.status == "retired" else "student"
+        return fast_replace(s, regime=reg, regime_dwell=0), 1.0, extra, letters + ls
+    u = world.get("regime_u") if world else None
+    if u is None:  # flat labour model (or no world): the regime follows the status
+        r = rg.regime_for_status(s.status)
+        mult = float(world["income_mult"][t]) if world is not None else 1.0
+        return fast_replace(s, regime=rg.STATES[r], regime_dwell=0), mult, 0.0, letters
+    if s.status == "studying":
+        return fast_replace(s, regime=rg.STATES[rg.regime_for_status(s.status)], regime_dwell=0), 1.0, 0.0, letters
+    prev = rg.IDX.get(s.regime)
+    if s.status == "unemployed":
+        start = rg.J
+    else:
+        start = prev if prev in rg.LABOUR else rg.E
+    dwell = s.regime_dwell if start == rg.J and prev == rg.J else 0
+    A = rg.matrix_at(world, t)
+    if s.status == "unemployed" and prev != rg.J:
+        r = rg.J  # the month you quit starts the search
+    elif t < len(u) and A is not None:
+        r = rg.step(start, age, s.has_master, dwell, A, float(u[t]))
+    else:  # "no surprises": nobody loses a job, spells end
+        r = rg.J if s.status == "unemployed" else rg.E
+    mult = 1.0
+    if s.status in ("working", "abroad"):
+        if r == rg.J:
+            mult = p["unemployment_benefit_rate"]
+            if start != rg.J:
+                letters.append(_letter(t, "income_loss", "📮", "Your job ended",
+                                       f"The labour market turned (regime HMM, age {int(age)}): you get "
+                                       f"{p['unemployment_benefit_rate']:.0%} of your income as benefits "
+                                       "until you find work again."))
+        elif start == rg.J:
+            letters.append(_letter(t, "back_to_work", "💼", "Back at work",
+                                   f"After {dwell + 1} months of searching you are working again."))
+    elif s.status == "unemployed" and r in (rg.E, rg.PT):
+        sal, living = _work_terms(s, p)
+        s = _start_job(s, t, "working", sal, p["rent"], living)
+        s = fast_replace(s, work_share=1.0)
+        letters.append(_letter(t, "found_job", "💼", "You found a job",
+                               f"After {dwell + 1} months of searching you start at {chf(sal)}/month."))
+    s = fast_replace(s, regime=rg.STATES[r], regime_dwell=dwell + 1 if r == rg.J else 0)
+    return s, mult, 0.0, letters
+
+
 def run_turns(p: dict, turns: list[Turn], start: State | None = None, world: dict | None = None,
               luck: tuple[int, int] = (42, 0), strict: bool = True, until: int | None = None,
               resume: tuple[State, int] | None = None, keep_states: bool = False,
@@ -400,12 +532,14 @@ def run_turns(p: dict, turns: list[Turn], start: State | None = None, world: dic
             s = _apply_life(s, t, p, "start_work")
         if keep_states:
             applied[t] = s
+        s, mult, extra, ls = life_regime(s, t, p, world)
+        letters.extend(ls)
         pre = s
         if world is None:
-            s, row = step_month(s, p)
+            s, row = step_month(s, p, income_mult=mult, income_extra=extra)
         else:
-            s, row = step_month(s, p, float(world["ret"][t]), float(world["income_mult"][t]),
-                                float(world["rent_mult"][t]))
+            s, row = step_month(s, p, float(world["ret"][t]), mult, float(world["rent_mult"][t]), extra)
+        row["regime"] = rg.label(rg.IDX[pre.regime], pre.work_share)
         rows.append(row)
         letters.extend(_world_letters(t, events, pre, row, p))
         prev_cash = rows[-2]["cash"] if len(rows) > 1 else pre.cash
@@ -478,8 +612,15 @@ def available_actions(s: State, t: int, p: dict, queued: tuple[Action, ...] = ()
                         f"+{p['joy_reduced_hours']:g} joy/month.",
         "full_hours": f"Salary back to {chf(s.salary / s.work_share if s.work_share else s.salary)}/month.",
         "drop_out": "Remaining tuition is cancelled; you start working at the pre-master salary.",
+        "graduate": "Leave school with your degree and look for a job (the regime HMM decides when you find "
+                    f"one; about 20%/month at your age). Then {chf(p['salary_work'])}/month.",
+        "quit_school": ("Leave now. Remaining tuition is cancelled; you keep your bachelor's and look for a job."
+                        if s.program is not None else
+                        "Leave without a degree and look for a job. Jobs pay about "
+                        f"{chf(p['salary_work'] * p['no_degree_wage_factor'])}/month "
+                        f"({p['no_degree_wage_factor']:.0%}) and a master's is closed to you."),
     }
-    for cid in ("master_ft", "master_pt", "drop_out", "start_work", "reduce_hours", "full_hours", "quit_job",
+    for cid in ("master_ft", "master_pt", "graduate", "quit_school", "start_work", "reduce_hours", "full_hours", "quit_job",
                 "move_abroad", "return_home"):
         text = legacy.get(cid) or gen_preview.get(cid) or ""
         tags = ["assumption", "simulated"]

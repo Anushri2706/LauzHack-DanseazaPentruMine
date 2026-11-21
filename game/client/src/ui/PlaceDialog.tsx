@@ -94,10 +94,9 @@ export function PlaceDialog({ place, st }: { place: Place; st: GameState }) {
             <h2>{title}</h2>
             <p className="greet"><b>{meta.who}:</b> “{greeting(place, st)}”</p>
           </div>
-          <button className="icon-btn close" onClick={close} title="Leave (Esc)">✕</button>
         </header>
         <div className="dialog-body">
-          {st.ended && <p className="note">Ten years have passed in this reality. Open the phone to explore another one.</p>}
+          {st.ended && <p className="note">You reached the end of the timeline (age 120). Go back on the timeline, or open the phone to explore another reality.</p>}
           {place === 'home' && !st.ended && (
             <section className="act-group sleep-group">
               <button className="btn big" disabled={busy} onClick={() => void sleep(1)}>😴 Sleep → next month</button>
@@ -147,7 +146,7 @@ export function PlaceDialog({ place, st }: { place: Place; st: GameState }) {
           </>}
         </div>
         <footer className="dialog-foot">
-          <span className="tiny muted">🟢 data · 🟡 assumption · 🔵 simulated · plans happen when you sleep</span>
+          <span className="tiny muted">🟢 data · 🟡 assumption · 🔵 simulated · plans happen as you move forward on the timeline</span>
           <button className="btn ghost" onClick={close}>Leave</button>
         </footer>
       </div>

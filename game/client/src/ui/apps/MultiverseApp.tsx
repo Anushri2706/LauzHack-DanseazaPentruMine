@@ -26,11 +26,15 @@ function Tree({ s, horizon, startAge, selected, onSelect }: {
   place(s.root)
   const H = Math.max(1, next) * 48 + 44
   const month = (id: string) => s.nodes[id].turn?.month ?? -4
-  const x = (m: number) => 30 + ((m + 4) / (horizon + 4)) * (W - 190)
+  // Scale to the part of life you have explored (at least ten years), not the whole timeline to 120.
+  const furthest = Math.max(s.current, ...Object.values(s.nodes).map((n) => Math.max(n.reached, n.turn?.month ?? 0)))
+  const span = Math.min(horizon, Math.max(120, Math.ceil((furthest + 12) / 12) * 12))
+  const x = (m: number) => 30 + ((Math.min(m, span) + 4) / (span + 4)) * (W - 190)
   const y = (id: string) => 40 + lanes[id] * 48
   const onPath = new Set(pathIds(s, s.cursor))
   const tips = new Set(realities(s))
-  const ticks = Array.from({ length: Math.floor(horizon / 12) + 1 }, (_, i) => i * 12)
+  const every = span <= 180 ? 12 : span <= 480 ? 60 : 120
+  const ticks = Array.from({ length: Math.floor(span / every) + 1 }, (_, i) => i * every)
   return (
     <svg className="multiverse" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMinYMin meet">
       {ticks.map((m) => (

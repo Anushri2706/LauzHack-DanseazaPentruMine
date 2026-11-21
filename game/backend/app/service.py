@@ -141,6 +141,15 @@ GAME_ROW_FIELDS = ROW_FIELDS + ("lifestyle", "purchases", "purchase_labels", "ho
                                 "sold_investments", "investment_return")
 
 
+LIFE_END = 120
+REGIMES = ("employed", "part_time", "job_search", "student", "retired")
+REGIME_IDX = {r: i for i, r in enumerate(REGIMES)}
+
+
+def life_horizon(start_age: float) -> float:
+    return float(max(12, min(1440, round((LIFE_END - start_age) * 12))))
+
+
 @dataclass(frozen=True)
 class GameCtx:
     persona: Persona
@@ -156,6 +165,8 @@ class GameCtx:
 def game_context(req: GameRequest) -> GameCtx:
     persona = build_persona(req.persona_id)
     params = {**persona.params, **{k: float(v) for k, v in req.assumptions.items()}}
+    if "horizon_months" not in req.assumptions:  # a whole life: the timeline runs to age LIFE_END
+        params["horizon_months"] = life_horizon(params["start_age"])
     validate_params(params)
     horizon = int(params["horizon_months"])
     if req.current_month > horizon:
@@ -179,6 +190,7 @@ def _state_dict(s: State, p: dict) -> dict:
             "mortgage": s.mortgage, "home_id": s.home_id,
             "net_worth": s.cash + s.investments + s.home_value - s.debt - s.mortgage,
             "status": s.status, "program": s.program, "program_end": s.program_end, "has_master": s.has_master,
+            "no_degree": s.no_degree, "enrolled": s.status == "studying",
             "salary": s.salary, "work_share": s.work_share, "savings_rate": s.savings_rate,
             "rent_base": s.rent, "flat_factor": s.flat_factor, "habits": dict(s.habits),
             "abroad": s.status == "abroad", "last_switch": s.last_switch}
@@ -246,8 +258,9 @@ def _game_state(key: str) -> dict:
         "statement": _statement(rows[-1] if rows else None),
         "warnings": warnings,
         "goals": goals,
-        "rows": [{k: r[k] for k in ("t", "age", "status", "cash", "investments", "net_worth", "home_value",
-                                    "mortgage", "debt", "joy", "flags")} for r in rows],
+        "rows": [{k: r[k] for k in ("t", "age", "status", "regime", "cash", "investments", "net_worth",
+                                    "home_value", "mortgage", "debt", "joy", "flags")} for r in rows],
+        "life_end_age": LIFE_END,
         "disclaimer": "Simulation, not a prediction or financial advice. Synthetic data only.",
     }
 
@@ -267,7 +280,15 @@ def _splice(past: dict, future: dict, m: int, horizon: int) -> dict:
     rent = np.concatenate([past["rent_mult"][:m], future["rent_mult"][m:] * base])
     events = [e for e in past.get("events", []) if e["month"] < m] + \
              [e for e in future.get("events", []) if e["month"] >= m]
-    return {"ret": ret, "income_mult": inc, "rent_mult": rent, "events": events}
+    out = {"ret": ret, "income_mult": inc, "rent_mult": rent, "events": events}
+    if "regime_u" in past:  # regime luck: lived months from the player's world, the rest from `future`
+        fu = future.get("regime_u")
+        out["regime_u"] = past["regime_u"][:m] if fu is None else np.concatenate([past["regime_u"][:m], fu[m:]])
+        segs = [x for x in past["regime_A"] if x[0] < m]
+        if future.get("regime_A"):
+            segs.append((m, future["regime_A"][0][1]))
+        out["regime_A"] = tuple(segs)
+    return out
 
 
 def _expected_world(p: dict) -> dict:
@@ -304,6 +325,7 @@ def _game_projection(key: str) -> dict:
         calm = _future_rows(c, lived.opening[m], _splice(c.world, _expected_world(p), m, horizon)).rows
         full_calm = past + calm
         out["no_surprises"] = {"net_worth": pick(calm, "net_worth"), "cash": pick(calm, "cash"),
+                               "regime": pick(calm, "regime"),
                                "joy_total": sum(r["joy"] for r in full_calm)}
     s0 = lived.opening[m]
     c = GameCtx(c.persona, c.params, c.start, c.turns, c.goals, c.world, c.luck, m)
@@ -313,8 +335,11 @@ def _game_projection(key: str) -> dict:
     short = np.zeros(req.n, dtype=bool)
     past_short = any(r["cash"] < 0 for r in past)
     goal_hits = {g["goal_id"]: 0 for g in c.goals}
+    reg = np.zeros((len(REGIMES), horizon - m))
     for k, w in enumerate(worlds):
         rows = _future_rows(c, s0, _splice(c.world, w, m, horizon)).rows
+        for i, r in enumerate(rows):
+            reg[REGIME_IDX[r["regime"]], i] += 1
         nw[k] = pick(rows, "net_worth")
         cash[k] = pick(rows, "cash")
         short[k] = past_short or bool((cash[k] < 0).any())
@@ -330,6 +355,9 @@ def _game_projection(key: str) -> dict:
     out["final_net_worth"] = {"p10": float(np.percentile(final, 10)), "p50": float(np.median(final)),
                               "p90": float(np.percentile(final, 90))}
     out["share_worlds_shortfall"] = float(short.mean())
+    out["regimes"] = None if ended else {
+        "states": list(REGIMES), "from_month": m,
+        "share": {st: (reg[i] / req.n).round(3).tolist() for i, st in enumerate(REGIMES)}}
     out["goal_met_share"] = {gid: h / req.n for gid, h in goal_hits.items()}
     at = min(horizon - 1, m + 12)
     ghosts = []
@@ -385,7 +413,7 @@ def compare_games(a: GameRequest, b: GameRequest, name_a: str, name_b: str) -> d
                   check_goals(ca.goals, ra), check_goals(cb.goals, rb))
     ranges = {}
     for key, r in (("a", a), ("b", b)):
-        proj = game_projection(GameProjectionRequest(**r.model_dump(), n=200))
+        proj = game_projection(GameProjectionRequest(**r.model_dump(), n=40))
         ranges[key] = proj["final_net_worth"]
     out["ranges"] = ranges
     out["scores"] = {"a": scores(ra, check_goals(ca.goals, ra), []), "b": scores(rb, check_goals(cb.goals, rb), [])}

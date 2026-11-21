@@ -8,8 +8,11 @@ Distributions (all our labelled assumptions, see assumptions.py):
   monthly return  r_t = mu + sigma/sqrt(12) * z,  z ~ N(0, 1)
                   mu is set so the expected annual return, after expected drops, equals return_annual
   market drop     per year with prob crash_prob_annual, one month loses crash_size
-  income loss     per year with prob job_loss_prob_annual, a 3-9 month spell on
-                  unemployment_benefit_rate x income (only bites while working/abroad)
+  income loss     labour_market_hmm = 1 (default): job-search spells sampled from the regime HMM
+                  (sourced, age-banded hazards; see labour.py), on unemployment_benefit_rate x income.
+                  labour_market_hmm = 0: per year with prob job_loss_prob_annual, a 3-9 month spell.
+                  Either way it only bites while working/abroad. The random draws for market drops
+                  and rent rises are identical in both modes, so the toggle changes only income.
   rent rise       per year with prob rent_shock_prob_annual, rent x (1 + rent_shock_size) from then on
 Percentiles are "ranges under our assumptions", NOT real-world probabilities.
 """
@@ -17,13 +20,14 @@ from functools import lru_cache
 
 import numpy as np
 
+from . import regime as rg
 from .metrics import check_goals
 from .simulate import run_branch
 from .state import Decision, State
 
 UNCERTAINTY_KEYS = ("return_annual", "return_volatility", "crash_prob_annual", "crash_size",
                     "job_loss_prob_annual", "unemployment_benefit_rate", "rent_shock_prob_annual",
-                    "rent_shock_size", "horizon_months", "start_age")
+                    "rent_shock_size", "horizon_months", "start_age", "labour_market_hmm")
 
 
 def _age(p_start_age: float, month: int) -> float:
@@ -38,6 +42,7 @@ def _worlds(key: tuple, n: int, seed: int) -> tuple:
     expected_drop = p["crash_prob_annual"] * p["crash_size"]
     mu = ((1 + p["return_annual"]) / (1 - expected_drop)) ** (1 / 12) - 1
     sigma = p["return_volatility"] / np.sqrt(12)
+    use_hmm = p["labour_market_hmm"] >= 0.5
     worlds = []
     for k in range(n):
         rng = np.random.default_rng([seed, k])
@@ -54,7 +59,7 @@ def _worlds(key: tuple, n: int, seed: int) -> tuple:
             if rng.random() < p["job_loss_prob_annual"]:
                 m = y * 12 + int(rng.integers(12))
                 dur = int(rng.integers(3, 10))
-                if m < horizon:
+                if m < horizon and not use_hmm:
                     income[m:m + dur] = p["unemployment_benefit_rate"]
                     events.append({"month": m, "kind": "income_loss",
                                    "text": f"{dur} months without a job from age {_age(p['start_age'], m)} "
@@ -65,7 +70,10 @@ def _worlds(key: tuple, n: int, seed: int) -> tuple:
                 events.append({"month": m, "kind": "rent_rise",
                                "text": f"Rent rises {p['rent_shock_size']:.0%} at age {_age(p['start_age'], m)}"})
         events.sort(key=lambda e: e["month"])
-        worlds.append({"ret": ret, "income_mult": income, "rent_mult": rent, "events": events})
+        w = {"ret": ret, "income_mult": income, "rent_mult": rent, "events": events}
+        if use_hmm:  # job spells come from the regime chain, stepped inside the game (regime.py)
+            w.update(rg.world_draw(seed, k, horizon))
+        worlds.append(w)
     return tuple(worlds)
 
 

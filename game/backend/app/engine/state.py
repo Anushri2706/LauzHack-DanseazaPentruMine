@@ -44,6 +44,13 @@ class State:
     work_share: float = 1.0                     # 0.8 after "reduce to 80%"
     last_raise_ask: int | None = None
     retiree: bool = False                       # studying after retirement: pension continues, returns to retired
+    # Regime HMM (see regime.py): the chain's state this month and months spent in job search.
+    regime: str = ""
+    no_degree: bool = False                     # left school without a degree: lower pay, no master's
+    # Swiss pension (retired): AHV part follows the mixed index every 2 years; BVG part is not indexed.
+    pension_ahv: float = 0.0
+    pension_bvg: float = 0.0
+    regime_dwell: int = 0
 
     @property
     def owner(self) -> bool:
@@ -62,3 +69,12 @@ class Decision:
     savings_rate: float | None = None   # optional: change savings rate at the same time
     loan_amount: float | None = None    # optional: take a loan of this size
     repay_debt: bool = False            # optional: repay all debt from cash
+
+
+def fast_replace(s: State, **changes) -> State:
+    """dataclasses.replace without re-running __init__ (hot path: one call per simulated month)."""
+    n = object.__new__(State)
+    d = dict(s.__dict__)
+    d.update(changes)
+    object.__setattr__(n, "__dict__", d)
+    return n

@@ -3,7 +3,7 @@ import { api, EngineError } from '../api/client'
 import type { ActionIn, GameState, Letter } from '../api/types'
 import { bus } from '../bridge'
 import { sfx } from '../ui/sound'
-import { actionIcon, commitSleep, getStore, requestFor, resumeAt, rollbackTo, setStore, toast } from './game'
+import { actionIcon, actionLabel, getStore, requestFor, resumeAt, rollbackTo, setStore, toast, travel, withoutAction } from './game'
 
 const sameSlot = (a: ActionIn, b: ActionIn) =>
   a.type === b.type && (a.type === 'set_savings_rate' || (a.type === 'set_habit' && a.id === b.id))
@@ -33,7 +33,10 @@ export function unqueue(i: number) {
   sfx('click')
 }
 
-function letterToasts(letters: Letter[]) {
+const BIG = ['retired', 'degree', 'home_bought', 'income_loss', 'found_job', 'financing_needed', 'home_sold']
+function letterToasts(all: Letter[]) {
+  // Long jumps: show the life events first, then the rest in time order.
+  const letters = all.length > 4 ? [...all.filter((l) => BIG.includes(l.kind)), ...all.filter((l) => !BIG.includes(l.kind))] : all
   letters.slice(0, 4).forEach((l, i) => setTimeout(() => {
     sfx('letter')
     const tone = ['financing_needed', 'income_loss', 'market_drop', 'rent_rise'].includes(l.kind) ? 'warn'
@@ -43,13 +46,20 @@ function letterToasts(letters: Letter[]) {
   if (letters.length > 4) toast({ icon: '📬', title: `${letters.length - 4} more letters`, text: 'Open the Mail app on your phone.', tone: 'info' })
 }
 
-/** Sleep `months` months (1 = next month). Letters from those months arrive as toasts. */
-export async function sleep(months: number) {
+const ageAt = (m: number) => {
+  const p = getStore().persona
+  return Math.floor((p?.age ?? 20) + m / 12)
+}
+
+/** Move along the timeline to month `month`: forward lives the months (letters arrive), back rewinds. */
+export async function travelTo(month: number) {
   const s = getStore()
   if (s.busy) return
-  const horizon = 120
+  const target = Math.max(0, Math.min(s.horizon, Math.round(month)))
+  if (target === s.current) return
   const before = s.current
-  const patch = commitSleep(s, months, horizon)
+  const forward = target > before
+  const patch = travel(s, target)
   setStore({ ...patch, busy: true, place: null })
   bus.emit('queue', [])
   sfx('sleep')
@@ -58,23 +68,61 @@ export async function sleep(months: number) {
     bus.emit('wake')
     bus.emit('season', { month: st.month })
     bus.emit('abroad', st.state.abroad)
-    letterToasts(st.letters.filter((l) => l.month >= before))
-    if (st.state.cash < 0 && !st.letters.some((l) => l.month >= before && l.kind === 'financing_needed')) {
-      toast({ icon: '⚠️', title: 'Cash below zero', text: 'Financing needed: see the Bank.', tone: 'warn' })
+    if (forward) {
+      letterToasts(st.letters.filter((l) => l.month >= before))
+      if (st.state.cash < 0 && !st.letters.some((l) => l.month >= before && l.kind === 'financing_needed')) {
+        toast({ icon: '⚠️', title: 'Cash below zero', text: 'Financing needed: see the Bank.', tone: 'warn' })
+      }
+    } else {
+      const ahead = getStore()
+      const plans = ahead.tip !== ahead.cursor
+      toast({ icon: '⏪', title: `Back to age ${ageAt(target)}`, tone: 'info',
+        text: plans ? 'Your later choices wait ahead on the timeline. Choose something else to branch off.' : undefined })
     }
   } catch (e) {
-    // Should not happen (the queue was validated); roll the sleep back so the player loses nothing.
-    setStore({ nodes: s.nodes, cursor: s.cursor, current: s.current, queue: s.queue, nextColor: s.nextColor })
-    toast({ icon: '🚫', title: 'Could not sleep', text: String(e instanceof Error ? e.message : e), tone: 'bad' })
+    setStore({ nodes: s.nodes, cursor: s.cursor, tip: s.tip, current: s.current, queue: s.queue, nextColor: s.nextColor })
+    toast({ icon: '🚫', title: 'Could not move in time', text: String(e instanceof Error ? e.message : e), tone: 'bad' })
   } finally {
     setStore({ busy: false })
   }
+}
+
+/** Sleep `months` months (1 = next month). */
+export function sleep(months: number) {
+  return travelTo(getStore().current + months)
 }
 
 export function sleepUntilBirthday() {
   const s = getStore()
   const left = 12 - (s.current % 12)
   return sleep(left === 0 ? 12 : left)
+}
+
+/** Undo one choice: a new reality without it, later choices replayed (the old one stays in the Multiverse). */
+export async function undoChoice(nodeId: string, index: number) {
+  const s = getStore()
+  if (s.busy) return
+  const patch = withoutAction(s, nodeId, index)
+  if (!patch) return
+  const label = actionLabel(s.nodes[nodeId].turn!.actions[index])
+  const next = { ...s, ...patch }
+  setStore({ busy: true })
+  try {
+    // The engine replays the whole new reality to its furthest month: later choices must still be possible.
+    await api.state(requestFor(next, patch.tip, false))
+    await api.state(requestFor(next))
+    setStore({ ...patch, phone: null })
+    bus.emit('queue', [])
+    bus.emit('wake')
+    sfx('confirm')
+    toast({ icon: '↩️', title: `Undid “${label}”`, text: 'A new reality; the old one is kept in the Multiverse.', tone: 'info' })
+  } catch (e) {
+    sfx('error')
+    toast({ icon: '🚫', title: `Can't undo “${label}”`, tone: 'bad',
+      text: 'A later choice depends on it: ' + (e instanceof EngineError ? e.message.replace(/^.*?: /, '') : String(e)) })
+  } finally {
+    setStore({ busy: false })
+  }
 }
 
 export function goBack(nodeId: string) {
@@ -92,5 +140,5 @@ function afterJump() {
   bus.emit('season', { month: s.current })
   sfx('sleep')
   api.state(requestFor(s)).then((st) => bus.emit('abroad', st.state.abroad)).catch(() => {})
-  toast({ icon: '🌀', title: 'Another reality', text: `You are back in ${new Date(2025, s.current, 1).toLocaleString('en', { month: 'long', year: 'numeric' })}.`, tone: 'info' })
+  toast({ icon: '🌀', title: 'Another reality', text: `You are at age ${ageAt(s.current)}, ${new Date(2025, s.current, 1).toLocaleString('en', { month: 'long', year: 'numeric' })}.`, tone: 'info' })
 }

@@ -5,10 +5,12 @@ UBS × LauzHack 2026 "AI Financial Twin". *Don't predict the future. Make it exp
 
 You pick a fictional person (Alexia is featured), choose how they look, and walk around a small pastel
 lakeside town inspired by Lausanne. You visit the university, the office, the café, the shop, the bank, the
-real-estate agency and the train station, and you make life and money choices there. Time only moves when
-you **sleep at home**: one month, or until the next birthday. Your **in-game phone** shows your scores, the
-uncertainty ranges, and a **multiverse** of every reality you've lived. You can go back to any month, choose
-differently, and compare two realities side by side.
+real-estate agency and the train station, and you make life and money choices there. A **life timeline**
+along the bottom runs from today to **age 120**: click or drag to live forward or go back, click a choice to
+return to it or undo it. The **regime HMM** is the backbone: every month of a life is *working*, *job search*,
+*studying* or *retired*, sampled from sourced, age-banded hazards and conditioned on your choices. Right of
+the playhead, the timeline fans out the possible futures from where you are. Your **in-game phone** shows your
+scores, the uncertainty ranges, and a **multiverse** of every reality you've lived.
 
 All maths happens in the Python engine. The client never computes money: it only sends the list of choices
 and shows what the engine returns.
@@ -33,7 +35,7 @@ clears the saved game.
 ### Checks
 
 ```bash
-cd game/backend && .venv/bin/pytest -q           # 80 tests (36 original + 44 for the game)
+cd game/backend && .venv/bin/pytest -q           # 95 tests
 cd game/client && npx tsc -b                     # type-check
 cd game/client && npm run smoke                  # headless walk through the whole demo (needs both servers
                                                  # and Google Chrome; BASE=http://localhost:5173 by default)
@@ -44,6 +46,27 @@ master's and eating out, then sleeps a month and on to the next birthday. It the
 and opens every phone app, including a roll of another world. The live checks must all pass (10/10). After
 that it goes back to the start in the Multiverse and starts working instead. It buys the studio as soon as
 the engine allows it, compares the two realities, and fast-forwards to the 10-year postcard.
+
+## The life timeline (bottom of the screen)
+
+- It is a **drawer**: only a small *▲ Life timeline* tab shows. Point at it and the timeline slides up; move
+  the mouse away and it hides. It stays open while you drag, have a choice open, or time is moving. Click the
+  tab, press 📌, or press **T** to pin it open.
+- **Left of 📍** is the life you lived: net worth (line) and the regime of every month (coloured strip), as
+  the HMM played it out in your world. Life events (job ended, back at work, degree, home, retirement) are
+  small icons on the strip.
+- **Right of 📍** is what the regime HMM fans out from your current state: the P10–P90 net-worth band and the
+  median (dashed) over 60 simulated lives, and per month the share of lives in each regime. Hover anywhere
+  for the numbers ("Of 60 simulated lives: Working 91% · Job search 4% · Retired 5%").
+- **Move freely:** click or drag on the timeline, or use ⏮ −1y −1m +1m +1y +10y 🌅65 🏁120. Moving forward
+  lives the months (this month's plans happen first); moving back rewinds exactly (deterministic replay).
+- **Your choices are markers.** Click one to *go back to this moment* or to *undo* one choice.
+  - Going back keeps that choice and later ones **ahead of you as faded plans**: moving forward re-lives them
+    (redo). Make a different choice there and you branch into a new reality; the old one stays in the
+    Multiverse.
+  - Undo builds a new reality without that one choice and replays the later choices on top. If a later choice
+    depends on it (for example, a home bought with that job's savings), the engine says why and nothing
+    changes.
 
 ## How to play
 
@@ -67,7 +90,7 @@ Everything works with the mouse alone.
   | Place | Actions |
   |---|---|
   | Home | sleep 1 month / until birthday · mailbox · change flat (cheaper / similar / nicer) |
-  | University | full-time master's · part-time master's · drop out (after 12 months) |
+  | University | full-time master's · part-time master's · 🎓 get your degree · 🚪 drop out without a degree (both only while enrolled; see below) |
   | Office | start working · ask for a raise (after 24 months) · reduce to 80% / back to 100% · quit |
   | Café | habit: eat out never / 1× / 2× / 4× a week · one-off: treat your friends |
   | Shop | bike, laptop, phone, clothes, furniture · habits: shopping budget, gym |
@@ -75,6 +98,13 @@ Everything works with the mouse alone.
   | Real-estate | buy a studio / flat / small house · sell |
   | Train station | move abroad / back to Switzerland · weekend trip · flight home (when abroad) |
 
+  **School.** *Get your degree* and *Drop out without a degree* are only possible while you are enrolled
+  (Alexia starts enrolled; a master's enrols you). Getting the degree ends school and starts a job search: the
+  regime HMM decides when you find a job (about 20%/month at 20), at the graduate salary. During a master's
+  the degree comes by itself when the programme ends, so that button is greyed out. Dropping out cancels the
+  remaining tuition and starts a job search. Out of your first degree you have **no degree**: jobs pay
+  `no_degree_wage_factor` × the graduate salary (80%, our assumption) and a master's is closed. Out of a
+  master's you keep your bachelor's. A retiree who drops out goes back to retirement.
   The engine masks what a persona can do. A retiree gets no job choices but can do a full-time master's: the pension continues, tuition is paid, and they return to retirement when they graduate or drop out. There is no age limit on studying. A student can't ask
   for a raise.
 - **Phone apps:**
@@ -89,8 +119,8 @@ Everything works with the mouse alone.
     of uncertainty and for joy.
   - **Checks:** live validation.
   - **Mail:** every letter you've received.
-- **Ten years later** a postcard shows this reality's six scores. Its ranges come from the same choices
-  replayed in all 500 worlds. It reminds you that this is one of many possible futures.
+- **At age 120** a postcard shows this reality's six scores. Its ranges come from the same choices
+  replayed in other worlds. It reminds you that this is one of many possible futures.
 
 ### The six scores (deliberately no single "best" number)
 
@@ -211,28 +241,34 @@ includes the starter-kit cross-check, to the cent, for all three scenarios.
 - The phone fans out **500 worlds from now on**, given what you have lived (`P10–P90`, labelled "ranges
   under our assumptions", never probabilities). The dotted line is "if nothing surprising happens from now".
   The ghosts are stress tests one year from now. 🎲 shows one other world.
-- Distributions (unchanged): monthly return ~ N(μ, σ/√12) with σ = 15%/year; a 20% market drop with
-  5%/year chance; a 3–9 month income loss on 70% benefits with 5%/year chance; a 10% rent rise with
-  10%/year chance. Seed 42.
+- Distributions: monthly return ~ N(μ, σ/√12) with σ = 15%/year; a 20% market drop with
+  5%/year chance; a 10% rent rise with 10%/year chance. Seed 42.
+- **The regime HMM is the backbone of a life** (`labour_market_hmm = 1`, default; `app/engine/regime.py`,
+  stepped inside `game.run_turns`). Every month is one regime of the teammate's chain (`backend/twin`):
+  `employed`, `part_time`, `job_search`, `student`, `retired`. Hazards are sourced and age-banded (Eurostat
+  `lfsi_long_q`, BFS SAKE, SECO; `backend/assumptions/transitions.csv`); each world carries its own Dirichlet
+  draw of the transition matrix (parameter uncertainty). The chain is **conditioned on your life**:
+  - it runs month by month from your *current* regime and age;
+  - your choices pin regimes: studying = `student`, quitting = `job_search` (and the chain decides when you
+    find a job), working / abroad = the free labour-market chain;
+  - a master's scales the job-loss hazard by `masters_hazard_factor` (0.81, BFS EHA); job-search exits halve
+    after 12 months (duration dependence);
+  - at `retirement_age` (65, AHV 21) everyone in the labour market retires on `pension_replacement_rate`
+    (47.5% of the last full salary, OECD net replacement rate). The pension is split into **AHV** (up to the
+    maximum AHV pension, 2,520 CHF/month in 2025) and **BVG** (the rest). The AHV part rises every two years
+    (January 2027, 2029, …) by the **mixed index**, the average of Swiss nominal wage growth (1%/year, BFS Swiss
+    Wage Index) and inflation (AHVG Art. 33ter), and a **13th AHV pension** is paid each December from
+    December 2026 (2024 vote). The BVG part is not indexed: the law leaves it to each pension fund. All four
+    numbers can be changed under Settings → Life course.
+  In `job_search` months, job income is × `unemployment_benefit_rate` (70%, AVIG Art. 22). Money stays in this
+  engine, so there is one set of accounts.
+  - **Common random numbers:** world *k* holds one uniform per month and one matrix draw, identical whether 1
+    or 500 worlds are drawn. All realities replay the same draws, so they differ because of choices.
+  - `labour_market_hmm = 0` restores the flat model (3–9 months with 5%/year chance).
+  - Tests: `tests/test_regime_backbone.py` (spells, retirement at 65, student pin, common random numbers,
+    master's lowers job-search months, quitting ends when the chain finds a job, regime shares in the
+    projection). HMM part-time months count as full pay, because hours are a player choice.
 - Asking for a raise uses one draw from your world, `rng(seed, world, month)`, so it is reproducible.
-
-## 🔮 Life odds: the regime HMM twin (`backend/twin`)
-
-The phone's **Life odds** app runs the teammate's regime-switching HMM (repo-root `backend/`, merged from
-`feature/hmm-decisions`). Each month of each simulated life is `employed`, `part_time`, `job_search`, `student`
-or `retired`; transition hazards, the income table and the spending recipe are the CSVs in `backend/assumptions/`.
-A big decision is a preset list of `Intervention`s (master's now / later, part-time, job search, parental leave,
-move to Zurich / Germany, bigger flat, buy a home), taken from the `backend/run_alexia_*.py` scripts.
-All decisions share one seed, so the fans differ by decision, not luck.
-
-- Bridge: `game/backend/app/hmm.py` (adds `backend/` to `sys.path`, caches the fitted engine).
-- API: `GET /hmm/decisions/{pid}`, `POST /hmm/fan` `{persona_id, decisions[], horizon_months, n_paths, seed}` →
-  cash P10/P50/P90 per month, regime occupancy, months per regime, share of lives with cash < 0, goal hit rates
-  (`twin.metrics.goal_hit_rate` on the persona's goals from `Data/synthetic-goals.csv`).
-- In the teammate's chain `student` is absorbing (graduation is a decision), so for students every non-study
-  decision starts with one pinned `employed` month ("Finish studies, start working").
-- The Life-odds fans start in Jan 2025 and are independent of the moves made in the town.
-- `vite.config.ts` proxies to `API_TARGET` (default `http://127.0.0.1:8000`).
 
 ## Design choices (made without asking; easy to change)
 
@@ -283,6 +319,11 @@ code.
   real wellbeing.
 - Percentiles describe our model's worlds, not real-world probabilities.
 - Peer (kNN) bands from the original plan are not in the game.
+- The timeline runs to age 120 with no mortality model, and amounts are nominal. A century of 5% returns
+  compounds to large numbers (median net worth in the millions at 120); read the late decades as "under these
+  assumptions", not as wealth anyone should expect.
+- The future fan on the timeline uses 60 simulated lives (P10–P90 is rough at that size), to keep a projection
+  over a whole life to 1–3 seconds.
 
 ## Open questions for organizers (unchanged)
 

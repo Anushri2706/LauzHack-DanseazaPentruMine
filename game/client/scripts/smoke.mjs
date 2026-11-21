@@ -76,13 +76,7 @@ try {
   await page.getByRole('button', { name: /Roll another world/ }).click()
   await page.locator('.note', { hasText: 'same choices, different luck' }).waitFor()
   step('rolled another world')
-  // Life odds: the regime HMM twin (backend/twin) behind /hmm/*
-  await page.locator('.phone-nav button', { hasText: 'Life odds' }).click()
-  await page.locator('.phone-screen .cmp-table tbody tr').nth(1).waitFor({ timeout: 30000 })
-  await page.locator('.phone-screen .chip', { hasText: 'Move to Zurich' }).click()
-  await page.locator('.phone-screen .cmp-table tbody tr').nth(2).waitFor({ timeout: 30000 })
-  await shot('07-life-odds')
-  step(`life odds: ${await page.locator('.phone-screen .cmp-table tbody tr').count()} decisions fanned by the HMM`)
+  if (await page.locator('.phone-nav button', { hasText: 'Life odds' }).count()) throw new Error('Life odds should be gone')
   for (const app of ['Goals', 'Settings', 'Mail', 'Checks']) {
     await page.locator('.phone-nav button', { hasText: app }).click()
     await page.waitForTimeout(400)
@@ -135,20 +129,26 @@ try {
   step(`compare: ${(await page.locator('.explain li').first().innerText()).slice(0, 90)}…`)
   await page.keyboard.press('Escape')
 
-  // Fast-forward to the end: the postcard
-  for (let i = 0; i < 12; i++) {
-    if (await page.locator('.postcard').count()) break
-    await door('home')
-    const b = page.getByRole('button', { name: /Sleep until next birthday/ })
-    if (!(await b.count())) break
-    await b.click()
-    await page.waitForFunction(() => !document.querySelector('.dialog-head'))
-    await page.waitForTimeout(400)
-  }
+  // The timeline: back to the first choice, forward again, then live to age 120 (the postcard)
+  const now = () => page.locator('.tl-now').innerText()
+  const idle = () => page.waitForFunction(() => !document.querySelector('.tl-now')?.textContent?.includes('Living'))
+  if (await page.locator('.tl-dock.shown').count()) throw new Error('the timeline should be hidden until pointed at')
+  await page.keyboard.press('t')   // pin the drawer open
+  await page.locator('.tl-dock.shown').waitFor()
+  step('timeline drawer: hidden until pointed at; T pins it open')
+  await page.locator('.tl-marker').first().click()
+  await page.getByRole('button', { name: /Go back to this moment/ }).click()
+  await idle()
+  step(`timeline: back to ${await now()} (${await page.locator('.tl-marker.future').count()} plans ahead)`)
+  await page.getByRole('button', { name: '+10y' }).click()
+  await idle()
+  step(`timeline: +10 years re-lives the plans → ${await now()}`)
+  await page.getByRole('button', { name: /🏁 120/ }).click()
+  await idle()
   await page.locator('.postcard').waitFor({ timeout: 20000 })
   await page.waitForTimeout(1500)
   await shot('10-postcard')
-  step('ten years: postcard shown')
+  step('age 120: postcard shown')
 } catch (e) {
   errors.push(`step failed: ${e.message.split('\n')[0]}`)
   await shot('zz-failure')

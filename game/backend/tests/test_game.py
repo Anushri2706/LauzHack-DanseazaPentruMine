@@ -169,6 +169,7 @@ def test_rollback_replays_bit_for_bit(params):
 def test_legacy_decisions_as_turns_reproduce_old_engine(params, decisions):
     old = run_branch(params, decisions).rows
     new = run_turns(params, decisions_to_turns(params, decisions)).rows
+    assert [r.pop("regime") for r in new]  # the game adds the HMM regime of each month
     assert new == old
 
 

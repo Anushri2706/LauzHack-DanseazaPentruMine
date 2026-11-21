@@ -10,7 +10,7 @@ export function useGameState() {
 }
 
 /** Projection (no-surprises path, P10–P90 bands, ghosts) for the cursor reality, without the queue. */
-export function useProjection(s: Store, n = 500) {
+export function useProjection(s: Store, n = 60) {
   const req = requestFor(s, undefined, false)
   return useApi(JSON.stringify(req) + n, () => api.projection(req, n))
 }

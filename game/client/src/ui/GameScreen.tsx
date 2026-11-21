@@ -6,6 +6,7 @@ import { getStore, setStore, useStore } from '../store/game'
 import { HudBar, Toasts } from './HudBar'
 import { PlaceDialog } from './PlaceDialog'
 import { SeasonOverlay } from './SeasonOverlay'
+import { Timeline } from './Timeline'
 import { sfx } from './sound'
 import { useGameState } from './useGame'
 
@@ -21,6 +22,7 @@ export function GameScreen() {
   const place = useStore((s) => s.place) as Place | null
   const phone = useStore((s) => s.phone)
   const endSeen = useStore((s) => s.endSeen)
+  const hintSeen = useStore((s) => s.hintSeen)
   const game = useGameState()
   const st = game.data
   const near = useNear()
@@ -35,6 +37,7 @@ export function GameScreen() {
     return () => bus.off('door', onDoor)
   }, [])
   useEffect(() => { if (st) { bus.emit('abroad', st.state.abroad) } }, [st?.state.abroad]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (st && getStore().horizon !== st.horizon) setStore({ horizon: st.horizon }) }, [st?.horizon])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = (e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'SELECT'
@@ -64,14 +67,16 @@ export function GameScreen() {
           Press <kbd>E</kbd> or click to enter the <b>{NAMES[near]}</b>
         </button>
       )}
-      {!place && !phone && st && st.month === 0 && !st.ended && (
-        <div className="help-hint px-box tiny">Walk with <kbd>WASD</kbd>/arrows or click. Enter a building with <kbd>E</kbd> or a click. <kbd>P</kbd> phone · <kbd>Esc</kbd> close. Sleep at Home to let a month pass.</div>
+      {!place && !phone && st && st.month === 0 && !st.ended && !hintSeen && (
+        <div className="help-hint px-box tiny">Walk with <kbd>WASD</kbd>/arrows or click. Enter a building with <kbd>E</kbd> or a click. <kbd>P</kbd> phone · <kbd>Esc</kbd> close. Point at ▲ Life timeline at the bottom to move through your life (<kbd>T</kbd> pins it open).
+          <button className="icon-btn hint-close" title="Got it" aria-label="Close the instructions" onClick={() => setStore({ hintSeen: true })}>✕</button></div>
       )}
       <div className="place-bar">
         {Object.entries(NAMES).map(([id, n]) => (
           <button key={id} className="chip tiny" onClick={() => bus.emit('walkTo', { place: id })} title={`Walk to the ${n}`}>{n}</button>
         ))}
       </div>
+      {st && !phone && <Timeline st={st} />}
       {place && st && <PlaceDialog place={place} st={st} />}
       <Suspense fallback={null}>
         {phone && st && <Phone st={st} />}

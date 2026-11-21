@@ -20,7 +20,7 @@ export function scoreLines(st: GameState) {
   return {
     money: { short: k(s.money.net_worth), tip: `🔵 Net worth now ${chf(s.money.net_worth)} (cash ${chf(s.money.cash)}, invested ${chf(s.money.investments)}${s.money.home_equity ? `, home equity ${chf(s.money.home_equity)}` : ''}${s.money.debt ? `, owed ${chf(s.money.debt)}` : ''}).`, tone: s.money.net_worth < 0 ? 'bad' : '' },
     safety: { short: safety, tip: `🔵 ${s.safety.months_negative_cash} months with cash below zero, ${s.safety.months_below_buffer} months below your buffer so far.`, tone: { steady: 'good', tight: 'warn', shortfall: 'bad' }[s.safety.level] },
-    goals: { short: s.goals.due ? `${s.goals.met}/${s.goals.due}` : `0/${s.goals.total}`, tip: `🔵 ${s.goals.met} of ${s.goals.due} goals due so far were met (${s.goals.total} within ten years).`, tone: '' },
+    goals: { short: s.goals.due ? `${s.goals.met}/${s.goals.due}` : `0/${s.goals.total}`, tip: `🔵 ${s.goals.met} of ${s.goals.due} goals due so far were met (${s.goals.total} in total).`, tone: '' },
     freedom: { short: s.freedom.runway_months == null ? '—' : `${Math.max(0, Math.round(s.freedom.runway_months))} mo`, tip: `🔵 Savings cover ${s.freedom.runway_months == null ? '—' : Math.max(0, Math.round(s.freedom.runway_months))} months of costs${s.freedom.debt_free ? ' · debt-free' : ''}.`, tone: '' },
     experience: { short: [s.experience.degree ? '🎓' : s.experience.studying ? '📚' : '', s.experience.months_abroad ? `${(s.experience.months_abroad / 12).toFixed(1)}y🌍` : ''].join(' ').trim() || '—', tip: `🔵 ${s.experience.degree ? "Master's done. " : ''}${s.experience.months_studying} months studying, ${s.experience.months_abroad} months abroad.`, tone: '' },
     joy: { short: `${Math.round(s.joy.total)}`, tip: '🟡 Joy points: a game preference score from your habits, trips and life situation. Not money, not a measure of a good life.', tone: '' },
@@ -43,7 +43,7 @@ export function HudBar({ st }: { st: GameState | undefined }) {
           <div className="tiny">{STATUS_LABEL[st.state.status]}{st.state.program ? ` · master's until ${st.state.program_end ?? ''}` : ''}</div>
         </div>
       </div>
-      <div className="hud-date" title="Time only moves when you sleep at home">📅 {st.date.label} · age {st.age_years}</div>
+      <div className="hud-date" title="Move through time on the timeline at the bottom">📅 {st.date.label} · age {st.age_years}</div>
       <div className={`hud-cash ${cash < 0 ? 'neg' : ''}`} title={cash < 0 ? 'Financing needed: cash below zero' : '🔵 Cash in your account'}>
         💰 {chf(cash)}{cash < 0 && <span className="fin">⚠ financing</span>}
       </div>

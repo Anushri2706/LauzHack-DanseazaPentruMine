@@ -21,7 +21,7 @@ from .assumptions import validate_params
 from .decisions import (InvalidDecision, apply_decision, complete_programs, decision_reasons,
                         default_decision, options)
 from .finance import annuity_payment, inflation_factor, monthly_compound_rate
-from .state import Decision, State
+from .state import Decision, State, fast_replace
 
 CONSUMPTION_KINDS = ("purchase", "trip")
 
@@ -64,7 +64,7 @@ def initial_state(p: dict, status: str = "studying", salary: float | None = None
 
 
 def step_month(s: State, p: dict, ret_month: float | None = None, income_mult: float = 1.0,
-               rent_mult: float = 1.0) -> tuple[State, dict]:
+               rent_mult: float = 1.0, income_extra: float = 0.0) -> tuple[State, dict]:
     """Advance one month from opening state `s` (decisions already applied). Returns (next, row).
 
     The optional shock arguments come from a Monte Carlo "world" (see montecarlo.py):
@@ -80,6 +80,7 @@ def step_month(s: State, p: dict, ret_month: float | None = None, income_mult: f
     income = salary * (1.0 - p["tax_rate"] - p["social_rate"])
     if s.status in ("working", "abroad"):
         income *= income_mult
+    income += income_extra * (1.0 - p["tax_rate"] - p["social_rate"])  # e.g. the 13th AHV pension
     infl = inflation_factor(p["inflation_annual"], t)
     rent_now = 0.0 if s.owner else s.rent * rent_mult * s.flat_factor
     expenses = (rent_now + s.living) * infl
@@ -140,7 +141,7 @@ def step_month(s: State, p: dict, ret_month: float | None = None, income_mult: f
     if cash < buffer_target:
         flags.append("below_buffer")
 
-    nxt = replace(s, t=t + 1, cash=cash, investments=investments, debt=debt, debt_payment=debt_payment,
+    nxt = fast_replace(s, t=t + 1, cash=cash, investments=investments, debt=debt, debt_payment=debt_payment,
                   salary=salary, scheduled=tuple(o for o in s.scheduled if o.month > t),
                   mortgage=mortgage, home_value=home_value)
     joy = month_joy(s, due, p)

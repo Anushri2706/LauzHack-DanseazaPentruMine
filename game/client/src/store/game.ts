@@ -8,7 +8,7 @@ export interface Look { skin: number; hair: number; hairColor: number; top: numb
 export const DEFAULT_LOOK: Look = { skin: 0, hair: 2, hairColor: 0, top: 2, legs: 0 }
 
 export type Dim = 'money' | 'safety' | 'goals' | 'freedom' | 'experience' | 'joy'
-export type AppId = 'money' | 'multiverse' | 'odds' | 'goals' | 'settings' | 'checks' | 'mail'
+export type AppId = 'money' | 'multiverse' | 'goals' | 'settings' | 'checks' | 'mail'
 
 export interface TNode {
   id: string
@@ -34,6 +34,10 @@ export interface Store {
   nodes: Record<string, TNode>
   root: string
   cursor: string
+  /** The reality being viewed: the cursor lies on its path. Its choices after `current` are future plans
+   *  (redo): moving forward re-lives them, a different choice branches off. */
+  tip: string
+  horizon: number
   current: number
   queue: ActionIn[]
   nextColor: number
@@ -46,17 +50,18 @@ export interface Store {
   busy: boolean
   endSeen: boolean
   nearPlace: string | null
+  hintSeen: boolean
 }
 
 export const REALITY_COLORS = ['#9a7fd8', '#ef8aa0', '#4fb38a', '#e8a64a', '#5aa9d6', '#c77dc9', '#7c9a3d', '#d9785b']
 
-const KEY = 'many-lives-town-v1'
+const KEY = 'many-lives-town-v2'
 const fresh = (): Store => ({
   screen: 'pick', persona: null, look: DEFAULT_LOOK, assumptions: {}, seed: 42, world: 0,
   goalSel: null, customGoals: [],
   nodes: { root: { id: 'root', parent: null, turn: null, children: [], color: 0, label: 'Start', reached: 0 } },
-  root: 'root', cursor: 'root', current: 0, queue: [], nextColor: 1, matters: [], place: null, phone: null,
-  pinA: null, pinB: null, toasts: [], busy: false, endSeen: false, nearPlace: null,
+  root: 'root', cursor: 'root', tip: 'root', horizon: 1200, current: 0, queue: [], nextColor: 1, matters: [], place: null, phone: null,
+  pinA: null, pinB: null, toasts: [], busy: false, endSeen: false, nearPlace: null, hintSeen: false,
 })
 
 function load(): Store {
@@ -101,14 +106,14 @@ export function colorOf(s: Pick<Store, 'nodes'>, id: string): string {
 
 const LABELS: Record<string, string> = {
   start_work: 'Work', master_ft: "Master's", master_pt: "PT master's", move_abroad: 'Abroad', return_home: 'Back home',
-  drop_out: 'Drop out', quit_job: 'Quit', reduce_hours: '80%', full_hours: '100%',
+  drop_out: 'Drop out', graduate: 'Degree', quit_school: 'Drop out (no degree)', quit_job: 'Quit', reduce_hours: '80%', full_hours: '100%',
   buy_home: 'Buy home', sell_home: 'Sell home', change_flat: 'Move flat', take_loan: 'Loan', repay_debt: 'Repay',
   set_savings_rate: 'Savings', ask_raise: 'Raise?', set_habit: 'Habit', buy_item: 'Buy',
 }
 export const ICONS: Record<string, string> = {
   life_choice: '⭐', set_habit: '☕', buy_item: '🛍️', change_flat: '📦', buy_home: '🏠', sell_home: '🔑',
   take_loan: '🏦', repay_debt: '✅', set_savings_rate: '🐷', ask_raise: '📈',
-  start_work: '💼', master_ft: '🎓', master_pt: '🎓', move_abroad: '✈️', return_home: '🚆', drop_out: '🚪',
+  start_work: '💼', master_ft: '🎓', master_pt: '🎓', move_abroad: '✈️', return_home: '🚆', drop_out: '🚪', graduate: '🎓', quit_school: '🚪',
   quit_job: '🚪', reduce_hours: '🌿', full_hours: '⏱️', weekend_trip: '🧳', flight_home: '✈️',
 }
 export function actionIcon(a: ActionIn): string { return ICONS[a.id ?? ''] ?? ICONS[a.type] ?? '•' }
@@ -159,44 +164,105 @@ export function requestFor(s: Store, node?: string, withQueue = true): GameReque
 
 const same = (a: TurnIn, b: TurnIn) => a.month === b.month && JSON.stringify(a.actions) === JSON.stringify(b.actions)
 
-/** Sleep `months` months: the queue becomes a turn (a new node, or an identical existing child). */
-export function commitSleep(s: Store, months: number, horizon: number): Partial<Store> {
+/** Commit this month's queue as a turn (a new node, or an identical existing child). */
+function commitQueue(s: Store): Pick<Store, 'nodes' | 'cursor' | 'nextColor' | 'tip'> {
   const nodes = { ...s.nodes }
   let cursor = s.cursor
   let nextColor = s.nextColor
+  let tip = tipOf(s)
   if (s.queue.length) {
     const turn: TurnIn = { month: s.current, actions: s.queue }
     const cur = nodes[cursor]
     const existing = cur.children.map((c) => nodes[c]).find((c) => c.turn && same(c.turn, turn))
-    if (existing) cursor = existing.id
-    else {
-      const id = `n${Object.keys(nodes).length}_${Math.random().toString(36).slice(2, 6)}`
+    if (existing) {
+      cursor = existing.id
+      if (!pathIds({ nodes }, tip).includes(cursor)) tip = cursor
+    } else {
+      const id = newId(nodes)
       const forks = cur.children.length > 0
-      nodes[id] = { id, parent: cur.id, turn, children: [], color: forks ? nextColor : cur.color, label: turnLabel(turn), reached: 0 }
+      nodes[id] = { id, parent: cur.id, turn, children: [], color: forks ? nextColor : cur.color, label: turnLabel(turn), reached: s.current }
       nodes[cur.id] = { ...cur, children: [...cur.children, id] }
       if (forks) nextColor++
       cursor = id
+      tip = id
     }
   }
-  const current = Math.min(horizon, s.current + months)
-  nodes[cursor] = { ...nodes[cursor], reached: current }
-  return { nodes, cursor, current, queue: [], nextColor }
+  return { nodes, cursor, nextColor, tip }
+}
+
+const newId = (nodes: Record<string, TNode>) => `n${Object.keys(nodes).length}_${Math.random().toString(36).slice(2, 6)}`
+
+/** The viewed reality (falls back to the cursor when the stored tip is stale). */
+export function tipOf(s: Pick<Store, 'nodes' | 'cursor' | 'tip'>): string {
+  return s.tip && s.nodes[s.tip] && pathIds(s, s.tip).includes(s.cursor) ? s.tip : s.cursor
+}
+
+/** Deepest node on `tip`'s path whose turn happened before month `m` (the root if none). */
+function lastBefore(s: Pick<Store, 'nodes'>, tip: string, m: number): string {
+  let cursor = pathIds(s, tip)[0]
+  for (const id of pathIds(s, tip)) {
+    const t = s.nodes[id].turn
+    if (!t || t.month < m) cursor = id
+    else break
+  }
+  return cursor
+}
+
+/** Move the playhead to month `m` along the viewed reality. Moving forward first commits this month's
+ *  plans; moving back keeps later choices as future plans (redo) until you choose differently. */
+export function travel(s: Store, m: number): Partial<Store> {
+  const month = Math.max(0, Math.min(s.horizon, Math.round(m)))
+  const base: Store = month > s.current && s.queue.length ? { ...s, ...commitQueue(s) } : s
+  const tip = tipOf(base)
+  const nodes = { ...base.nodes }
+  nodes[tip] = { ...nodes[tip], reached: Math.max(nodes[tip].reached, month) }
+  return { nodes, tip, cursor: lastBefore(base, tip, month), current: month, queue: [], nextColor: base.nextColor, endSeen: false }
+}
+
+/** Sleep `months` months (kept for the Home buttons): the same as moving the playhead forward. */
+export function commitSleep(s: Store, months: number): Partial<Store> {
+  return travel(s, s.current + months)
+}
+
+/** A new reality without one action of node `id` (later choices are kept and replayed). */
+export function withoutAction(s: Store, id: string, index: number): Partial<Store> | null {
+  const tip = tipOf(s)
+  const path = pathIds(s, tip)
+  const at = path.indexOf(id)
+  const node = s.nodes[id]
+  if (at < 0 || !node.turn || !node.parent) return null
+  const rest = node.turn.actions.filter((_, j) => j !== index)
+  const turns: TurnIn[] = [...(rest.length ? [{ month: node.turn.month, actions: rest }] : []),
+    ...path.slice(at + 1).map((p) => s.nodes[p].turn!)]
+  const nodes = { ...s.nodes }
+  let nextColor = s.nextColor
+  const color = nextColor++
+  let parent = node.parent
+  for (const turn of turns) {
+    const cur = nodes[parent]
+    const existing = cur.children.map((c) => nodes[c]).find((c) => c.turn && same(c.turn, turn))
+    if (existing) { parent = existing.id; continue }
+    const nid = newId(nodes)
+    nodes[nid] = { id: nid, parent: cur.id, turn, children: [], color, label: turnLabel(turn), reached: turn.month }
+    nodes[cur.id] = { ...cur, children: [...cur.children, nid] }
+    parent = nid
+  }
+  nodes[parent] = { ...nodes[parent], reached: Math.max(nodes[parent].reached, s.nodes[tip].reached, s.current) }
+  return { nodes, nextColor, tip: parent, cursor: lastBefore({ nodes }, parent, s.current), queue: [] }
 }
 
 /** Go back to just before node `id` was chosen (root: the start), with an empty queue. */
 export function rollbackTo(s: Store, id: string): Partial<Store> {
   const n = s.nodes[id]
   if (!n.parent || !n.turn) {
-    return { cursor: s.root, current: 0, queue: [], nodes: { ...s.nodes, [s.root]: { ...s.nodes[s.root], reached: 0 } }, endSeen: false }
+    return { cursor: s.root, tip: tipOf(s), current: 0, queue: [], endSeen: false }
   }
-  const parent = s.nodes[n.parent]
-  return { cursor: parent.id, current: n.turn.month, queue: [], endSeen: false,
-    nodes: { ...s.nodes, [parent.id]: { ...parent, reached: n.turn.month } } }
+  return { ...travel({ ...s, tip: id, cursor: n.parent, queue: [] }, n.turn.month), tip: id }
 }
 
 /** Continue a reality from its tip. */
 export function resumeAt(s: Store, id: string): Partial<Store> {
-  return { cursor: id, current: s.nodes[id].reached, queue: [], endSeen: false }
+  return { cursor: id, tip: id, current: s.nodes[id].reached, queue: [], endSeen: false }
 }
 
 let toastId = 1

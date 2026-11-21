@@ -1,5 +1,6 @@
 // Mirrors game/backend/app/models.py + service.py. The client does no financial maths.
 export type Status = 'studying' | 'working' | 'abroad' | 'unemployed' | 'retired'
+export type Regime = 'employed' | 'part_time' | 'job_search' | 'student' | 'retired'
 export type Place = 'home' | 'university' | 'office' | 'cafe' | 'shop' | 'bank' | 'realestate' | 'station'
 
 export interface Goal {
@@ -82,6 +83,8 @@ export interface GameStateDict {
   program: string | null
   program_end: number | null
   has_master: boolean
+  no_degree: boolean
+  enrolled: boolean
   salary: number
   work_share: number
   savings_rate: number
@@ -112,7 +115,7 @@ export interface Statement {
 }
 
 export interface LivedRow {
-  t: number; age: number; status: Status; cash: number; investments: number; net_worth: number
+  t: number; age: number; status: Status; regime: Regime; cash: number; investments: number; net_worth: number
   home_value: number; mortgage: number; debt: number; joy: number; flags: string[]
 }
 
@@ -138,6 +141,7 @@ export interface GameState {
   warnings: { kind: string; text: string }[]
   goals: CheckedGoal[]
   rows: LivedRow[]
+  life_end_age: number
   disclaimer: string
 }
 
@@ -157,7 +161,8 @@ export interface Projection {
   seed: number
   world: number
   lived: { net_worth: number[]; cash: number[] }
-  no_surprises: { net_worth: number[]; cash: number[]; joy_total: number } | null
+  no_surprises: { net_worth: number[]; cash: number[]; regime: Regime[]; joy_total: number } | null
+  regimes: { states: Regime[]; from_month: number; share: Record<Regime, number[]> } | null
   bands: { net_worth: Band; cash: Band } | null
   ghosts: { kind: string; text: string; month: number; net_worth: number[]; cash: number[] }[]
   final_net_worth: { p10: number; p50: number; p90: number } | null

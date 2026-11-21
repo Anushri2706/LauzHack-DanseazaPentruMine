@@ -11,13 +11,13 @@ export function EndScreen({ st }: { st: GameState }) {
   const done = (phone: 'multiverse' | null) => setStore({ endSeen: true, phone })
   return (
     <div className="dialog-wrap">
-      <div className="postcard px-box" role="dialog" aria-label="Ten years later">
+      <div className="postcard px-box" role="dialog" aria-label="The end of the timeline">
         <div className="stamp">🏔️</div>
         <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 8 }}>
           <Avatar look={s.look} scale={5} />
           <div>
             <h2>Greetings from age {st.age_years}!</h2>
-            <p className="small" style={{ margin: 0 }}>{st.persona.name} lived ten years of “<b>{realityName(s, s.cursor)}</b>” in world #{st.world}.</p>
+            <p className="small" style={{ margin: 0 }}>{st.persona.name} lived a whole life, to age {st.age_years}, of “<b>{realityName(s, s.cursor)}</b>” in world #{st.world}.</p>
           </div>
         </div>
         <ScoreTiles st={st} proj={proj.data} />

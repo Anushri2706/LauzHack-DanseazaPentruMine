@@ -71,7 +71,8 @@ def run_checks() -> list[dict]:
                       f"{moved:,.0f} lower after 120 months (= 160 × 120)"))
 
     legacy = [D(0, "master_ft"), D(12, "continue"), D(24, "move_abroad")]
-    same = run_branch(p, legacy).rows == run_turns(p, decisions_to_turns(p, legacy)).rows
+    same = run_branch(p, legacy).rows == [{k: v for k, v in r.items() if k != "regime"}
+                                          for r in run_turns(p, decisions_to_turns(p, legacy)).rows]
     out.append(_check("Monthly turns reproduce the original engine", same,
                       "Master's then abroad, as decision points vs as monthly turns: identical in all 120 months"))
 

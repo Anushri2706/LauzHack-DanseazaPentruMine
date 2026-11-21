@@ -32,7 +32,7 @@ META: dict[str, AssumptionMeta] = {
     "opening_debt": AssumptionMeta("Starting debt (principal)", "CHF", "Starting position", 0),
     "opening_debt_rate": AssumptionMeta("Starting debt interest", "%/year", "Starting position", 0, 0.3),
     "start_age": AssumptionMeta("Age at start", "years", "Starting position", 16, 90),
-    "horizon_months": AssumptionMeta("Horizon", "months", "Starting position", 12, 240),
+    "horizon_months": AssumptionMeta("Horizon", "months", "Starting position", 12, 1440),
     # Income
     "student_income": AssumptionMeta("Student side-job income", "CHF/month net", "Income", 0),
     "salary_work": AssumptionMeta("Salary if working now", "CHF/month net", "Income", 0),
@@ -75,8 +75,32 @@ META: dict[str, AssumptionMeta] = {
     "return_volatility": AssumptionMeta("Investment volatility", "%/year (std. dev.)", "Uncertainty", 0, 0.6),
     "crash_prob_annual": AssumptionMeta("Chance of a market drop per year", "%/year", "Uncertainty", 0, 1),
     "crash_size": AssumptionMeta("Size of a market drop", "% of portfolio", "Uncertainty", 0, 0.9),
-    "job_loss_prob_annual": AssumptionMeta("Chance of losing income per year", "%/year", "Uncertainty", 0, 1,
-                                           note="While working or abroad; lasts 3-9 months on unemployment benefit."),
+    "labour_market_hmm": AssumptionMeta(
+        "Job-loss spells from the regime HMM", "1 = on, 0 = flat chance below", "Uncertainty", 0, 1,
+        note="On: spells are sampled from a regime chain with age-banded monthly hazards from Eurostat "
+             "lfsi_long_q, BFS SAKE and SECO (backend/assumptions/transitions.csv). Off: flat yearly chance."),
+    "retirement_age": AssumptionMeta("Retirement age", "years", "Life course", 55, 75,
+                                     note="BSV AHV 21 (backend/assumptions/income_assumptions.csv): working, between "
+                                          "jobs and abroad all move to retired at this age."),
+    "pension_replacement_rate": AssumptionMeta("Pension (share of last full salary)", "%", "Life course", 0, 1,
+                                               note="OECD Pensions at a Glance 2025 net replacement rate of mandatory "
+                                                    "pensions for an average earner (retired_income_fraction)."),
+    "no_degree_wage_factor": AssumptionMeta("Pay without a degree (× salary if working now)", "×", "Income", 0, 1.5,
+                                            note="Our assumption, roughly in line with the BFS wage structure "
+                                                 "survey (LSE) gap between upper-secondary and tertiary education."),
+    "ahv_max_pension": AssumptionMeta("Maximum AHV pension (2025)", "CHF/month", "Life course", 0, 10000,
+                                      note="AHV/AVS 2025: single full pension 1,260-2,520 CHF/month. The AHV part of "
+                                           "your pension is capped here; the rest is BVG."),
+    "wage_index_annual": AssumptionMeta("Swiss nominal wage growth", "%/year", "Life course", -0.05, 0.1,
+                                        note="BFS Swiss Wage Index, long-run nominal growth of about 1%/year. Half of "
+                                             "the AHV mixed index."),
+    "ahv_13th_pension": AssumptionMeta("13th AHV pension (from Dec 2026)", "1 = on, 0 = off", "Life course", 0, 1,
+                                       note="Accepted by vote in March 2024: one extra monthly AHV pension each "
+                                            "December, first paid in December 2026."),
+    "job_loss_prob_annual": AssumptionMeta("Chance of losing income per year (flat model)", "%/year",
+                                           "Uncertainty", 0, 1,
+                                           note="Used only when the regime HMM is off. While working or abroad; "
+                                                "lasts 3-9 months on unemployment benefit."),
     "rent_shock_prob_annual": AssumptionMeta("Chance of a rent rise per year", "%/year", "Uncertainty", 0, 1),
     "rent_shock_size": AssumptionMeta("Size of a rent rise", "% of rent", "Uncertainty", 0, 1),
     # Rules
@@ -130,6 +154,13 @@ ALEXIA_DEFAULTS: dict[str, tuple[float, str]] = {
     "return_volatility": (0.15, "ours"),
     "crash_prob_annual": (0.05, "ours"),
     "crash_size": (0.2, "ours"),
+    "labour_market_hmm": (1, "ours"),
+    "retirement_age": (65, "ours"),
+    "pension_replacement_rate": (0.475, "ours"),
+    "no_degree_wage_factor": (0.8, "ours"),
+    "ahv_max_pension": (2520, "ours"),
+    "wage_index_annual": (0.01, "ours"),
+    "ahv_13th_pension": (1, "ours"),
     "job_loss_prob_annual": (0.05, "ours"),
     "rent_shock_prob_annual": (0.1, "ours"),
     "rent_shock_size": (0.1, "ours"),

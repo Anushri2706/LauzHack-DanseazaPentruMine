@@ -125,7 +125,7 @@ class GameRequest(BaseModel):
 
 
 class GameProjectionRequest(GameRequest):
-    n: int = Field(default=N_WORLDS, ge=10, le=N_WORLDS)
+    n: int = Field(default=60, ge=10, le=N_WORLDS)
 
 
 class GameRollRequest(GameRequest):
