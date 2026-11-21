@@ -22,7 +22,7 @@ import pandas as pd
 from scipy import stats
 from scipy.special import logsumexp
 
-from .income import IncomeTable, attributes_at
+from .income import IncomeTable, attributes_at, parental_leave_duration, parental_leave_mask
 from .transitions import TransitionPriors, load_transition_priors
 from .types import K, STATE_INDEX, STATES, Intervention, Profile, RegimePaths
 
@@ -452,20 +452,35 @@ def sample_yearly_lump(rng: np.random.Generator, n: int, horizon: int, params: d
     return lump
 
 
-def _schedule(T: int, interventions: list[Intervention]) -> tuple[np.ndarray, dict[int, int]]:
+def _schedule(T: int, interventions: list[Intervention],
+              params: dict | None = None) -> tuple[np.ndarray, dict[int, int]]:
     """Forced months and, for exits back to the previous regime, the month to copy from.
 
     ``forced[t] >= 0`` pins that state. ``forced[t] == -2`` means "the regime just
     before this phase". ``forced[t] == -1`` is free.
+
+    ``parental_leave`` pins employed for its duration and for the following month.
+    Pay for the duration is the replacement prior; that is applied by the income table.
     """
+    params = params or {}
     forced = np.full(T, -1, dtype=int)
-    exits: list[tuple[int, int | None]] = []
-    for iv in sorted((i for i in interventions if i.kind == "force_state"), key=lambda i: i.start_month):
-        if iv.state not in STATE_INDEX:
-            raise ValueError(f"Unknown force_state {iv.state!r}")
+    exits: list[tuple[int, int | None, int]] = []
+    kind_rank = {"force_state": 0, "parental_leave": 1}
+    pins = [iv for iv in interventions if iv.kind in kind_rank]
+    for iv in sorted(pins, key=lambda i: (i.start_month, kind_rank[i.kind])):
         t0 = int(iv.start_month)
         if t0 >= T or t0 < 0:
             continue
+        if iv.kind == "parental_leave":
+            dur = parental_leave_duration(iv, params)
+            t1 = min(T, t0 + dur)
+            forced[t0:t1] = E
+            # The month after the pin is employed. A later force_state can still overwrite it.
+            if t1 < T and forced[t1] < 0:
+                forced[t1] = E
+            continue
+        if iv.state not in STATE_INDEX:
+            raise ValueError(f"Unknown force_state {iv.state!r}")
         sid = STATE_INDEX[iv.state]
         if iv.duration is None:
             forced[t0] = sid
@@ -515,7 +530,8 @@ def sample_regime_paths(rng: np.random.Generator, pi0: np.ndarray, A_draws: np.n
     pi = np.asarray(pi0, dtype=float)
     pi = np.maximum(pi, 0.0)
     pi = pi / pi.sum()
-    forced, prev_from = _schedule(horizon, interventions)
+    forced, prev_from = _schedule(horizon, interventions, params)
+    leave = parental_leave_mask(horizon, interventions, params)
     states = np.empty((n, horizon), dtype=int)
     snapshots: dict[int, np.ndarray] = {}
     for t_exit, t_start in prev_from.items():
@@ -562,7 +578,7 @@ def sample_regime_paths(rng: np.random.Generator, pi0: np.ndarray, A_draws: np.n
             u = rng.random(n)
             states[:, t] = np.argmax(np.cumsum(row, axis=1) >= u[:, None], axis=1)
         age_now = profile.age + t / 12.0
-        if age_now >= retirement_age:
+        if age_now >= retirement_age and not bool(leave[t]):
             working = (states[:, t] == E) | (states[:, t] == STATE_INDEX["part_time"])
             states[working, t] = STATE_INDEX["retired"]
         dwell = np.where(states[:, t] == J, dwell + 1.0, 0.0)
@@ -601,14 +617,28 @@ def _initial_belief(profile: Profile, initial_belief: dict | None) -> np.ndarray
 
 
 def scheduled_states(profile: Profile, horizon: int, interventions: list[Intervention],
-                     retirement_age: float) -> np.ndarray:
+                     retirement_age: float, params: dict | None = None) -> np.ndarray:
     """Deterministic state sequence [T] for the stub: initial state, force_state, retirement.
 
     A jump with no duration persists, because the stub has no transition matrix.
+    Parental leave is employed for its duration and the stub then stays employed,
+    because it has no chain to run. A later pin still overwrites that tail.
     """
+    params = params or {}
     base = STATE_INDEX[profile.initial_state]
     seq = np.full(horizon, base)
-    for iv in sorted((i for i in interventions if i.kind == "force_state"), key=lambda i: i.start_month):
+    kind_rank = {"force_state": 0, "parental_leave": 1}
+    pins = [iv for iv in interventions if iv.kind in kind_rank]
+    for iv in sorted(pins, key=lambda i: (i.start_month, kind_rank[i.kind])):
+        if iv.start_month >= horizon or iv.start_month < 0:
+            continue
+        if iv.kind == "parental_leave":
+            dur = parental_leave_duration(iv, params)
+            end = min(horizon, iv.start_month + dur)
+            seq[iv.start_month:end] = E
+            if end < horizon:
+                seq[end:] = E
+            continue
         end = horizon if iv.duration is None else min(horizon, iv.start_month + iv.duration)
         prev = seq[iv.start_month] if iv.start_month < horizon else base
         seq[iv.start_month:end] = STATE_INDEX[iv.state]
@@ -616,7 +646,8 @@ def scheduled_states(profile: Profile, horizon: int, interventions: list[Interve
             exit_state = EXIT_STATE.get(iv.state)
             seq[end:] = STATE_INDEX[exit_state] if exit_state else prev
     ages = profile.age + np.arange(horizon) / 12.0
-    working = np.isin(seq, [STATE_INDEX["employed"], STATE_INDEX["part_time"]])
+    leave = parental_leave_mask(horizon, interventions, params)
+    working = np.isin(seq, [E, STATE_INDEX["part_time"]]) & ~leave
     seq[working & (ages >= retirement_age)] = STATE_INDEX["retired"]
     return seq
 
@@ -694,7 +725,8 @@ class RegimeEngine:
         return inc, rent
 
     def _simulate_stub(self, profile, T, n, interventions, overrides, income_table) -> RegimePaths:
-        seq = scheduled_states(profile, T, interventions, income_table.params["retirement_age"])
+        seq = scheduled_states(profile, T, interventions, income_table.params["retirement_age"],
+                               income_table.params)
         states = np.repeat(seq[None, :], n, axis=0)
         income = np.repeat(income_table.income_paths(seq[None, :], profile, interventions), n, axis=0)
         rate_by_state = np.array([self.savings_rate_for(s, profile, overrides) for s in STATES])
@@ -730,6 +762,9 @@ class RegimeEngine:
         month_of_year = (profile.start_month_of_year - 1 + np.arange(T)) % 12 + 1
         spend = sample_emissions(rng, self.emissions, states, month_of_year, overrides, profile)
         bonus_units = sample_december_bonus(rng, self.emissions, states, month_of_year, profile)
+        # The replacement prior is the whole paycheck. Do not also draw a 13th salary.
+        leave = parental_leave_mask(T, interventions, income_table.params)
+        bonus_units[:, leave] = 0.0
         income = income_table.income_paths(states, profile, interventions)
         lump = sample_yearly_lump(rng, n, T, income_table.params)
         if income_table.scales_spending():

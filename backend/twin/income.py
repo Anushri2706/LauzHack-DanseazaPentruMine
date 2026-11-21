@@ -29,6 +29,42 @@ def attributes_at(profile: Profile, interventions: list[Intervention] | None, t:
     return attrs
 
 
+def parental_leave_duration(iv: Intervention, params: dict) -> int:
+    """Months a parental_leave pin lasts. An omitted duration uses the CSV prior."""
+    if iv.kind != "parental_leave":
+        raise ValueError(f"Not a parental_leave intervention: {iv.kind!r}")
+    if iv.duration is None:
+        if "parental_leave_months" not in params:
+            raise KeyError("parental_leave_months")
+        dur = int(float(params["parental_leave_months"]))
+    else:
+        dur = int(iv.duration)
+    if dur < 0:
+        raise ValueError("parental leave duration cannot be negative")
+    return dur
+
+
+def parental_leave_mask(horizon: int, interventions: list[Intervention] | None, params: dict) -> np.ndarray:
+    """[T] bool, true on months covered by a parental_leave pin. The return month is not included."""
+    mask = np.zeros(horizon, dtype=bool)
+    for iv in interventions or []:
+        if iv.kind != "parental_leave":
+            continue
+        dur = parental_leave_duration(iv, params)
+        t0 = int(iv.start_month)
+        if dur == 0 or t0 >= horizon:
+            continue
+        lo = max(0, t0)
+        hi = min(horizon, t0 + dur)
+        if lo < hi:
+            mask[lo:hi] = True
+    return mask
+
+
+def on_parental_leave(interventions: list[Intervention] | None, params: dict, t: int) -> bool:
+    return bool(parental_leave_mask(t + 1, interventions, params)[t]) if t >= 0 else False
+
+
 @dataclass
 class IncomeTable:
     params: dict[str, float]
@@ -93,6 +129,10 @@ class IncomeTable:
         Tracks months worked (experience growth, unemployment insurance, the graduate
         allowance) and the last wage. ``experience=False`` keeps the reference level
         flat, which is what the filter wants for a two-year ledger with no raises.
+
+        A parental_leave month pays ``parental_leave_replacement`` times the last wage
+        and does not count as time worked, so the wage does not grow and the UI clock
+        does not run. Housing is left to the lease already signed.
         """
         p = self.params
         n, T = states.shape
@@ -151,13 +191,16 @@ class IncomeTable:
                 inc[s == R] = profile.ref_income
             else:
                 inc[s == R] = last_salary[s == R] * p["retired_income_fraction"]
+            on_leave = on_parental_leave(ivs, p, t)
+            if on_leave:
+                inc[:] = float(p["parental_leave_replacement"]) * last_salary
             out[:, t] = inc
 
-            working = (s == E) | (s == P)
+            working = ((s == E) | (s == P)) & (not on_leave)
             earned = np.where(s == P, salary * p["part_time_fraction"], salary)
             last_salary = np.where(working, earned, last_salary)
             has_worked = has_worked | working
-            months_in_js = np.where(js, months_in_js + 1.0, 0.0)
+            months_in_js = np.where(js & (not on_leave), months_in_js + 1.0, 0.0)
             if experience and (t + 1) % 12 == 0:
                 g = self._growth_rate(profile.age + (t + 1) / 12.0)
                 salary = np.where(working, salary * (1.0 + g), salary)
@@ -172,7 +215,8 @@ class IncomeTable:
         """Pay that rent follows: this month's earnings while working, otherwise the last wage.
 
         Unemployment insurance does not reset the lease. A month with no wage yet stays at 0
-        and the caller keeps the student rent.
+        and the caller keeps the student rent. Parental leave is not a working month, so the
+        lease and the non-housing bill stay on the last wage.
         """
         p = self.params
         n, T = states.shape
@@ -196,7 +240,8 @@ class IncomeTable:
                     last_salary = last_salary * (new / old)
                 prev_attrs = attrs
             s = states[:, t]
-            working = (s == E) | (s == P)
+            on_leave = on_parental_leave(ivs, p, t)
+            working = ((s == E) | (s == P)) & (not on_leave)
             earned = np.where(s == P, salary * p["part_time_fraction"], salary)
             out[:, t] = np.where(working, earned, last_salary)
             last_salary = np.where(working, earned, last_salary)
@@ -224,7 +269,8 @@ class IncomeTable:
         at the wage on offer if she has no payslip yet, and that net rent stays put through
         raises and unemployment. Charges sit on top of the net rent. Non-housing is then
         ``base + rate * gross``, with gross the current wage, or the last wage, or the wage
-        the lease was underwritten on.
+        the lease was underwritten on. Parental leave does not sign a new lease and does
+        not move non-housing off the last wage.
         """
         p = self.params
         n, T = states.shape

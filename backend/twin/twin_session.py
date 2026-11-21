@@ -28,6 +28,9 @@ DECISIONS: dict[str, str] = {
                    "job_search_months (default 0).",
     "job_loss": "Stress test: enter 'job_search' at start_month. Param duration pins it for that many months; "
                 "omitted = exit via job_search_exit_rate.",
+    "parental_leave": "Paid leave from start_month. Income is parental_leave_replacement times the last wage "
+                      "for duration months (default parental_leave_months). Housing stays on the current lease. "
+                      "The following month is employed. EO is more complicated than this prior.",
     "part_time": "Enter 'part_time' at start_month. Optional duration.",
     "downturn": "Scale the job-loss hazard. Params: factor (default 2.0), duration (months, optional).",
     "one_off": "One-off cost. Params: amount_chf, label.",
@@ -295,6 +298,8 @@ class TwinSession:
             return ivs, [OneOff(t0, float(p.get("relocation_cost_chf", 6500.0)), "relocation")]
         if kind == "job_loss":
             return [Intervention("force_state", t0, dur, state="job_search")], []
+        if kind == "parental_leave":
+            return [Intervention("parental_leave", t0, dur)], []
         if kind == "part_time":
             return [Intervention("force_state", t0, dur, state="part_time")], []
         if kind == "downturn":

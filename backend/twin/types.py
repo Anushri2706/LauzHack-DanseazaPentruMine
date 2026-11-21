@@ -56,7 +56,7 @@ class Profile:
 @dataclass
 class Intervention:
     """A decision applied as do() on the regime chain."""
-    kind: str                  # "force_state" | "scale_hazard" | "set_attribute"
+    kind: str                  # "force_state" | "scale_hazard" | "set_attribute" | "parental_leave"
     start_month: int
     duration: int | None = None
     state: str | None = None   # for force_state
