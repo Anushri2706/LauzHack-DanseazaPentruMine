@@ -29,7 +29,7 @@ def _worker(age=35, employment="employed", income=7000.0, rent=1800.0, household
 
 
 def test_assumptions_replace_placeholders():
-    for name in ("transitions.csv", "income_assumptions.csv"):
+    for name in ("transitions.csv", "income_assumptions.csv", "expense_assumptions.csv"):
         assert "PLACEHOLDER" not in (ASSUMPTIONS_DIR / name).read_text()
     table = IncomeTable.from_csv().params
     assert table["ui_replacement_rate"] == pytest.approx(0.70)
@@ -112,6 +112,30 @@ def test_income_rules_match_the_sources():
     away = table.rent_paths(np.full((1, 1), E), employed,
                             [Intervention("set_attribute", 0, attribute=("abroad", True))])[0, 0]
     assert away == pytest.approx(2000 * 0.63)
+    assert table.params["scaled_spending"] == pytest.approx(0)
+
+
+def test_scaled_rent_follows_income_between_a_flat_and_a_cap():
+    table = IncomeTable.from_csv()
+    scaled = table.with_overrides({"scaled_spending": 1})
+    student = load_profile("P00001")
+    states = np.array([[S, S, E, E]])
+    rent = scaled.rent_paths(states, student)[0]
+    assert rent[0] == pytest.approx(900) and rent[1] == pytest.approx(900)
+    entry = scaled.rent_from_earnings(table.params["entry_salary_chf"])
+    assert rent[2] == pytest.approx(float(entry))
+    assert table.params["rent_floor_chf"] < float(entry) < table.params["rent_cap_chf"]
+
+    modest = float(scaled.rent_from_earnings(8000))
+    rich = float(scaled.rent_paths(np.full((1, 1), E), _worker(income=80000))[0, 0])
+    assert modest < rich
+    assert rich == pytest.approx(table.params["rent_cap_chf"])
+    # The raise at month 12 lifts the rent, and a later job-search month keeps that lease.
+    seq = np.full((1, 14), E)
+    seq[0, 13] = J
+    grown = scaled.rent_paths(seq, _worker(age=22, income=5000))[0]
+    assert grown[12] > grown[0]
+    assert grown[13] == pytest.approx(grown[12])
 
 
 def test_forward_filter_matches_a_hand_calculation():

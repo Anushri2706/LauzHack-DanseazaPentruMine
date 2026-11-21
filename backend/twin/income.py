@@ -38,7 +38,12 @@ class IncomeTable:
     @classmethod
     def from_csv(cls, path: str | Path = ASSUMPTIONS_DIR / "income_assumptions.csv") -> "IncomeTable":
         df = pd.read_csv(path)
-        return cls(dict(zip(df["parameter"], df["value"].astype(float))), df)
+        params = dict(zip(df["parameter"], df["value"].astype(float)))
+        expense = ASSUMPTIONS_DIR / "expense_assumptions.csv"
+        if expense.exists():
+            extra = pd.read_csv(expense)
+            params.update(dict(zip(extra["parameter"], extra["value"].astype(float))))
+        return cls(params, df)
 
     def with_overrides(self, overrides: dict | None) -> "IncomeTable":
         if not overrides:
@@ -158,13 +163,68 @@ class IncomeTable:
                 salary = np.where(working, salary * (1.0 + g), salary)
         return out
 
+    def scales_spending(self) -> bool:
+        """The fixed 1,546 rent is the default. ``scaled_spending`` turns on income-scaled rent."""
+        return float(self.params.get("scaled_spending", 0.0)) >= 0.5
+
+    def _capacity_earnings(self, states: np.ndarray, profile: Profile,
+                           interventions: list[Intervention] | None, experience: bool) -> np.ndarray:
+        """Pay that rent follows: this month's earnings while working, otherwise the last wage.
+
+        Unemployment insurance does not reset the lease. A month with no wage yet stays at 0
+        and the caller keeps the student rent.
+        """
+        p = self.params
+        n, T = states.shape
+        ivs = interventions or []
+        salary = np.full(n, self.full_time_salary(profile, dict(profile.attributes)))
+        if profile.initial_state == "employed":
+            last_salary = salary.copy()
+        elif profile.initial_state == "part_time":
+            last_salary = salary * p["part_time_fraction"]
+        else:
+            last_salary = np.zeros(n)
+        out = np.empty((n, T))
+        prev_attrs = dict(profile.attributes)
+        for t in range(T):
+            attrs = attributes_at(profile, ivs, t)
+            if attrs != prev_attrs:
+                new = self.full_time_salary(profile, attrs)
+                old = self.full_time_salary(profile, prev_attrs)
+                if old > 0:
+                    salary = salary * (new / old)
+                    last_salary = last_salary * (new / old)
+                prev_attrs = attrs
+            s = states[:, t]
+            working = (s == E) | (s == P)
+            earned = np.where(s == P, salary * p["part_time_fraction"], salary)
+            out[:, t] = np.where(working, earned, last_salary)
+            last_salary = np.where(working, earned, last_salary)
+            if experience and (t + 1) % 12 == 0:
+                g = self._growth_rate(profile.age + (t + 1) / 12.0)
+                salary = np.where(working, salary * (1.0 + g), salary)
+        return out
+
+    def rent_from_earnings(self, earnings: np.ndarray) -> np.ndarray:
+        """Housing bill from the HABE income curve, floored and capped at Vaud market rents."""
+        p = self.params
+        raw = p["rent_anchor_chf"] * np.power(
+            np.maximum(np.asarray(earnings, dtype=float), 1.0) / p["rent_income_anchor_chf"],
+            p["rent_income_elasticity"],
+        )
+        return np.clip(raw, p["rent_floor_chf"], p["rent_cap_chf"])
+
     def rent_paths(self, states: np.ndarray, profile: Profile,
-                   interventions: list[Intervention] | None = None) -> np.ndarray:
+                   interventions: list[Intervention] | None = None, *, experience: bool = True) -> np.ndarray:
         """[n_paths, T] rent in CHF.
 
-        A student keeps their own rent until the first job, then moves to the employed
-        rent. Anyone else keeps their own rent, and a month spent as a student uses the
-        student rent. Abroad multiplies the result by the cost factor.
+        Default (``scaled_spending`` off): a student keeps their own rent until the first job,
+        then moves to the fixed employed rent. Anyone else keeps their own rent, and a month
+        spent as a student uses the student rent.
+
+        ``scaled_spending`` on: the student rent still holds until the first job. After that,
+        rent follows earnings along the household-budget curve and is clipped to a normal flat
+        at the bottom and a large flat at the top. Abroad multiplies the result either way.
         """
         p = self.params
         n, T = states.shape
@@ -176,13 +236,18 @@ class IncomeTable:
             student_level = float(p["student_rent_chf"])
             working_level = float(profile.rent) if profile.rent > 0 else float(p["employed_rent_chf"])
         on_student_budget = np.full(n, profile.initial_state == "student")
+        earnings = self._capacity_earnings(states, profile, ivs, experience) if self.scales_spending() else None
         out = np.empty((n, T))
         for t in range(T):
             attrs = attributes_at(profile, ivs, t)
             s = states[:, t]
             working = (s == E) | (s == P)
             on_student_budget = np.where(working, False, on_student_budget)
-            level = np.where((s == S) | on_student_budget, student_level, working_level)
+            if earnings is None:
+                level = np.where((s == S) | on_student_budget, student_level, working_level)
+            else:
+                scaled = self.rent_from_earnings(earnings[:, t])
+                level = np.where((s == S) | on_student_budget, student_level, scaled)
             if attrs.get("abroad"):
                 level = level * p["abroad_cost_multiplier"]
             out[:, t] = level

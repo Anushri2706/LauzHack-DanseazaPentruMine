@@ -429,6 +429,33 @@ def sample_december_bonus(rng: np.random.Generator, model: EmissionModel, states
     return bonus
 
 
+def sample_yearly_lump(rng: np.random.Generator, n: int, horizon: int, params: dict) -> np.ndarray:
+    """One holiday draw plus one emergency draw per path-year, charged in a random month.
+
+    Off unless ``scaled_spending`` is set. The holiday draw is lognormal around the travel-survey
+    mean. The emergency draw is exponential around the per-person furnishing mean, because the
+    budget survey publishes that mean and not a variance.
+    """
+    lump = np.zeros((n, horizon))
+    if float(params.get("scaled_spending", 0.0)) < 0.5:
+        return lump
+    mean = float(params["holiday_mean_chf"])
+    cv = float(params["holiday_cv"])
+    sigma = math.sqrt(math.log(1.0 + cv * cv))
+    mu = math.log(mean) - 0.5 * sigma * sigma
+    emergency_mean = float(params["emergency_mean_chf"])
+    year = 0
+    while year * 12 < horizon:
+        t0 = year * 12
+        width = min(12, horizon - t0)
+        holiday = rng.lognormal(mu, sigma, size=n)
+        emergency = rng.exponential(emergency_mean, size=n)
+        month = rng.integers(0, width, size=n)
+        lump[np.arange(n), t0 + month] = holiday + emergency
+        year += 1
+    return lump
+
+
 def _schedule(T: int, interventions: list[Intervention]) -> tuple[np.ndarray, dict[int, int]]:
     """Forced months and, for exits back to the previous regime, the month to copy from.
 
@@ -709,7 +736,8 @@ class RegimeEngine:
         bonus_units = sample_december_bonus(rng, self.emissions, states, month_of_year, profile)
         income = income_table.income_paths(states, profile, interventions)
         rent = income_table.rent_paths(states, profile, interventions)
-        net = income - rent * spend + bonus_units * income
+        lump = sample_yearly_lump(rng, n, T, income_table.params)
+        net = income - rent * spend + bonus_units * income - lump
         household = profile.attributes.get("household_type")
         se = _is_self_employed(profile)
         for k, name in enumerate(STATES):
@@ -726,4 +754,4 @@ class RegimeEngine:
         ok = np.abs(income) > 1.0
         savings[ok] = net[ok] / income[ok]
         occupancy = np.stack([(states == k).mean(axis=0) for k in range(K)], axis=1)
-        return RegimePaths(states, income, savings, net, occupancy, A_draws)
+        return RegimePaths(states, income, savings, net, occupancy, A_draws, lump)

@@ -76,6 +76,7 @@ class RegimePaths:
     net_flow_chf: np.ndarray     # [n_paths, T] savings_rate * income_chf (one-offs are added downstream)
     occupancy: np.ndarray        # [T, K] simulated P(state_t = k); equals pi0 A^t when A is fixed and nothing is pinned
     transition_draws: np.ndarray # [n_paths, K, K] sampled A (parameter uncertainty)
+    lump_chf: np.ndarray | None = None  # [n_paths, T] holiday + emergency, one draw per year; None if off
 
     @property
     def n_paths(self) -> int:
