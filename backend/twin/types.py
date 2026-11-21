@@ -71,12 +71,13 @@ class Intervention:
 @dataclass
 class RegimePaths:
     states: np.ndarray           # [n_paths, T] int, index into STATES
-    income_chf: np.ndarray       # [n_paths, T] absolute monthly net income in CHF
+    income_chf: np.ndarray       # [n_paths, T] monthly NET income in CHF (what lands in the account)
     savings_rate: np.ndarray     # [n_paths, T] net flow / income_chf
     net_flow_chf: np.ndarray     # [n_paths, T] savings_rate * income_chf (one-offs are added downstream)
     occupancy: np.ndarray        # [T, K] simulated P(state_t = k); equals pi0 A^t when A is fixed and nothing is pinned
     transition_draws: np.ndarray # [n_paths, K, K] sampled A (parameter uncertainty)
     lump_chf: np.ndarray | None = None  # [n_paths, T] holiday + emergency, one draw per year; None if off
+    gross_income_chf: np.ndarray | None = None  # [n_paths, T] pay before social contributions and tax
 
     @property
     def n_paths(self) -> int:

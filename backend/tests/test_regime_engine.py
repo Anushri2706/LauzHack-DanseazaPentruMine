@@ -9,6 +9,7 @@ from twin import RegimeEngine, cash_engine, load_profile, load_transition_priors
 from twin.cash_engine import CashPaths
 from twin.data import ASSUMPTIONS_DIR, load_cash_balances, load_goals, load_profiles
 from twin.income import IncomeTable
+from twin.net_pay import gross_from_net, net_from_gross
 from twin.metrics import goal_hit_rate
 from twin.regime_engine import _schedule, emission_loglik, fit_emissions, forward_filter, sample_yearly_lump
 from twin.types import STATE_INDEX, STATES, Intervention, Profile
@@ -81,7 +82,8 @@ def test_assumptions_replace_placeholders():
 
 
 def test_income_rules_match_the_sources():
-    table = IncomeTable.from_csv()
+    # Pay rules are defined on gross wages; tax is off so the worker's income is the wage.
+    table = IncomeTable.from_csv().with_overrides({"apply_income_tax": 0})
     employed = _worker(age=40, income=10000, rent=2000, household="single")
     states = np.full((1, 24), J)
     inc = table.income_paths(states, employed, experience=False)[0]
@@ -196,7 +198,7 @@ def test_zurich_scales_housing_only_and_germany_ui_stays_swiss():
         source = str(df.loc[df["parameter"] == name, "source"].iloc[0])
         assert source.strip().lower() == "prior"
 
-    table = IncomeTable.from_csv()
+    table = IncomeTable.from_csv().with_overrides({"apply_income_tax": 0})  # rules on gross wages
     worker = _worker(age=30, income=8000, rent=2000)
     moved = table.income_paths(
         np.array([[E, E, J, J, J, J, E]]),
@@ -274,7 +276,7 @@ def test_bachelor_age_wage_and_phd_premium():
 
 
 def test_scaled_spending_uses_the_expense_priors_recipe():
-    table = IncomeTable.from_csv().with_overrides({"scaled_spending": 1})
+    table = IncomeTable.from_csv().with_overrides({"scaled_spending": 1, "apply_income_tax": 0})
     p = table.params
     student = load_profile("P00001")
     states = np.array([[S, S, E, E]])
@@ -504,7 +506,11 @@ def test_simulate_contract_interventions_and_heterogeneity(engine):
     assert (paths.states[:, 24] == E).all()
     table = engine.income_table.params
     assert paths.income_chf[0, 0] == pytest.approx(alexia.ref_income)
-    assert paths.income_chf[0, 24] == pytest.approx(table["entry_salary_chf"] * (1 + table["masters_premium_pct"]))
+    offer = table["entry_salary_chf"] * (1 + table["masters_premium_pct"])
+    assert paths.gross_income_chf[0, 24] == pytest.approx(offer)
+    # What lands in the account is the offer after contributions and tax.
+    assert paths.income_chf[0, 24] == pytest.approx(float(net_from_gross(offer, alexia.age + 2, "wage", table)))
+    assert paths.income_chf[0, 24] < 0.85 * offer
 
     worker = _worker()
     base = engine.simulate(worker, horizon_months=24, n_paths=600, seed=1, assumption_overrides={"dirichlet": 0})
@@ -599,7 +605,9 @@ def test_filter_on_alexia_and_a_shift(engine):
     assert belief["student"] > 0.9
     assert sum(belief.values()) == pytest.approx(1.0)
 
-    employed_net = engine.income_table.params["entry_salary_chf"] - alexia.rent * 1.75
+    p = engine.income_table.params
+    take_home = float(net_from_gross(p["entry_salary_chf"], alexia.age, "wage", p))
+    employed_net = take_home - alexia.rent * 1.75  # a ledger shows net pay
     shocked = list(flows)
     shocked[-6:] = [employed_net] * 6
     moved = engine.filter(alexia, shocked)
@@ -607,7 +615,7 @@ def test_filter_on_alexia_and_a_shift(engine):
 
 
 def test_parental_leave_prior_pays_eighty_percent_and_holds_housing():
-    table = IncomeTable.from_csv()
+    table = IncomeTable.from_csv().with_overrides({"apply_income_tax": 0})  # rules on gross wages
     worker = _worker(age=22, income=5000)
     states = np.full((1, 30), E)
     leave = [Intervention("parental_leave", 14)]
@@ -630,6 +638,7 @@ def test_stub_parental_leave_returns_to_employed():
     paths = engine.simulate(
         worker, horizon_months=8, n_paths=3,
         interventions=[Intervention("parental_leave", 2, 3)],
+        assumption_overrides={"apply_income_tax": 0},  # rules on gross wages
     )
     assert (paths.states[:, 2:5] == E).all()
     assert (paths.states[:, 5:] == E).all()
@@ -644,13 +653,13 @@ def test_parental_leave_pins_employed_and_skips_the_bonus(engine):
         worker, horizon_months=14, n_paths=25, seed=0, interventions=iv,
         assumption_overrides={
             "dirichlet": 0, "scaled_spending": 1,
-            "job_loss_hazard": 0, "employed_to_part_time": 0,
+            "job_loss_hazard": 0, "employed_to_part_time": 0, "apply_income_tax": 0,
         },
     )
     assert (paths.states == E).all()
     assert paths.income_chf[:, :12] == pytest.approx(8000)
     assert paths.income_chf[:, 12] == pytest.approx(10000)
-    table = engine.income_table.with_overrides({"scaled_spending": 1})
+    table = engine.income_table.with_overrides({"scaled_spending": 1, "apply_income_tax": 0})
     housing, other = table.consumption_paths(paths.states, worker, iv)
     assert np.allclose(housing, housing[:, :1])
     expected = paths.income_chf - housing - other - paths.lump_chf

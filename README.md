@@ -17,6 +17,7 @@ TwinSession wraps the pipeline per scenario; its methods are the LLM tools used 
 | `backend/twin/regime_engine.py` | `RegimeEngine.simulate/filter`; working **stub** mode; real HMM functions marked `TODO` (`fit_emissions`, `forward_filter`, `sample_regime_paths`, `sample_emissions`) |
 | `backend/twin/transitions.py` + `backend/assumptions/transitions.csv` | Monthly hazards (sourced, editable assumptions) and Dirichlet uncertainty |
 | `backend/twin/income.py` + `backend/assumptions/income_assumptions.csv` | Absolute income by regime, age/experience, attributes (master's, abroad), unemployment insurance |
+| `backend/twin/net_pay.py` + `backend/assumptions/tax_assumptions.csv` | Gross pay to what lands in the account: AHV/IV/EO, ALV, accident insurance, BVG employee share by age, income tax (Vaud, `[EST]`). `income_chf` is net, `gross_income_chf` is gross. Switch: `apply_income_tax` |
 | `backend/twin/cash_engine.py` | `C_{t+1} = C_t + net_flow - one_offs`; no clamping of negative cash |
 | `backend/twin/metrics.py` | Risk and goal metrics |
 | `backend/twin/twin_session.py` | Scenarios, decisions, assumptions; tools: `get_state`, `create_scenario`, `apply_decision`, `set_assumption`, `simulate`, `compare`, `sensitivity`, `sample_paths` |

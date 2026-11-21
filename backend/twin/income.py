@@ -1,6 +1,11 @@
-"""Income table: absolute monthly net income as a function of regime and path history.
+"""Income table: absolute monthly income as a function of regime and path history.
 
 income_chf_t = f(state_t, age_t, attributes_t, years_employed_t, last_salary_t)
+
+``income_paths`` returns GROSS pay (what rent rules, raises and unemployment insurance are based
+on). The same call stores the NET pay that lands in the account on ``self.net_income``
+(``net_pay.py``, switch ``apply_income_tax``). The synthetic profiles' reference incomes are net,
+so for someone who already works they are converted up to gross first.
 
 Income is absolute, not a multiplier on today's income (a student's current income is a
 useless base for her post-graduation salary). Someone who is already in a regime keeps
@@ -15,6 +20,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from . import net_pay
 from .data import AGE_BINS, AGE_LABELS, ASSUMPTIONS_DIR
 from .types import STATE_INDEX, Intervention, Profile
 
@@ -75,10 +81,11 @@ class IncomeTable:
     def from_csv(cls, path: str | Path = ASSUMPTIONS_DIR / "income_assumptions.csv") -> "IncomeTable":
         df = pd.read_csv(path)
         params = dict(zip(df["parameter"], df["value"].astype(float)))
-        expense = ASSUMPTIONS_DIR / "expense_assumptions.csv"
-        if expense.exists():
-            extra = pd.read_csv(expense)
-            params.update(dict(zip(extra["parameter"], extra["value"].astype(float))))
+        for name in ("expense_assumptions.csv", "tax_assumptions.csv"):
+            extra_path = ASSUMPTIONS_DIR / name
+            if extra_path.exists():
+                extra = pd.read_csv(extra_path)
+                params.update(dict(zip(extra["parameter"], extra["value"].astype(float))))
         return cls(params, df)
 
     def with_overrides(self, overrides: dict | None) -> "IncomeTable":
@@ -110,6 +117,14 @@ class IncomeTable:
             )
         return float(self.params[key])
 
+    def _reference_wage(self, profile: Profile) -> float:
+        """Full-time GROSS wage of someone who already works. The data's reference income is net."""
+        p = self.params
+        if profile.initial_state == "employed":
+            return net_pay.gross_from_net(profile.ref_income, profile.age, p)
+        part = net_pay.gross_from_net(profile.ref_income, profile.age, p)
+        return part / p["part_time_fraction"]
+
     def full_time_salary(self, profile: Profile, attrs: dict) -> float:
         """Offer for someone with no work history yet.
 
@@ -120,7 +135,7 @@ class IncomeTable:
         """
         p = self.params
         if profile.initial_state in ("employed", "part_time") and profile.ref_income > 0:
-            base = profile.ref_income if profile.initial_state == "employed" else profile.ref_income / p["part_time_fraction"]
+            base = self._reference_wage(profile)
         else:
             base = p["entry_salary_chf"]
         if attrs.get("has_masters"):
@@ -143,7 +158,7 @@ class IncomeTable:
         """
         p = self.params
         if profile.initial_state in ("employed", "part_time") and profile.ref_income > 0:
-            wage = profile.ref_income if profile.initial_state == "employed" else profile.ref_income / p["part_time_fraction"]
+            wage = self._reference_wage(profile)
         else:
             wage = float(p["entry_salary_chf"])
         for t in range(int(entry_month), int(month)):
@@ -219,7 +234,12 @@ class IncomeTable:
 
     def income_paths(self, states: np.ndarray, profile: Profile,
                      interventions: list[Intervention] | None = None, *, experience: bool = True) -> np.ndarray:
-        """[n_paths, T] income in CHF.
+        """[n_paths, T] GROSS income in CHF. The matching net pay is left on ``self.net_income``.
+
+        Net pay: wages (employed, part-time, parental leave) and unemployment benefits are taxed
+        by ``net_pay``. A student's pay, an anchored job-search income and the profile's own
+        pension are already net. A pension earned in the simulation is ``retired_income_fraction``
+        (a net replacement rate) times the NET last wage.
 
         Tracks months worked (experience growth, unemployment insurance, the graduate
         allowance) and the last wage. ``experience=False`` keeps the reference level
@@ -246,6 +266,7 @@ class IncomeTable:
         months_in_js = np.zeros(n)
         student_income = self.student_pay(profile)
         out = np.empty((n, T))
+        out_net = np.empty((n, T))
         prev_attrs = dict(profile.attributes)
         for t in range(T):
             attrs = attributes_at(profile, ivs, t)
@@ -254,6 +275,8 @@ class IncomeTable:
             age = profile.age + t / 12.0
             s = states[:, t]
             inc = np.zeros(n)
+            on_ui = np.zeros(n, dtype=bool)
+            on_grad = np.zeros(n, dtype=bool)
             inc[s == E] = salary[s == E]
             inc[s == P] = salary[s == P] * p["part_time_fraction"]
 
@@ -286,6 +309,17 @@ class IncomeTable:
                 inc[:] = float(p["parental_leave_replacement"]) * last_salary
             out[:, t] = inc
 
+            net = inc.copy()
+            if net_pay.enabled(p):
+                wage = np.ones(n, dtype=bool) if on_leave else ((s == E) | (s == P))
+                ui = (on_ui | on_grad) & ~wage
+                net[wage] = net_pay.net_from_gross(inc[wage], age, "wage", p)
+                net[ui] = net_pay.net_from_gross(inc[ui], age, "ui", p)
+                pension = (s == R) & (profile.initial_state != "retired") & ~wage
+                net[pension] = p["retired_income_fraction"] * net_pay.net_from_gross(
+                    last_salary[pension], age, "wage", p)
+            out_net[:, t] = net
+
             working = ((s == E) | (s == P)) & (not on_leave)
             earned = np.where(s == P, salary * p["part_time_fraction"], salary)
             last_salary = np.where(working, earned, last_salary)
@@ -294,6 +328,7 @@ class IncomeTable:
             if experience and (t + 1) % 12 == 0:
                 g = self._growth_rate(profile.age + (t + 1) / 12.0)
                 salary = np.where(working, salary * (1.0 + g), salary)
+        self.net_income = out_net
         return out
 
     def scales_spending(self) -> bool:
