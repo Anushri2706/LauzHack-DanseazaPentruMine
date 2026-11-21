@@ -28,6 +28,7 @@ class Profile:
     ref_income: float          # CHF/month
     rent: float
     attributes: dict           # e.g. {"has_masters": False, "abroad": False}
+    use_existing_loan_rate: bool = False  # new tuition debt: False = ETH 0%, True = this profile's personal loan
 
 @dataclass
 class Intervention:            # decisions = do() on the chain
@@ -95,7 +96,7 @@ On the existing master's path — `force_state` `student` with a duration, and `
 Inputs, in the order the code checks them:
 
 - Annual tuition. `assumption_overrides["annual_tuition_chf"]` if set. Otherwise the profile's S001 `annual_tuition_chf` in `Data/scenario-assumptions.csv` (Alexia `P00001` is 8000; the file says `synthetic_assumption`, "Illustrative not verified Swiss tuition"). If that row is missing, `annual_tuition_chf` in `assumptions/income_assumptions.csv` (8000, the same P00001 figure).
-- Annual loan rate. `assumption_overrides["tuition_loan_annual_rate"]` if set. Otherwise the profile's `annual_interest_rate` in `Data/synthetic-liabilities.csv` when they have a loan (principal-weighted if there is more than one). Otherwise `tuition_loan_annual_rate` in the assumptions CSV: **0.0582**, the median of that column across 283 personal loans. Alexia has no liability row, so she uses 0.0582.
+- Annual loan rate, chosen once at the first month of the master's window (when the pin starts). `assumption_overrides["tuition_loan_annual_rate"]` if set: that override wins over both of the choices below. Otherwise `Profile.use_existing_loan_rate`, or a `set_attribute` of that same name already in force at the pin start. The profile field defaults to **false**. `load_profile` sets false. A `set_attribute` that lands after the pin has started does not change the rate. When the flag is **true**, the profile's `annual_interest_rate` in `Data/synthetic-liabilities.csv` (principal-weighted if there is more than one). A true flag with no liability row falls through to the assumptions rate. When the flag is **false**, that personal-loan rate is ignored. The rate is then `tuition_loan_annual_rate` in the assumptions CSV: **0**. That 0 is ETH Zurich's own student-loan rate, [SR 414.156](https://www.fedlex.admin.ch/eli/cc/2023/473/de) Art. 18 para. 3 ("Es werden keine Zinsen erhoben"), read **21 Nov 2026**. It is ETH's own loan rate, not a national SBFI rate. Alexia has no liability row and the flag is false, so she uses 0.
 
 The monthly accrual is `annual_tuition_chf / 12`. The scenario file has one tuition per profile, so the draw is that number, not a new noise model. Let `m` be the annual rate divided by 12. Inside the window, with `D` equal to 0 before the first month:
 
@@ -109,11 +110,10 @@ Outside the window, `D_t = D_{t-1}`. No further accrual and no further growth. I
 
 The accrual is loan proceeds added to cash and to debt. Interest raises `debt_chf` only. It is not a cash inflow.
 
-For Alexia at the fallback rate, 24 months at 8000/year ends near **16925** CHF of debt (16000 of principal plus about 925 of interest). A path with no such pin stays at 0.
+For Alexia at the default rate of 0, 24 months at 8000/year ends at **16000** CHF of debt (the principal only). A path with no such pin stays at 0.
 
 Open questions, not settled by this extension:
 
-- 0.0582 is the median personal-loan rate in the liabilities snapshot (`monthly_payment_chf` is 0; the file says the snapshot is not amortized). It is not a student-loan quote. Whether a profile's own personal-loan rate should price a new tuition loan is the same question.
 - The monthly rate is the annual rate divided by 12. Whether that should be the effective monthly rate `(1 + r) ** (1/12) - 1` is open.
 - Interest stops when the pin stops. There is no repayment. Opening `opening_principal_chf` is not the start of this total.
 - `study_duration_years` is 2 on every S001 row. The window length is the pin's duration, not that column.

@@ -47,6 +47,8 @@ class Profile:
     opening_cash: float = 0.0
     mean_savings_rate: float | None = None   # per-profile mean net_flow / ref_income from the ledger
     start_month_of_year: int = 1             # 1 = January; used for the December (13th salary) offset
+    # New tuition debt. False uses the ETH student-loan rate (0). True uses this profile's personal loan.
+    use_existing_loan_rate: bool = False
 
     @property
     def initial_state(self) -> str:

@@ -628,16 +628,40 @@ def _annual_tuition(profile: Profile, params: dict, overrides: dict) -> float:
     return float(params["annual_tuition_chf"])
 
 
-def _annual_loan_rate(profile: Profile, params: dict, overrides: dict) -> float:
-    """The profile's liability rate when they have one, else the assumptions-CSV median.
+def _as_flag(value: object) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y"}
+    return bool(value)
 
-    An override wins over both. The monthly rate used below is this annual rate / 12.
+
+def _use_existing_loan_rate(profile: Profile, interventions: list[Intervention], pin_start: int | None) -> bool:
+    """The flag in force when the master's pin starts.
+
+    ``Profile.use_existing_loan_rate`` is the default. A ``set_attribute`` of the same
+    name already in force at ``pin_start`` replaces it. A later write does not.
+    """
+    if pin_start is None:
+        return _as_flag(profile.use_existing_loan_rate)
+    attrs = attributes_at(profile, interventions, pin_start)
+    if "use_existing_loan_rate" in attrs:
+        return _as_flag(attrs["use_existing_loan_rate"])
+    return _as_flag(profile.use_existing_loan_rate)
+
+
+def _annual_loan_rate(profile: Profile, params: dict, overrides: dict,
+                      interventions: list[Intervention], pin_start: int | None) -> float:
+    """ETH rate (0) unless the profile flag asks for their personal-loan rate.
+
+    An explicit ``tuition_loan_annual_rate`` override wins over both. The flag is read
+    at ``pin_start``. A true flag with no liability row falls back to the ETH rate.
+    The monthly rate used below is this annual rate / 12.
     """
     if "tuition_loan_annual_rate" in overrides:
         return float(overrides["tuition_loan_annual_rate"])
-    looked = liability_annual_rate(profile.profile_id)
-    if looked is not None:
-        return looked
+    if _use_existing_loan_rate(profile, interventions, pin_start):
+        looked = liability_annual_rate(profile.profile_id)
+        if looked is not None:
+            return looked
     return float(params["tuition_loan_annual_rate"])
 
 
@@ -648,12 +672,14 @@ def _tuition_debt_paths(profile: Profile, horizon: int, n_paths: int, interventi
     Debt is a running total on the path. It is not a state and it is not bucketed.
     Outside the master's window the total is carried forward with no further growth.
     Opening tuition debt is 0. The same numbers are copied onto every path: the chain
-    does not infer them.
+    does not infer them. The loan rate is chosen once, at the first month of the window.
     """
     mask = _masters_tuition_mask(interventions, horizon)
     accrual_t = np.zeros(horizon)
     accrual_t[mask] = _annual_tuition(profile, params, overrides) / 12.0
-    monthly = _annual_loan_rate(profile, params, overrides) / 12.0
+    on = np.flatnonzero(mask)
+    pin_start = int(on[0]) if len(on) else None
+    monthly = _annual_loan_rate(profile, params, overrides, interventions, pin_start) / 12.0
     debt_t = np.empty(horizon)
     prev = 0.0
     # The accrual is loan proceeds added to cash and to debt; living costs stay in the net flow.

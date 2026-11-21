@@ -438,6 +438,7 @@ def load_profile(profile_id: str = "P00001", data_dir: Path = DATA_DIR) -> Profi
         name=str(r["display_name"]),
         opening_cash=float(r["opening_cash_chf"]),
         mean_savings_rate=mean_rate,
+        use_existing_loan_rate=False,
     )
 
 

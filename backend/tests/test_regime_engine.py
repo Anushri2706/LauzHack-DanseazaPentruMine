@@ -822,12 +822,14 @@ def test_masters_pin_accrues_tuition_debt_and_other_paths_do_not(engine):
     tuition = scenario_annual_tuition("P00001")
     assert tuition == pytest.approx(8000)
     assert liability_annual_rate("P00001") is None
-    rates = pd.read_csv(DATA_DIR / "synthetic-liabilities.csv")["annual_interest_rate"]
+    assert alexia.use_existing_loan_rate is False
     annual_rate = float(engine.income_table.params["tuition_loan_annual_rate"])
-    assert annual_rate == pytest.approx(float(rates.median()))
+    assert annual_rate == pytest.approx(0.0)
     notes = (ASSUMPTIONS_DIR / "income_assumptions.csv").read_text()
     rate_line = next(line for line in notes.splitlines() if line.startswith("tuition_loan_annual_rate,"))
-    assert "synthetic-liabilities.csv" in rate_line and "Open question" in rate_line
+    assert "https://www.fedlex.admin.ch/eli/cc/2023/473/de" in rate_line
+    assert "ETH Zurich's own student-loan rate, not a national SBFI rate" in rate_line
+    assert "21 Nov 2026" in rate_line
 
     pin = [
         Intervention("force_state", 0, 24, state="student"),
@@ -844,7 +846,7 @@ def test_masters_pin_accrues_tuition_debt_and_other_paths_do_not(engine):
     assert paths.states.shape == paths.income_chf.shape == paths.savings_rate.shape
     assert np.allclose(paths.debt_chf, paths.debt_chf[0])
     assert paths.debt_chf[0, :24] == pytest.approx(rolled)
-    assert paths.debt_chf[0, 23] > 16000
+    assert paths.debt_chf[0, 23] == pytest.approx(16000)
     assert paths.debt_chf[0, 24:] == pytest.approx(rolled[-1])
     assert paths.tuition_accrual_chf[0, :24] == pytest.approx(accrual)
     assert paths.tuition_accrual_chf[0, 24:] == pytest.approx(0)
@@ -889,9 +891,10 @@ def test_masters_pin_accrues_tuition_debt_and_other_paths_do_not(engine):
 
     priced = engine.simulate(
         alexia, horizon_months=24, n_paths=1, seed=0, interventions=pin,
-        assumption_overrides={"dirichlet": 0, "tuition_loan_annual_rate": 0},
+        assumption_overrides={"dirichlet": 0, "tuition_loan_annual_rate": 0.12},
     )
-    assert priced.debt_chf[0, -1] == pytest.approx(16000)
+    assert priced.debt_chf[0, -1] == pytest.approx(_rolled_debt(24, accrual, 0.12 / 12.0)[-1])
+    assert float(priced.debt_chf[0, -1]) > 16000
 
     other_tuition = scenario_annual_tuition("P00002")
     assert other_tuition == pytest.approx(1200)
@@ -903,11 +906,76 @@ def test_masters_pin_accrues_tuition_debt_and_other_paths_do_not(engine):
 
     own_rate = liability_annual_rate("P00013")
     assert own_rate == pytest.approx(0.0593)
-    borrowed = engine.simulate(
-        load_profile("P00013"), horizon_months=2, n_paths=1, seed=0, interventions=pin,
+    borrower = load_profile("P00013")
+    assert borrower.use_existing_loan_rate is False
+    ignored = engine.simulate(
+        borrower, horizon_months=2, n_paths=1, seed=0, interventions=pin,
         assumption_overrides={"dirichlet": 0},
     )
     own_accrual = scenario_annual_tuition("P00013") / 12.0
-    assert borrowed.debt_chf[0, 1] == pytest.approx(own_accrual * (2.0 + own_rate / 12.0))
-    median_second = own_accrual * (2.0 + annual_rate / 12.0)
-    assert abs(float(borrowed.debt_chf[0, 1]) - median_second) > 0.01
+    # False ignores the personal-loan rate, so two months are principal only.
+    assert ignored.debt_chf[0, 1] == pytest.approx(own_accrual * 2.0)
+    personal = own_accrual * (2.0 + own_rate / 12.0)
+    assert abs(float(ignored.debt_chf[0, 1]) - personal) > 0.01
+
+
+def test_use_existing_loan_rate_is_read_when_the_masters_pin_starts(engine):
+    """True uses the profile loan rate. False ignores it. An override still wins.
+
+    The flag is the profile field, unless a set_attribute of the same name is already
+    in force at the first month of the master's window.
+    """
+    pin = [
+        Intervention("force_state", 0, 24, state="student"),
+        Intervention("set_attribute", 24, attribute=("has_masters", True)),
+    ]
+    own_rate = liability_annual_rate("P00013")
+    accrual = scenario_annual_tuition("P00013") / 12.0
+    personal = accrual * (2.0 + own_rate / 12.0)
+
+    opted_in = load_profile("P00013")
+    opted_in.use_existing_loan_rate = True
+    borrowed = engine.simulate(
+        opted_in, horizon_months=2, n_paths=1, seed=0, interventions=pin,
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert borrowed.debt_chf[0, 1] == pytest.approx(personal)
+
+    no_loan = load_profile("P00001")
+    no_loan.use_existing_loan_rate = True
+    assert liability_annual_rate("P00001") is None
+    still_zero = engine.simulate(
+        no_loan, horizon_months=2, n_paths=1, seed=0, interventions=pin,
+        assumption_overrides={"dirichlet": 0},
+    )
+    alexia_accrual = scenario_annual_tuition("P00001") / 12.0
+    assert still_zero.debt_chf[0, 1] == pytest.approx(alexia_accrual * 2.0)
+
+    overridden = engine.simulate(
+        opted_in, horizon_months=2, n_paths=1, seed=0, interventions=pin,
+        assumption_overrides={"dirichlet": 0, "tuition_loan_annual_rate": 0.12},
+    )
+    assert overridden.debt_chf[0, 1] == pytest.approx(accrual * (2.0 + 0.12 / 12.0))
+
+    # The pin starts at month 2. A flag set before that month is the one that counts.
+    delayed = [
+        Intervention("set_attribute", 0, attribute=("use_existing_loan_rate", True)),
+        Intervention("force_state", 2, 2, state="student"),
+        Intervention("set_attribute", 4, attribute=("has_masters", True)),
+    ]
+    held = load_profile("P00013")
+    assert held.use_existing_loan_rate is False
+    from_attribute = engine.simulate(
+        held, horizon_months=4, n_paths=1, seed=0, interventions=delayed,
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert from_attribute.debt_chf[0, :2] == pytest.approx(0)
+    assert from_attribute.debt_chf[0, 3] == pytest.approx(personal)
+
+    # Written after the pin has started: the choice was already false.
+    late = pin + [Intervention("set_attribute", 1, attribute=("use_existing_loan_rate", True))]
+    missed = engine.simulate(
+        held, horizon_months=2, n_paths=1, seed=0, interventions=late,
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert missed.debt_chf[0, 1] == pytest.approx(accrual * 2.0)
