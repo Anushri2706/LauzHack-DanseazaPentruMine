@@ -290,6 +290,12 @@ class IncomeTable:
         force was signed on, or 0 while she is a student. Abroad multiplies the
         housing bill by the Germany factor, and a Zurich move multiplies it by
         ``zurich_housing_multiplier``. The two do not stack.
+
+        Two housing decisions, each a ``set_attribute`` on this path only. ``rent_step``
+        multiplies the signed net rent by ``rent_step_factor`` and does not reapply the
+        2-room cap. ``owns_home`` locks the monthly housing bill at the rent she was paying
+        (a mortgage of the same size), location factor included. The purchase deposit is
+        a cash drop, not a change to this bill.
         """
         p = self.params
         n, T = states.shape
@@ -303,6 +309,7 @@ class IncomeTable:
         charges = float(p["rent_charges_chf"])
         base = float(p["nonhousing_base_chf"])
         rate = float(p["nonhousing_rate"])
+        step_factor = float(p["rent_step_factor"])
         earnings = self._capacity_earnings(states, profile, ivs, experience)
         signed = np.zeros(n, dtype=bool)
         signed_wage = np.zeros(n)
@@ -310,6 +317,7 @@ class IncomeTable:
         lease_wage = np.zeros((n, T))
         housing = np.empty((n, T))
         other = np.empty((n, T))
+        mortgage = None
         for t in range(T):
             attrs = attributes_at(profile, ivs, t)
             s = states[:, t]
@@ -325,10 +333,19 @@ class IncomeTable:
                 lease_net = np.where(need, self.rent_from_earnings(gross), lease_net)
                 signed_wage = np.where(need, gross, signed_wage)
                 signed = signed | need
-            housing[:, t] = np.where(studentish, student_level, lease_net + charges)
             other[:, t] = np.where(studentish, student_other, base + rate * gross)
             lease_wage[:, t] = np.where(studentish, 0.0, signed_wage)
-            housing[:, t] = housing[:, t] * self._housing_location_factor(attrs)
+            if mortgage is not None:
+                housing[:, t] = mortgage
+                continue
+            bill = np.where(studentish, student_level, lease_net + charges)
+            if attrs.get("rent_step"):
+                # The prior multiplies net rent. The 2-room cap is not reapplied.
+                bill = np.where(studentish, student_level, lease_net * step_factor + charges)
+            bill = bill * self._housing_location_factor(attrs)
+            if attrs.get("owns_home"):
+                mortgage = np.array(bill, copy=True)
+            housing[:, t] = bill
         self.lease_signed_on = lease_wage
         return housing, other
 
@@ -341,8 +358,11 @@ class IncomeTable:
         spent as a student uses the student rent.
 
         ``scaled_spending`` on: the expense-priors housing bill (student rent, or the sticky
-        lease plus charges). Abroad multiplies the result by the Germany factor, and a
-        Zurich move multiplies it by ``zurich_housing_multiplier``. The two do not stack.
+        lease plus charges). ``rent_step`` multiplies that net rent and lifts the 2-room cap.
+        ``owns_home`` keeps the bill equal to the rent she was paying. Abroad multiplies the
+        result by the Germany factor, and a Zurich move multiplies it by
+        ``zurich_housing_multiplier``. The two do not stack. A purchase locks the bill,
+        location factor included.
         """
         if self.scales_spending():
             housing, _other = self.consumption_paths(states, profile, interventions, experience=experience)

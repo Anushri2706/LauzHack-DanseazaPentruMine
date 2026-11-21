@@ -65,3 +65,27 @@ def reconciles(cp: CashPaths, tol: float = 1e-6) -> bool:
     """Opening + sum of named flows == closing on every path."""
     total = cp.flows["net_flow_chf"] - cp.flows["one_off_costs_chf"]
     return bool(np.allclose(cp.opening_cash_chf + total.sum(axis=1), cp.closing, atol=tol))
+
+
+def apply_fractional_drop(cp: CashPaths, month: int, fraction: float) -> tuple[CashPaths, np.ndarray]:
+    """Drop ``fraction`` of each path's end-of-month cash at ``month``.
+
+    The balance used is the one before this drop. That amount is a one-off cost in
+    ``month``, and every later month keeps the same reduction. A non-positive balance
+    drops nothing: a deposit cannot be negative.
+    """
+    if cp.cash.ndim != 2:
+        raise ValueError("cash must be [n_paths, T]")
+    n, T = cp.cash.shape
+    if not 0 <= int(month) < T:
+        raise ValueError(f"month {month} outside horizon")
+    if fraction < 0:
+        raise ValueError("fraction cannot be negative")
+    deposit = float(fraction) * np.maximum(cp.cash[:, int(month)], 0.0)
+    cash = np.array(cp.cash, dtype=float, copy=True)
+    cash[:, int(month):] -= deposit[:, None]
+    flows = {key: np.array(value, dtype=float, copy=True) for key, value in cp.flows.items()}
+    if flows["one_off_costs_chf"].shape != (n, T):
+        flows["one_off_costs_chf"] = np.broadcast_to(flows["one_off_costs_chf"], (n, T)).copy()
+    flows["one_off_costs_chf"][:, int(month)] += deposit
+    return CashPaths(cp.opening_cash_chf, cash, flows), deposit
