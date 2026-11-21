@@ -432,3 +432,81 @@ def test_held_out_emission_report_and_calibration(fitted):
     assert back["filter_accuracy"] > 0.8
     assert 0.7 <= back["coverage"] <= 0.99
     assert back["median_band_width_chf"] > 0
+
+
+def test_first_job_after_masters_pins_and_pays_the_graduate_wait():
+    """The three exits at month 24. Part-time needs its own employed pin.
+
+    A part-time phase returns to the regime before the window. After 24 student
+    months that regime is student, so full-time is a one-month employed pin.
+    Job search exits to employed by itself. The six search months are the
+    never-worked wait (pay 0). The flat under-25 benefit is the seventh month,
+    which this decision does not spend in search.
+    """
+    from run_alexia_first_job_20y import (
+        DECISIONS, FULL_TIME_MONTH, GRADUATION_MONTH, HIRED_MONTH, SEARCH_MONTHS, _waiting_rules,
+    )
+    from twin.regime_engine import _schedule
+
+    alexia = load_profile("P00001")
+    table = IncomeTable.from_csv()
+    assert alexia.initial_state == "student"
+    assert table.params["part_time_fraction"] == pytest.approx(0.60)
+    assert table.params["graduate_waiting_months"] == pytest.approx(5.5)
+    offer = table.params["entry_salary_chf"] * (1 + table.params["masters_premium_pct"])
+    by_name = {name: ivs for name, ivs, _colour in DECISIONS}
+    horizon = 60
+
+    forced, _prev = _schedule(horizon, by_name["Employed immediately"])
+    assert (forced[:GRADUATION_MONTH] == S).all()
+    assert forced[GRADUATION_MONTH] == E
+    assert (forced[GRADUATION_MONTH + 1:] == -1).all()
+
+    forced, prev = _schedule(horizon, by_name["Part-time, then full-time"])
+    assert (forced[:GRADUATION_MONTH] == S).all()
+    assert (forced[GRADUATION_MONTH:FULL_TIME_MONTH] == P).all()
+    assert forced[FULL_TIME_MONTH] == E
+    assert FULL_TIME_MONTH not in prev
+
+    # Without the employed pin the part-time phase would hand month 48 back to study.
+    bare = [iv for iv in by_name["Part-time, then full-time"]
+            if not (iv.kind == "force_state" and iv.state == "employed")]
+    bare_forced, bare_prev = _schedule(horizon, bare)
+    assert bare_forced[FULL_TIME_MONTH] == -2
+    assert bare_prev[FULL_TIME_MONTH] == GRADUATION_MONTH
+
+    forced, _prev = _schedule(horizon, by_name["Search 6 months, then work"])
+    assert (forced[GRADUATION_MONTH:HIRED_MONTH] == J).all()
+    assert forced[HIRED_MONTH] == E
+
+    states = np.full((1, horizon), E)
+    states[0, :GRADUATION_MONTH] = S
+    immediate = table.income_paths(states, alexia, by_name["Employed immediately"])[0]
+    assert immediate[0] == pytest.approx(alexia.ref_income)
+    assert immediate[GRADUATION_MONTH:GRADUATION_MONTH + 6] == pytest.approx(offer)
+
+    states = np.full((1, horizon), E)
+    states[0, :GRADUATION_MONTH] = S
+    states[0, GRADUATION_MONTH:FULL_TIME_MONTH] = P
+    part = table.income_paths(states, alexia, by_name["Part-time, then full-time"])[0]
+    assert part[GRADUATION_MONTH:GRADUATION_MONTH + 6] == pytest.approx(offer * 0.60)
+    # Two work anniversaries fall inside the part-time window (months 35 and 47).
+    # The raise is booked after that month, and she is still under 30.
+    g = table.params["annual_experience_growth"]
+    assert part[35] == pytest.approx(offer * 0.60)
+    assert part[36] == pytest.approx(offer * (1 + g) * 0.60)
+    assert part[FULL_TIME_MONTH] == pytest.approx(offer * (1 + g) ** 2)
+
+    states = np.full((1, horizon), E)
+    states[0, :GRADUATION_MONTH] = S
+    states[0, GRADUATION_MONTH:HIRED_MONTH] = J
+    search = table.income_paths(states, alexia, by_name["Search 6 months, then work"])[0]
+    assert search[GRADUATION_MONTH:HIRED_MONTH] == pytest.approx(0)
+    assert search[HIRED_MONTH] == pytest.approx(offer)
+    assert _waiting_rules(table, alexia) == ["graduate_waiting"] * SEARCH_MONTHS
+
+    stayed = states.copy()
+    stayed[0, HIRED_MONTH] = J
+    seventh = table.income_paths(stayed, alexia, by_name["Search 6 months, then work"])[0, HIRED_MONTH]
+    assert alexia.age + HIRED_MONTH / 12.0 < 25
+    assert seventh == pytest.approx(table.params["graduate_benefit_under_25_chf"])
