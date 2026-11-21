@@ -1,0 +1,11 @@
+{
+  "name": "financial-twin",
+  "version": "1.0.0",
+  "description": "Explore conditional financial futures",
+  "scripts": {
+    "test": "node --test",
+    "start": "node server.js"
+  },
+  "private": true,
+  "type": "module"
+}
