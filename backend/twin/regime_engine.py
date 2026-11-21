@@ -2,7 +2,8 @@
 
 Answers one question: given who this person is, what they decide and our assumptions, what
 life regime are they likely in each month, and what monthly net cash flow does that produce?
-It does no cash accounting, tax, investments, goals, UI or narration (see cash_engine, metrics).
+It does no tax, investments, goals, UI or narration (see cash_engine, metrics). A pinned
+master's keeps a tuition-debt total on the path. That total is not a regime.
 
 Two modes, same ``simulate`` / ``filter`` signature:
 - ``RegimeEngine.stub()``: deterministic regimes, constant per-state savings rate.
@@ -22,6 +23,7 @@ import pandas as pd
 from scipy import stats
 from scipy.special import logsumexp
 
+from .data import liability_annual_rate, scenario_annual_tuition
 from .income import IncomeTable, attributes_at, parental_leave_duration, parental_leave_mask
 from .transitions import TransitionPriors, load_transition_priors
 from .types import K, STATE_INDEX, STATES, Intervention, Profile, RegimePaths
@@ -585,6 +587,85 @@ def sample_regime_paths(rng: np.random.Generator, pi0: np.ndarray, A_draws: np.n
     return states
 
 
+def _masters_tuition_mask(interventions: list[Intervention], horizon: int) -> np.ndarray:
+    """Months inside a master's pin: ``force_state`` student whose exit sets ``has_masters``.
+
+    The exit month is ``start_month + duration``, which is when the existing decision
+    turns ``has_masters`` on. Accrual covers ``[start, exit)``. A student pin that does
+    not end on that attribute, including a later return to study, is outside the window.
+    """
+    mask = np.zeros(horizon, dtype=bool)
+    exits: set[int] = set()
+    for iv in interventions:
+        if iv.kind != "set_attribute" or iv.attribute is None:
+            continue
+        name, value = iv.attribute
+        if name == "has_masters" and value is True:
+            exits.add(int(iv.start_month))
+    if not exits:
+        return mask
+    for iv in interventions:
+        if iv.kind != "force_state" or iv.state != "student" or iv.duration is None:
+            continue
+        start = int(iv.start_month)
+        end = start + int(iv.duration)
+        if end not in exits:
+            continue
+        lo = max(0, start)
+        hi = min(horizon, end)
+        if lo < hi:
+            mask[lo:hi] = True
+    return mask
+
+
+def _annual_tuition(profile: Profile, params: dict, overrides: dict) -> float:
+    """Scenario S001 tuition, then the assumptions-CSV fallback. An override wins."""
+    if "annual_tuition_chf" in overrides:
+        return float(overrides["annual_tuition_chf"])
+    looked = scenario_annual_tuition(profile.profile_id)
+    if looked is not None:
+        return looked
+    return float(params["annual_tuition_chf"])
+
+
+def _annual_loan_rate(profile: Profile, params: dict, overrides: dict) -> float:
+    """The profile's liability rate when they have one, else the assumptions-CSV median.
+
+    An override wins over both. The monthly rate used below is this annual rate / 12.
+    """
+    if "tuition_loan_annual_rate" in overrides:
+        return float(overrides["tuition_loan_annual_rate"])
+    looked = liability_annual_rate(profile.profile_id)
+    if looked is not None:
+        return looked
+    return float(params["tuition_loan_annual_rate"])
+
+
+def _tuition_debt_paths(profile: Profile, horizon: int, n_paths: int, interventions: list[Intervention],
+                        params: dict, overrides: dict) -> tuple[np.ndarray, np.ndarray]:
+    """``[n_paths, T]`` tuition-debt total and the principal booked each month.
+
+    Debt is a running total on the path. It is not a state and it is not bucketed.
+    Outside the master's window the total is carried forward with no further growth.
+    Opening tuition debt is 0. The same numbers are copied onto every path: the chain
+    does not infer them.
+    """
+    mask = _masters_tuition_mask(interventions, horizon)
+    accrual_t = np.zeros(horizon)
+    accrual_t[mask] = _annual_tuition(profile, params, overrides) / 12.0
+    monthly = _annual_loan_rate(profile, params, overrides) / 12.0
+    debt_t = np.empty(horizon)
+    prev = 0.0
+    # The accrual is loan proceeds added to cash and to debt; living costs stay in the net flow.
+    for t in range(horizon):
+        if mask[t]:
+            prev = prev * (1.0 + monthly) + accrual_t[t]
+        debt_t[t] = prev
+    debt = np.broadcast_to(debt_t, (n_paths, horizon)).copy()
+    accrual = np.broadcast_to(accrual_t, (n_paths, horizon)).copy()
+    return debt, accrual
+
+
 def analytic_occupancy(pi0: np.ndarray, A: np.ndarray, horizon: int) -> np.ndarray:
     """P(s_t = k) = pi0 A^t for t = 0..T-1. ``A`` is [K, K] or [T, K, K]. Returns [T, K]."""
     occ = np.empty((horizon, len(pi0)))
@@ -734,13 +815,17 @@ class RegimeEngine:
         occupancy = np.zeros((T, K))
         occupancy[np.arange(T), seq] = 1.0
         A = self.priors.matrix(overrides)
+        net = savings_rate * income
+        debt, accrual = _tuition_debt_paths(profile, T, n, interventions, income_table.params, overrides)
         return RegimePaths(
             states=states,
             income_chf=income,
             savings_rate=savings_rate,
-            net_flow_chf=savings_rate * income,
+            net_flow_chf=net,
             occupancy=occupancy,
             transition_draws=np.broadcast_to(A, (n, K, K)).copy(),
+            debt_chf=debt,
+            tuition_accrual_chf=accrual,
         )
 
     def _simulate_hmm(self, profile, T, n, interventions, overrides, initial_belief, seed, income_table) -> RegimePaths:
@@ -790,4 +875,5 @@ class RegimeEngine:
         ok = np.abs(income) > 1.0
         savings[ok] = net[ok] / income[ok]
         occupancy = np.stack([(states == k).mean(axis=0) for k in range(K)], axis=1)
-        return RegimePaths(states, income, savings, net, occupancy, A_draws, lump)
+        debt, accrual = _tuition_debt_paths(profile, T, n, interventions, income_table.params, overrides)
+        return RegimePaths(states, income, savings, net, occupancy, A_draws, lump, debt, accrual)

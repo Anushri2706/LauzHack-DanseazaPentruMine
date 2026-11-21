@@ -77,6 +77,9 @@ class RegimePaths:
     occupancy: np.ndarray        # [T, K] simulated P(state_t = k); equals pi0 A^t when A is fixed and nothing is pinned
     transition_draws: np.ndarray # [n_paths, K, K] sampled A (parameter uncertainty)
     lump_chf: np.ndarray | None = None  # [n_paths, T] holiday + emergency, one draw per year; None if off
+    # Extension. Tuition debt is a running total, not a regime. None on paths built outside simulate.
+    debt_chf: np.ndarray | None = None            # [n_paths, T] end-of-month tuition-debt total
+    tuition_accrual_chf: np.ndarray | None = None  # [n_paths, T] loan principal booked that month
 
     @property
     def n_paths(self) -> int:

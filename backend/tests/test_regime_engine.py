@@ -7,7 +7,10 @@ import pytest
 
 from twin import RegimeEngine, cash_engine, load_profile, load_transition_priors
 from twin.cash_engine import CashPaths
-from twin.data import ASSUMPTIONS_DIR, load_cash_balances, load_goals, load_profiles
+from twin.data import (
+    ASSUMPTIONS_DIR, DATA_DIR, liability_annual_rate, load_cash_balances, load_goals,
+    load_profiles, scenario_annual_tuition,
+)
 from twin.income import IncomeTable
 from twin.metrics import goal_hit_rate
 from twin.regime_engine import _schedule, emission_loglik, fit_emissions, forward_filter, sample_yearly_lump
@@ -796,3 +799,115 @@ def test_goal_hit_rate_on_a_known_fan_and_the_csv_row():
     assert from_tuple["goal_month"] == from_row["goal_month"]
     with pytest.raises(TypeError):
         goal_hit_rate(wide, "2025-01", alexia)
+
+
+def _rolled_debt(months: int, accrual: float, monthly_rate: float) -> list[float]:
+    debt = 0.0
+    out = []
+    for _ in range(months):
+        debt = debt * (1.0 + monthly_rate) + accrual
+        out.append(debt)
+    return out
+
+
+def test_masters_pin_accrues_tuition_debt_and_other_paths_do_not(engine):
+    """A 24-month master's increases the debt total. A path without that pin does not.
+
+    The window is force_state student for 24 months with has_masters set at month 24.
+    Debt is last month's total grown by the monthly loan rate, plus that month's
+    tuition/12. Living costs stay in net_flow_chf.
+    """
+    assert STATES == ["employed", "part_time", "job_search", "student", "retired"]
+    alexia = load_profile("P00001")
+    tuition = scenario_annual_tuition("P00001")
+    assert tuition == pytest.approx(8000)
+    assert liability_annual_rate("P00001") is None
+    rates = pd.read_csv(DATA_DIR / "synthetic-liabilities.csv")["annual_interest_rate"]
+    annual_rate = float(engine.income_table.params["tuition_loan_annual_rate"])
+    assert annual_rate == pytest.approx(float(rates.median()))
+    notes = (ASSUMPTIONS_DIR / "income_assumptions.csv").read_text()
+    rate_line = next(line for line in notes.splitlines() if line.startswith("tuition_loan_annual_rate,"))
+    assert "synthetic-liabilities.csv" in rate_line and "Open question" in rate_line
+
+    pin = [
+        Intervention("force_state", 0, 24, state="student"),
+        Intervention("set_attribute", 24, attribute=("has_masters", True)),
+    ]
+    paths = engine.simulate(
+        alexia, horizon_months=36, n_paths=4, seed=0, interventions=pin,
+        assumption_overrides={"dirichlet": 0},
+    )
+    accrual = tuition / 12.0
+    monthly = annual_rate / 12.0
+    rolled = _rolled_debt(24, accrual, monthly)
+    assert paths.debt_chf.shape == paths.net_flow_chf.shape == (4, 36)
+    assert paths.states.shape == paths.income_chf.shape == paths.savings_rate.shape
+    assert np.allclose(paths.debt_chf, paths.debt_chf[0])
+    assert paths.debt_chf[0, :24] == pytest.approx(rolled)
+    assert paths.debt_chf[0, 23] > 16000
+    assert paths.debt_chf[0, 24:] == pytest.approx(rolled[-1])
+    assert paths.tuition_accrual_chf[0, :24] == pytest.approx(accrual)
+    assert paths.tuition_accrual_chf[0, 24:] == pytest.approx(0)
+    assert (paths.states[:, :24] == S).all()
+    assert (paths.states[:, 24] == E).all()
+    ok = np.abs(paths.income_chf) > 1
+    assert np.allclose(paths.net_flow_chf[ok], paths.savings_rate[ok] * paths.income_chf[ok])
+    cash = cash_engine.run(alexia, paths)
+    assert cash_engine.reconciles(cash)
+    expected_cash = alexia.opening_cash + np.cumsum(paths.net_flow_chf + paths.tuition_accrual_chf, axis=1)
+    assert cash.cash == pytest.approx(expected_cash)
+
+    stub = RegimeEngine.stub().simulate(alexia, horizon_months=36, n_paths=2, interventions=pin)
+    assert stub.debt_chf[0] == pytest.approx(paths.debt_chf[0])
+
+    no_masters = engine.simulate(
+        alexia, horizon_months=36, n_paths=4, seed=0, assumption_overrides={"dirichlet": 0},
+    )
+    assert np.all(no_masters.debt_chf == 0)
+    assert np.all(no_masters.tuition_accrual_chf == 0)
+    working = engine.simulate(
+        _worker(), horizon_months=36, n_paths=4, seed=1,
+        interventions=[Intervention("force_state", 0, None, state="employed")],
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert np.all(working.debt_chf == 0)
+    student_only = engine.simulate(
+        alexia, horizon_months=36, n_paths=2, seed=0,
+        interventions=[Intervention("force_state", 0, 24, state="student")],
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert np.all(student_only.debt_chf == 0)
+
+    later = pin + [Intervention("force_state", 30, 6, state="student")]
+    again = engine.simulate(
+        alexia, horizon_months=40, n_paths=2, seed=0, interventions=later,
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert again.debt_chf[0, 23] == pytest.approx(rolled[-1])
+    assert again.debt_chf[0, 24:] == pytest.approx(rolled[-1])
+    assert again.tuition_accrual_chf[0, 30:36] == pytest.approx(0)
+
+    priced = engine.simulate(
+        alexia, horizon_months=24, n_paths=1, seed=0, interventions=pin,
+        assumption_overrides={"dirichlet": 0, "tuition_loan_annual_rate": 0},
+    )
+    assert priced.debt_chf[0, -1] == pytest.approx(16000)
+
+    other_tuition = scenario_annual_tuition("P00002")
+    assert other_tuition == pytest.approx(1200)
+    other = engine.simulate(
+        load_profile("P00002"), horizon_months=1, n_paths=1, seed=0, interventions=pin,
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert other.debt_chf[0, 0] == pytest.approx(other_tuition / 12.0)
+
+    own_rate = liability_annual_rate("P00013")
+    assert own_rate == pytest.approx(0.0593)
+    borrowed = engine.simulate(
+        load_profile("P00013"), horizon_months=2, n_paths=1, seed=0, interventions=pin,
+        assumption_overrides={"dirichlet": 0},
+    )
+    own_accrual = scenario_annual_tuition("P00013") / 12.0
+    assert borrowed.debt_chf[0, 1] == pytest.approx(own_accrual * (2.0 + own_rate / 12.0))
+    median_second = own_accrual * (2.0 + annual_rate / 12.0)
+    assert abs(float(borrowed.debt_chf[0, 1]) - median_second) > 0.01
