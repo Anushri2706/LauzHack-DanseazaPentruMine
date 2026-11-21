@@ -1,10 +1,17 @@
+# Secrets: never commit API keys
+.env
+.env.*
+!.env.example
+
+# Python
 __pycache__/
 *.py[cod]
 .venv/
 venv/
-.env
-.env.*
-!.env.example
 .pytest_cache/
+
+# macOS
 .DS_Store
+
+# Generated data
 backend/artifacts/person_months.csv.gz
