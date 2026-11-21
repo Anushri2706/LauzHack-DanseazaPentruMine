@@ -22,11 +22,11 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from twin import RegimeEngine, fit_emissions, load_profile, load_transition_priors
-from twin.cash_engine import run as run_cash
-from twin.data import load_goals
-from twin.metrics import goal_hit_rate
-from twin.types import STATE_INDEX, Intervention
+from regime import RegimeEngine, fit_emissions, load_profile, load_transition_priors
+from regime.cash_engine import run as run_cash
+from regime.data import load_goals
+from regime.metrics import goal_hit_rate
+from regime.types import STATE_INDEX, Intervention
 
 HORIZON = 60
 N_PATHS = 4000

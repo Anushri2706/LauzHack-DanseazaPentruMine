@@ -1,0 +1,77 @@
+{
+ "method": "keep factor per age band; median simulated 10-year wealth = median wealth of background-matched peers 10 years older",
+ "bands": [
+  {
+   "band": [
+    15,
+    25
+   ],
+   "keep": 0.0774,
+   "n": 143,
+   "median_target_chf": 46518,
+   "median_sim_raw_chf": 363645,
+   "median_sim_calibrated_chf": 47824,
+   "median_ledger_surplus_chf_month": 3263
+  },
+  {
+   "band": [
+    25,
+    35
+   ],
+   "keep": 0.184,
+   "n": 201,
+   "median_target_chf": 97793,
+   "median_sim_raw_chf": 332760,
+   "median_sim_calibrated_chf": 94126,
+   "median_ledger_surplus_chf_month": 2997
+  },
+  {
+   "band": [
+    35,
+    45
+   ],
+   "keep": 0.0571,
+   "n": 207,
+   "median_target_chf": 109710,
+   "median_sim_raw_chf": 458495,
+   "median_sim_calibrated_chf": 111120,
+   "median_ledger_surplus_chf_month": 3315
+  },
+  {
+   "band": [
+    45,
+    55
+   ],
+   "keep": 0.0565,
+   "n": 198,
+   "median_target_chf": 135707,
+   "median_sim_raw_chf": 531734,
+   "median_sim_calibrated_chf": 136577,
+   "median_ledger_surplus_chf_month": 3601
+  },
+  {
+   "band": [
+    55,
+    65
+   ],
+   "keep": 0.0249,
+   "n": 195,
+   "median_target_chf": 144157,
+   "median_sim_raw_chf": 511461,
+   "median_sim_calibrated_chf": 150752,
+   "median_ledger_surplus_chf_month": 3678
+  },
+  {
+   "band": [
+    65,
+    200
+   ],
+   "keep": 0.2901,
+   "n": 200,
+   "median_target_chf": 163750,
+   "median_sim_raw_chf": 192425,
+   "median_sim_calibrated_chf": 161209,
+   "median_ledger_surplus_chf_month": 483
+  }
+ ]
+}

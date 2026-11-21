@@ -4,10 +4,10 @@ import json
 import numpy as np
 import pytest
 
-from twin import RegimeEngine, TwinSession, load_profile, load_transition_priors
-from twin import cash_engine, validation
-from twin.agent import TOOL_SCHEMAS, dispatch_tool, run_agent
-from twin.types import STATE_INDEX, Intervention
+from regime import RegimeEngine, TwinSession, load_profile, load_transition_priors
+from regime import cash_engine, validation
+from regime.agent import TOOL_SCHEMAS, dispatch_tool, run_agent
+from regime.types import STATE_INDEX, Intervention
 
 
 @pytest.fixture(scope="module")
@@ -109,3 +109,60 @@ def test_agent_tools_dispatch_and_loop():
 
     text, history, trace = run_agent(s, "What happens if I do nothing?", client=FakeClient())
     assert text == "Done." and trace[0]["tool"] == "simulate" and "closing_cash_chf" in trace[0]["result"]
+
+
+def _wealth_session(**kw):
+    return TwinSession.from_profile_id("P00001", n_paths=60, wealth=True, **kw)
+
+
+def test_wealth_layer_reconciles_and_keeps_levers():
+    from regime import cash_engine
+    s = _wealth_session(keep_factor=0.25)
+    s.apply_decision("baseline", "start_working", 0)
+    summ = s.simulate("baseline")
+    res = s.results["baseline"]
+    assert cash_engine.reconciles(res.cash)
+    w = res.wealth
+    surplus = w.net() > 0
+    assert (w.flows(0.25)[surplus] < w.flows(1.0)[surplus]).all()
+    assert (w.flows(0.25)[~surplus] == w.flows(1.0)[~surplus]).all()
+    gained = w.cash(side=300.0)[:, -1] - w.cash()[:, -1]
+    assert np.allclose(gained, 300.0 * w.price.sum(axis=1))
+    assert summ["net_worth_real_by_year"][0]["p50"] == round(w.opening + w.port0 - w.debt)
+    assert summ["keep_factor"] == 0.25
+
+
+def test_default_session_is_unchanged_by_the_wealth_option():
+    a = TwinSession.from_profile_id("P00001", n_paths=50).simulate("baseline")
+    assert "net_worth_real_chf" not in a
+
+
+def test_new_decisions_change_the_right_things():
+    s = _wealth_session()
+    s.apply_decision("baseline", "start_working", 0)  # Alexia is a student: give her a job first
+    for sid, kind, t0, params in (("move", "relocate", 6, {"rent_factor": 1.5}),
+                                  ("child", "family", 12, {}),
+                                  ("se", "self_employed", 0, {})):
+        s.create_scenario(sid, copy_from="baseline")
+        s.apply_decision(sid, kind, t0, **params)
+    base = s.simulate("baseline")
+    assert s.simulate("move")["net_worth_real_chf"]["p50"] < base["net_worth_real_chf"]["p50"]
+    child = s.simulate("child")
+    assert child["net_worth_real_chf"]["p50"] < base["net_worth_real_chf"]["p50"]
+    assert s.scenarios["se"].profile_changes == {"self_employed": True}
+    s.simulate("se")
+    assert s.results["se"].wealth.oneoff[0] == 10000.0
+
+
+def test_explore_tool_times_decisions():
+    from regime.explore import dominates
+    s = _wealth_session(keep_factor=0.3)
+    s.apply_decision("baseline", "start_working", 0)
+    res = dispatch_tool(s, "explore", {"max_start_month": 12})
+    assert "error" not in res
+    objs = [(-m["wealth_median"], m["months_below_buffer"], m["sacrifice_chf_month"]) for m in res["front"]]
+    assert all(not any(dominates(b, a) for b in objs) for a in objs)
+    assert [t["start_month"] for t in res["timing"]["masters"]] == [0, 6, 12]
+    assert res["settings"]["simulations"] <= 4 + 3 * 2   # cached per (decision, start month)
+    json.dumps(res)
+    assert "error" in dispatch_tool(TwinSession.from_profile_id("P00001", n_paths=20), "explore", {})

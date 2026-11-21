@@ -67,6 +67,15 @@ TOOL_SCHEMAS: list[dict] = [
         "parameters": {"type": "object", "properties": {
             "scenario_id": _SID, "n": {"type": "integer", "minimum": 1, "maximum": 5}},
             "required": ["scenario_id"]}}},
+    {"type": "function", "function": {
+        "name": "explore", "description": "Trade-off search (NSGA-II) over decision x start month x expense cut x "
+                                          "side income; returns the Pareto front and, per decision, results by start "
+                                          "month (answers 'when should I ...?'). Needs a session with wealth=True.",
+        "parameters": {"type": "object", "properties": {
+            "options": {"type": "array", "items": {"type": "object", "additionalProperties": True},
+                        "description": "[{kind, params, label, min_start}]; default baseline, masters, part_time, "
+                                       "self_employed."},
+            "max_start_month": {"type": "integer", "minimum": 0}}}}},
 ]
 
 
@@ -82,6 +91,7 @@ def dispatch_tool(session: TwinSession, name: str, args: dict) -> dict:
         "compare": session.compare,
         "sensitivity": session.sensitivity,
         "sample_paths": session.sample_paths,
+        "explore": session.explore,
     }
     if name not in handlers:
         return {"error": f"Unknown tool {name}"}

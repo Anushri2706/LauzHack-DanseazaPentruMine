@@ -6,32 +6,59 @@ python3 -m twin.chat --profile P00001                  # chat with a synthetic p
 python3 -m twin "What if I do a master's degree?" --profile P00001     # one-shot report, no LLM
 python3 -m twin "What if I lose my job for 6 months?" --inputs twin/example_user.json
 python3 -m unittest twin.test_engine -v                # sanity tests (must pass)
-python3 -m twin.calibration                            # refit the saving calibration (writes calibration.json)
-python3 -m twin.validate_decisions                     # check decisions against peers in that state (~20 s)
-python3 -m twin.explore --profile P00001               # NSGA-II trade-off front across all decisions
+python3 -m twin.calibration                            # refit the saving calibration (writes calibration.json, ~1 min)
+python3 -m twin.validate_decisions                     # check decisions against peers in that state (~1 min)
+python3 -m twin.explore --profile P00001               # NSGA-II trade-off front: decision x start month x levers
+python3 -m twin.explore --profile P00001 --only masters  # "when should I do the master's?"
 python3 -m twin "explore all my options" --profile P00001
+python3 -m twin "When should I do a master's?" --profile P00001
 ```
 
 ## Pipeline
 
-1. **Saving calibration** (`calibration.py`, on by default; `--raw` switches it off). The ledger implies
-   ~CHF 3,000/month saved, but similar people 10 years older hold only CHF 5-65k more. One keep factor
-   per age band (share of any monthly surplus actually kept) is fitted so the median simulated decade
-   matches the median wealth of background-matched peers 10 years older. Fitted values: 15-24 8%,
-   25-34 18%, 35-44 6%, 45-54 6%, 55-64 2%, 65+ 29%. Deficit months are untouched; deliberate cuts and
-   side income (explore levers) are kept in full. The size of monthly swings still comes from the ledger.
+1. **Saving calibration** (`calibration.py`), now fitted on the **regime engine** (`backend/regime`,
+   run through `engine.py`, which adds cash, investments, debt and inflation). The engine's saving
+   comes from spending fitted on the 24-month ledgers: a median surplus of ~CHF 2,000-6,000/month for
+   working ages. Similar people 10 and 20 years older in the data hold far less. Swiss statistics don't
+   close the gap either: with HABE spending (own rent + 540 + 25% of gross pay) the factor was still
+   11-29%. So the synthetic wealth table disagrees with both, the data wins, and the factor is shown
+   openly. One keep factor (share of any monthly surplus kept) per age band x income tertile is fitted so
+   the median simulated wealth after 10 and 20 years matches peers 10 and 20 years older. Fitted
+   values: median 18%, 4-15% for working ages with mid/high income, higher for low income; the 55-64 and
+   65+ low-income cells hit the 200% cap (their deficits are untouched by the factor). Income cells are
+   needed because in this data wealth barely rises with income. Deficit months are untouched. The old
+   engine (`sim.py`, still behind the CLI, chat and explorer) keeps its own factors in `calibration_sim.json`.
 2. **Decisions** (`scenarios.py`) change income, spending or one-off costs on the calibrated baseline:
    master's, part-time, self-employed, have a child, move canton, job loss. Parameters are hand-set in
    `assumptions.py` (deliberately NOT taken from peers, so step 3 is not circular).
-3. **Validation** (`validate_decisions.py`): each decision mapped to a present state of older peers
-   (part_time, self_employed, family, canton) vs employed peers, matching ignores what the decision
-   changes, calibration fitted on the other half of profiles. Checks sign, ranking, range.
-4. **Trade-offs** (`explore.py`): NSGA-II over decision x expense cut (0-20%) x side income
-   (CHF 0-800), objectives median wealth / months below buffer / CHF sacrificed per month.
-5. **Language** (`chat.py`, `agents.py`): Gemini extracts the situation and decision (or "explore"),
-   explains results; `check_numbers` flags any number not in the engine output.
+3. **Validation** (`validate_decisions.py`, regime engine): each decision mapped to a present state of
+   older peers (part_time, self_employed, family, canton) vs employed peers; matching ignores what the
+   decision changes; calibration fitted on the other half of profiles. Checks sign, ranking and range at
+   10 and 20 years. Held-out baseline inside the peers' middle 50%: 48% at 10 and 20 years (1-2%
+   uncalibrated, 46% after the move into TwinSession); decisions 37-56%. Moving canton and (at 20 years) having a child disagree in sign with
+   peers, which pulls the ranking check negative.
+4. **Trade-offs** (`explore.py` -> `TwinSession.explore`, NSGA-II in `backend/regime/explore.py`): a plan is
+   decision x start month (0-36, step 6) x expense cut (0-20%) x side income (CHF 0-800). Objectives: median
+   real net worth at the horizon, months with cash below a 3-month buffer, CHF/month sacrificed. Each
+   (decision, start month) is simulated once; the levers are scored on the cached paths (~30 simulations,
+   ~900 plans, a few seconds). `timing` lists each decision's result by start month, so "when should I do
+   the master's?" is answered by the search. A child cannot start before month 12.
+5. **Language** (`chat.py`, `agents.py`): Gemini extracts the situation, the decision and its start month (or
+   "explore", optionally focused on one decision for a "when" question); the chat calls TwinSession's
+   tools (`simulate`, `compare`, `explore`) through `engine.py`; Gemini explains the tool output and
+   `check_numbers` flags any number not in it. Directions (rises/falls) of timing effects are written by
+   code, because the number check cannot catch a wrong direction.
 
-## The engine (`sim.py`): one accounting rule
+## One engine
+
+`engine.py` builds a `TwinSession` (backend/regime) with `wealth=True`: the regime engine for life states
+(employed, part-time, job search, student, retired; Swiss pay, tax and unemployment insurance) and the
+wealth layer (`backend/regime/wealth.py`: keep factor, inflation regimes on spending, investments, loan
+interest, real net worth). Spending in today's regime is shrunk toward the person's own ledger (or the
+non-rent spending a new user gave). A student's baseline is "start working now". The old engine below
+(`sim.py`) remains only for its tests and `validate_learned.py`.
+
+## The old engine (`sim.py`): one accounting rule
 
 Every month, in each of N simulated futures:
 

@@ -13,6 +13,7 @@ CANTONS = ["ZH", "GE", "VD", "BE", "BS", "TI", "FR", "NE", "LU", "SG"]
 EMPLOYMENT = ["employed", "part_time", "self_employed", "student", "unemployed", "retired"]
 HOUSEHOLD = ["single", "couple", "family", "shared_housing"]
 SCENARIOS = ["masters", "job_loss", "relocate", "part_time", "self_employed", "family", "explore", "none"]
+DECISIONS = ["masters", "relocate", "part_time", "self_employed", "family"]  # what explore can focus on
 
 def _one_of(xs):
     return "one of " + " | ".join(f'"{x}"' for x in xs)
@@ -30,7 +31,8 @@ UNDERSTAND_PROMPT = f"""You extract facts for a personal-finance simulator. Retu
    "goal_name": string|null,       "goal_target": number|null, "goal_years": number|null
  }},
  "scenario": {_one_of(SCENARIOS)},
- "params": {{"years": integer|null, "months": integer|null, "to_canton": {_one_of(CANTONS)} or null}},
+ "params": {{"years": integer|null, "months": integer|null, "to_canton": {_one_of(CANTONS)} or null,
+            "start_in_months": integer|null, "decision": {_one_of(DECISIONS)} or null}},
  "estimate_requested": list of fields the user asks you to estimate for them, from "rent" (else [])
 }}
 Rules:
@@ -50,6 +52,9 @@ Rules:
   starting a business), "family" (having a child, starting a family), "explore" (wants to compare all
   options, see trade-offs, or find good combinations of choices), otherwise "none".
 - params.years = study length; params.months = length of job loss (1 year = 12).
+- params.start_in_months = when the decision starts, if the user says ("in 2 years" -> 24, "next year" -> 12).
+- "When should I ...?" / "is it better to do X now or later?" -> scenario "explore" with params.decision
+  set to that decision (the search tries every start month). A plain "what if I do X?" stays scenario X.
 - If the user would move to another city for their studies, set scenario "masters" and params.to_canton."""
 
 EXPLAIN_PROMPT = """You explain the output of a financial simulator to the person it describes.
@@ -57,6 +62,8 @@ Rules:
 - Use ONLY numbers that appear in the JSON you are given. Do not compute new numbers.
 - Explain the trade-off between the baseline and the what-if: end wealth range (P10 to P90, median),
   chance of needing financing, months below the cash buffer, and goal probabilities.
+- The engine simulates life states month by month (employed, part-time, job search, student, retired).
+  If months_in_each_life_state differ between scenarios, say so in one sentence.
 - Say which inputs were estimated or defaulted rather than provided.
 - If a peer_path is given, say in one sentence where people at the same percentile are at older ages,
   and that these are different people, not a forecast.
@@ -137,6 +144,13 @@ def validate(raw):
         params["years"] = int(float(p["years"]))
     if scenario == "job_loss":
         params["months"] = int(_num(p.get("months"), 1, 60) or 6)
+    start = _num(p.get("start_in_months"), 0, 108)
+    if start is not None and scenario not in ("explore", "none"):
+        params["start_month"] = int(start)
+    focus = p.get("decision")
+    focus = focus[0] if isinstance(focus, list) and focus else focus
+    if scenario == "explore" and focus in DECISIONS:
+        params["decision"] = focus
     dest = p.get("to_canton")
     dest = dest[0] if isinstance(dest, list) and dest else dest
     dest = CITY_TO_CANTON.get(dest.lower(), dest) if isinstance(dest, str) else None
@@ -246,6 +260,7 @@ def _readable(row):
         "goal_reached_on_time_percent": {g: round(v * 100) for g, v in row["goals"].items()},
         "median_wealth_chf_by_year": {f"year {y['year']}": y["p50"] for y in row.get("years", [])
                                       if y["year"] in (0, 5, 10)},
+        "months_in_each_life_state": {k: v for k, v in row.get("months_in_state", {}).items() if v >= 0.5},
     }
 
 
@@ -264,6 +279,7 @@ def explain(p, results, question):
                        "points": [{"age": q["age"], "median_chf": q["mid"]} for q in results["peer_trajectory"]
                                   if q["year"] in (0, 5, 10)]}
                       if results.get("peer_trajectory") else None),
+        "saving_calibration_keep_percent": round(results.get("keep_factor", 1.0) * 100),
         "simulated_futures": results["paths"],
         "horizon_months": results["horizon_months"],
     })
@@ -279,14 +295,17 @@ def explain(p, results, question):
 # ---- trade-off explanation (NSGA-II front) ----------------------------------------------------
 
 FRONTIER_PROMPT = """You explain the result of a trade-off search to the person it describes.
-The search tried many plans: one life decision plus two levers (cutting spending by up to 20%, a side
-income of up to CHF 800/month) and kept the plans where no goal can improve without another getting worse.
-Goals: higher median wealth after 10 years, fewer months with cash below a 3-month buffer, and less
-sacrifice (CHF per month cut or earned on purpose).
+The search tried many plans: one life decision, WHEN it starts (start month), and two levers (cutting
+spending by up to 20%, a side income of up to CHF 800/month), and kept the plans where no goal can improve
+without another getting worse. Goals: higher median wealth at the end, fewer months with cash below a
+3-month buffer, and less sacrifice (CHF per month cut or earned on purpose).
 Rules:
 - Use ONLY numbers in the JSON. Do not compute new numbers.
-- First compare the decisions with no sacrifice (each_decision.no_sacrifice): wealth, months below buffer,
-  chance of negative cash. Then say how the levers change the picture (highlights).
+- If "timing" is given, the question is about timing: start with it, using the sentence in "timing_pattern"
+  for the direction (rises / falls) exactly as written, then the month-by-month values. Do not pick a month.
+- Otherwise mention each decision's "timing_pattern" sentence briefly, after comparing the decisions.
+- Otherwise first compare the decisions with no sacrifice (each_decision.no_sacrifice_best_start, including
+  its start month), then say how the levers change the picture (highlights).
 - Say which decisions appear on the trade-off front and which never do (on_overall_front = 0 means another
   plan is at least as good on every goal).
 - Mention every warning once, in plain words (one of them explains the saving calibration).
@@ -296,23 +315,49 @@ Rules:
 
 
 def _plan(m):
-    return {"decision": m["decision"], "expense_cut_percent": round(m["expense_cut"] * 100),
-            "side_income_chf_month": m["extra_income"], "sacrifice_chf_month": m["sacrifice_chf_month"],
+    return {"decision": m["decision"],
+            "start_month": "timing does not apply" if m["start_month"] is None else m["start_month"],
+            "expense_cut_percent": round(m["expense_cut"] * 100),
+            "side_income_chf_month": m["side_income_chf_month"], "sacrifice_chf_month": m["sacrifice_chf_month"],
             "median_wealth_chf": m["wealth_median"], "p10_wealth_chf": m["wealth_p10"],
             "p90_wealth_chf": m["wealth_p90"], "months_below_buffer": m["months_below_buffer"],
             "chance_cash_negative_percent": round(m["chance_cash_negative"] * 100)}
 
 
-def explain_frontier(p, front, reference, per_decision, highlights, warnings, question):
+def _trend(a, b, what, unit=""):
+    if round(a) == round(b):
+        return f"{what} stays about {unit}{a:,.0f}"
+    return f"{what} {'rises' if b > a else 'falls'} from {unit}{a:,.0f} to {unit}{b:,.0f}"
+
+
+def timing_pattern(rows):
+    """Direction of the effect of starting later, written by code (the LLM only repeats it)."""
+    first, last = rows[0], rows[-1]
+    return (f"Starting at month {last['start_month']} instead of month {first['start_month']}: "
+            + _trend(first["wealth_median"], last["wealth_median"], "median wealth", "CHF ") + "; "
+            + _trend(first["months_below_buffer"], last["months_below_buffer"], "months below the buffer") + ".")
+
+
+def explain_frontier(p, res, highlights, warnings, question):
+    """res: TwinSession.explore output. A search focused on one decision is a timing question."""
+    focused = len(res["per_decision"]) <= 2
     payload = _round({
         "question": question,
         "person": {k: p[k] for k in ("age", "employment", "household", "canton", "cash", "income", "rent")},
         "saving_calibration_keep_percent": round(p.get("keep_factor", 1.0) * 100),
         "inputs_estimated_or_default": {k: v for k, v in p["tags"].items() if not str(v).startswith("provided")},
-        "as_is": _plan(reference),
-        "plans_on_trade_off_front": len(front),
-        "each_decision": {d: {"no_sacrifice": _plan(r["no_sacrifice"]), "best_found": _plan(r["most_wealth"]),
-                              "on_overall_front": r["on_overall_front"]} for d, r in per_decision.items()},
+        "horizon_years": res["settings"]["horizon_months"] // 12,
+        "start_months_tried": res["settings"]["start_months"],
+        "as_is": _plan(res["as_is"]),
+        "plans_on_trade_off_front": len(res["front"]),
+        "each_decision": {d: {"no_sacrifice_best_start": _plan(r["no_sacrifice_best_start"]),
+                              "best_found": _plan(r["most_wealth"]), "on_overall_front": r["on_overall_front"]}
+                          for d, r in res["per_decision"].items()},
+        "timing_pattern": {d: timing_pattern(rows) for d, rows in res["timing"].items() if len(rows) > 1},
+        "timing": ({d: [{"start_month": t["start_month"], "median_wealth_chf": t["wealth_median"],
+                         "months_below_buffer": t["months_below_buffer"],
+                         "chance_cash_negative_percent": round(t["chance_cash_negative"] * 100)} for t in rows]
+                    for d, rows in res["timing"].items()} if focused else None),
         "highlights": {k: _plan(m) for k, m in highlights.items()},
         "warnings": warnings,
     })

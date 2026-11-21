@@ -81,7 +81,7 @@ class IncomeTable:
     def from_csv(cls, path: str | Path = ASSUMPTIONS_DIR / "income_assumptions.csv") -> "IncomeTable":
         df = pd.read_csv(path)
         params = dict(zip(df["parameter"], df["value"].astype(float)))
-        for name in ("expense_assumptions.csv", "tax_assumptions.csv"):
+        for name in ("expense_assumptions.csv", "tax_assumptions.csv", "market_assumptions.csv"):
             extra_path = ASSUMPTIONS_DIR / name
             if extra_path.exists():
                 extra = pd.read_csv(extra_path)
@@ -203,13 +203,21 @@ class IncomeTable:
         return salary, last_salary, dict(attrs)
 
     def _housing_location_factor(self, attrs: dict) -> float:
-        """Housing-bill prior for where she lives. Abroad and Zurich are alternatives."""
+        """Housing-bill prior for where she lives. Abroad and Zurich are alternatives.
+
+        Any ``rent_factor_*`` attribute (set by the relocate and family decisions) multiplies the bill
+        from the month it is set: e.g. ``rent_factor_move`` = canton rent ratio, ``rent_factor_family``
+        = a larger home."""
         p = self.params
+        extra = 1.0
+        for k, v in attrs.items():
+            if k.startswith("rent_factor_"):
+                extra *= float(v)
         if attrs.get("abroad"):
-            return float(p["abroad_cost_multiplier"])
+            return float(p["abroad_cost_multiplier"]) * extra
         if attrs.get("zurich"):
-            return float(p["zurich_housing_multiplier"])
-        return 1.0
+            return float(p["zurich_housing_multiplier"]) * extra
+        return extra
 
     def _growth_rate(self, age: float) -> float:
         p = self.params

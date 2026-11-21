@@ -6,12 +6,12 @@ stay in ``self.results`` for the UI. The LLM never computes numbers, it only cal
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 
 import numpy as np
 
-from . import cash_engine, metrics
+from . import cash_engine, metrics, wealth
 from .cash_engine import OneOff
 from .data import load_goals, load_profile
 from .regime_engine import RegimeEngine
@@ -37,7 +37,25 @@ DECISIONS: dict[str, str] = {
     "force_state": "Raw intervention. Params: state, duration.",
     "scale_hazard": "Raw intervention. Params: from_state, to_state, factor, duration.",
     "set_attribute": "Raw intervention. Params: name, value.",
+    "self_employed": "Become self-employed: self-employed spending swings (about 3x wider) and December pattern "
+                     "from month 0, plus a setup cost at start_month. Params: setup_cost_chf (default 10000). "
+                     "Income level is unchanged (no sourced self-employed premium).",
+    "relocate": "Move to a place where housing costs rent_factor times today's from start_month, plus a one-off "
+                "relocation_cost_chf (default 5000). Params: rent_factor (required), label (e.g. 'GE').",
+    "family": "Have a child at start_month: parental leave (parental_leave_months at "
+              "parental_leave_replacement of the wage) and a larger home (rent_factor, default 1.25) from then on. "
+              "Params: rent_factor, leave_months.",
 }
+
+
+def _round_tree(x):
+    if isinstance(x, float):
+        return round(x, 3) if abs(x) < 10 else int(round(x))
+    if isinstance(x, dict):
+        return {k: _round_tree(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_round_tree(v) for v in x]
+    return x
 
 
 def _r(x, nd=0):
@@ -55,6 +73,7 @@ class Scenario:
     one_offs: list[OneOff] = field(default_factory=list)
     assumptions: dict = field(default_factory=dict)
     decisions: list[dict] = field(default_factory=list)   # human-readable log of apply_decision calls
+    profile_changes: dict = field(default_factory=dict)  # attributes set from month 0 (e.g. self_employed)
 
 
 @dataclass
@@ -63,11 +82,19 @@ class ScenarioResult:
     cash: cash_engine.CashPaths
     metrics: dict
     summary: dict
+    wealth: object = None   # wealth.Wealth when the session has wealth=True
 
 
 class TwinSession:
     def __init__(self, profile: Profile, engine: RegimeEngine | None = None, horizon_months: int = 120,
-                 n_paths: int = 2000, seed: int = 0, reserve_chf: float = 0.0, goals: list[dict] | None = None):
+                 n_paths: int = 2000, seed: int = 0, reserve_chf: float = 0.0, goals: list[dict] | None = None,
+                 wealth: bool = False, keep_factor: float = 1.0, inflation: bool = True):
+        """wealth=True adds the wealth layer (wealth.py): keep factor on surplus months, inflation on
+        spending, investments, loan interest, real net worth. Cash fields then come from that layer.
+        The default (False) is the plain starter-kit cash accounting."""
+        self.wealth = wealth
+        self.keep_factor = float(keep_factor)
+        self.inflation = inflation
         self.profile = profile
         self.engine = engine or RegimeEngine.stub()
         self.horizon_months = horizon_months
@@ -101,7 +128,8 @@ class TwinSession:
                         "opening_cash_chf": p.opening_cash, "attributes": p.attributes},
             "goals": self.goals,
             "settings": {"horizon_months": self.horizon_months, "n_paths": self.n_paths, "seed": self.seed,
-                         "reserve_chf": self.reserve_chf, "engine_mode": self.engine.mode},
+                         "reserve_chf": self.reserve_chf, "engine_mode": self.engine.mode,
+                         "wealth_layer": self.wealth, "keep_factor": self.keep_factor},
             "scenarios": {sid: {"name": s.name, "decisions": s.decisions, "assumptions": s.assumptions,
                                 "simulated": sid in self.results} for sid, s in self.scenarios.items()},
             "decision_kinds": DECISIONS,
@@ -116,6 +144,7 @@ class TwinSession:
             src = self._scenario(copy_from)
             s.interventions, s.one_offs = list(src.interventions), list(src.one_offs)
             s.assumptions, s.decisions = dict(src.assumptions), list(src.decisions)
+            s.profile_changes = dict(src.profile_changes)
         self.scenarios[scenario_id] = s
         return {"created": scenario_id, "name": s.name}
 
@@ -124,6 +153,8 @@ class TwinSession:
         if kind not in DECISIONS:
             raise ValueError(f"Unknown decision kind {kind!r}; choose from {sorted(DECISIONS)}")
         ivs, offs = self._decision_to_interventions(kind, int(start_month), params)
+        if kind == "self_employed":
+            s.profile_changes["self_employed"] = True
         s.interventions.extend(ivs)
         s.one_offs.extend(offs)
         s.decisions.append({"kind": kind, "start_month": int(start_month), **params})
@@ -159,6 +190,9 @@ class TwinSession:
             "months_in_state": {k: round(sb["expected_months_in_state"][k] - sa["expected_months_in_state"][k], 1)
                                 for k in STATES},
         }
+        if "net_worth_real_chf" in sa and "net_worth_real_chf" in sb:
+            delta["net_worth_real_p50_chf"] = _r(sb["net_worth_real_chf"]["p50"] - sa["net_worth_real_chf"]["p50"])
+            delta["net_worth_real_p10_chf"] = _r(sb["net_worth_real_chf"]["p10"] - sa["net_worth_real_chf"]["p10"])
         return {"a": a, "b": b, "delta_b_minus_a": delta, "a_summary": sa, "b_summary": sb,
                 "note": "Modelled difference under the stated assumptions; not a proven causal effect."}
 
@@ -207,6 +241,19 @@ class TwinSession:
                         "first_negative_month": int(res.cash.first_negative_month[idx])})
         return {"scenario_id": scenario_id, "paths": out, "note": metrics.DISCLAIMER}
 
+    def explore(self, options: list[dict] | None = None, max_start_month: int = 36, start_step: int = 6,
+                n_paths: int = 100, generations: int = 30, population: int = 40) -> dict:
+        """Trade-off search (NSGA-II, explore.py) over decision x start month x expense cut x side income.
+
+        options: [{"kind": ..., "params": {...}, "label": ...}]; default baseline, masters, part_time,
+        self_employed. Objectives: median real net worth at the horizon (up), median months with cash
+        below the buffer (down), CHF/month given up on purpose (down). Needs wealth=True."""
+        from .explore import frontier
+        if not self.wealth:
+            raise ValueError("explore needs a session with wealth=True (it scores real net worth)")
+        return frontier(self, options, max_start_month=max_start_month, start_step=start_step,
+                        n_paths=n_paths, gens=generations, pop=population)
+
     # ------------------------------------------------------------- internals
 
     def assumption_names(self) -> set[str]:
@@ -249,12 +296,29 @@ class TwinSession:
                  "ui_replacement_rate", "masters_premium_pct"]
                 + [f"savings_rate_{v}" for v in sorted(visited)])
 
+    def _profile_for(self, s: Scenario) -> Profile:
+        if not s.profile_changes:
+            return self.profile
+        return replace(self.profile, attributes={**self.profile.attributes, **s.profile_changes})
+
     def _run(self, s: Scenario, n_paths: int, seed: int) -> ScenarioResult:
-        paths = self.engine.simulate(self.profile, horizon_months=self.horizon_months, n_paths=n_paths,
+        profile = self._profile_for(s)
+        paths = self.engine.simulate(profile, horizon_months=self.horizon_months, n_paths=n_paths,
                                      interventions=s.interventions, assumption_overrides=s.assumptions, seed=seed)
-        cash = cash_engine.run(self.profile, paths, s.one_offs)
+        w = None
+        if self.wealth:
+            params = self.engine.income_table.with_overrides(s.assumptions).params
+            w = wealth.build(profile, paths, s.one_offs, params, seed, self.keep_factor, self.inflation)
+            costs = w.oneoff[None, :] * w.price + w.loan_interest
+            flows = {"net_flow_chf": w.flows() + costs, "one_off_costs_chf": np.broadcast_to(costs, w.price.shape)}
+            cash = cash_engine.CashPaths(w.opening, w.cash(), flows)
+        else:
+            cash = cash_engine.run(profile, paths, s.one_offs)
         m = metrics.compute_metrics(cash, paths, reserve_chf=self.reserve_chf, goals=self.goals)
-        return ScenarioResult(paths, cash, m, self._summarise(s, m))
+        summary = self._summarise(s, m)
+        if w is not None:
+            summary.update({k: _round_tree(v) for k, v in w.summary().items()})
+        return ScenarioResult(paths, cash, m, summary, w)
 
     def _summarise(self, s: Scenario, m: dict) -> dict:
         T = self.horizon_months
@@ -314,4 +378,16 @@ class TwinSession:
                                  factor=float(p["factor"]))], []
         if kind == "set_attribute":
             return [Intervention("set_attribute", t0, attribute=(p["name"], p["value"]))], []
+        if kind == "self_employed":  # spending pattern switched on via profile_changes in apply_decision
+            return [], [OneOff(t0, float(p.get("setup_cost_chf", 10000.0)), "business setup")]
+        if kind == "relocate":
+            ivs = [Intervention("set_attribute", t0, attribute=("rent_factor_move", float(p["rent_factor"])))]
+            if p.get("label"):
+                ivs.append(Intervention("set_attribute", t0, attribute=("location", str(p["label"]))))
+            return ivs, [OneOff(t0, float(p.get("relocation_cost_chf", 5000.0)), "relocation")]
+        if kind == "family":
+            leave = p.get("leave_months")
+            return ([Intervention("parental_leave", t0, None if leave is None else int(leave)),
+                     Intervention("set_attribute", t0,
+                                  attribute=("rent_factor_family", float(p.get("rent_factor", 1.25))))], [])
         raise ValueError(kind)

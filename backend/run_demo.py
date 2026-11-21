@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from twin import TwinSession  # noqa: E402
+from regime import TwinSession  # noqa: E402
 
 s = TwinSession.from_profile_id("P00001", horizon_months=120, n_paths=1000)
 for sid, kind in [("work", "start_working"), ("masters", "masters"), ("abroad", "move_abroad")]:

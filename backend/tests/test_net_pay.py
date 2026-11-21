@@ -2,10 +2,10 @@
 import numpy as np
 import pytest
 
-from twin import RegimeEngine
-from twin.income import IncomeTable
-from twin.net_pay import gross_from_net, net_from_gross
-from twin.types import Profile
+from regime import RegimeEngine
+from regime.income import IncomeTable
+from regime.net_pay import gross_from_net, net_from_gross
+from regime.types import Profile
 
 P = IncomeTable.from_csv().params
 

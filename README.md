@@ -13,16 +13,16 @@ TwinSession wraps the pipeline per scenario; its methods are the LLM tools used 
 
 | Module | Role |
 |---|---|
-| `backend/twin/types.py` | `STATES`, `Profile`, `Intervention`, `RegimePaths` (interface contract) |
-| `backend/twin/regime_engine.py` | `RegimeEngine.simulate/filter`; working **stub** mode; real HMM functions marked `TODO` (`fit_emissions`, `forward_filter`, `sample_regime_paths`, `sample_emissions`) |
-| `backend/twin/transitions.py` + `backend/assumptions/transitions.csv` | Monthly hazards (sourced, editable assumptions) and Dirichlet uncertainty |
-| `backend/twin/income.py` + `backend/assumptions/income_assumptions.csv` | Absolute income by regime, age/experience, attributes (master's, abroad), unemployment insurance |
-| `backend/twin/net_pay.py` + `backend/assumptions/tax_assumptions.csv` | Gross pay to what lands in the account: AHV/IV/EO, ALV, accident insurance, BVG employee share by age, income tax (Vaud, `[EST]`). `income_chf` is net, `gross_income_chf` is gross. Switch: `apply_income_tax` |
-| `backend/twin/cash_engine.py` | `C_{t+1} = C_t + net_flow - one_offs`; no clamping of negative cash |
-| `backend/twin/metrics.py` | Risk and goal metrics |
-| `backend/twin/twin_session.py` | Scenarios, decisions, assumptions; tools: `get_state`, `create_scenario`, `apply_decision`, `set_assumption`, `simulate`, `compare`, `sensitivity`, `sample_paths` |
-| `backend/twin/agent.py` | Function-calling loop + tool schemas (key from `OPENAI_API_KEY`, never committed) |
-| `backend/twin/validation.py` | Starter-kit deterministic equivalence, transition/occupancy checks; emission fit and calibration backtest `TODO` |
+| `backend/regime/types.py` | `STATES`, `Profile`, `Intervention`, `RegimePaths` (interface contract) |
+| `backend/regime/regime_engine.py` | `RegimeEngine.simulate/filter`; working **stub** mode; real HMM functions marked `TODO` (`fit_emissions`, `forward_filter`, `sample_regime_paths`, `sample_emissions`) |
+| `backend/regime/transitions.py` + `backend/assumptions/transitions.csv` | Monthly hazards (sourced, editable assumptions) and Dirichlet uncertainty |
+| `backend/regime/income.py` + `backend/assumptions/income_assumptions.csv` | Absolute income by regime, age/experience, attributes (master's, abroad), unemployment insurance |
+| `backend/regime/net_pay.py` + `backend/assumptions/tax_assumptions.csv` | Gross pay to what lands in the account: AHV/IV/EO, ALV, accident insurance, BVG employee share by age, income tax (Vaud, `[EST]`). `income_chf` is net, `gross_income_chf` is gross. Switch: `apply_income_tax` |
+| `backend/regime/cash_engine.py` | `C_{t+1} = C_t + net_flow - one_offs`; no clamping of negative cash |
+| `backend/regime/metrics.py` | Risk and goal metrics |
+| `backend/regime/twin_session.py` | Scenarios, decisions, assumptions; tools: `get_state`, `create_scenario`, `apply_decision`, `set_assumption`, `simulate`, `compare`, `sensitivity`, `sample_paths` |
+| `backend/regime/agent.py` | Function-calling loop + tool schemas (key from `OPENAI_API_KEY`, never committed) |
+| `backend/regime/validation.py` | Starter-kit deterministic equivalence, transition/occupancy checks; emission fit and calibration backtest `TODO` |
 
 Run:
 
@@ -36,7 +36,7 @@ All numbers in `backend/assumptions/*.csv` marked `PLACEHOLDER` must be replaced
 
 ## Regime engine
 
-A regime HMM (`backend/twin/regime_engine.py`) for one person, default Alexia `P00001`. Each month of each path is one of `employed`, `part_time`, `job_search`, `student`, `retired` (`STATES` in `backend/twin/types.py`). A decision is an `Intervention` on that chain. The engine returns monthly income and net flow. `backend/twin/cash_engine.py` keeps the balance: cash starts at opening cash and adds `net_flow_chf` each month, minus one-off costs. That net flow is income minus spending, so cash is savings after spending.
+A regime HMM (`backend/regime/regime_engine.py`) for one person, default Alexia `P00001`. Each month of each path is one of `employed`, `part_time`, `job_search`, `student`, `retired` (`STATES` in `backend/regime/types.py`). A decision is an `Intervention` on that chain. The engine returns monthly income and net flow. `backend/regime/cash_engine.py` keeps the balance: cash starts at opening cash and adds `net_flow_chf` each month, minus one-off costs. That net flow is income minus spending, so cash is savings after spending.
 
 From `backend/`, use this machine's interpreter:
 
@@ -44,10 +44,10 @@ From `backend/`, use this machine's interpreter:
 /opt/anaconda3/bin/python run_alexia_goal_hit.py
 ```
 
-`run_alexia_goal_hit.py` builds the HMM, calls `RegimeEngine.simulate`, rolls cash with `twin.cash_engine.run`, and scores the goal with `goal_hit_rate` in `backend/twin/metrics.py`. The other `backend/run_alexia_*.py` scripts on this branch call the same `simulate`. `backend/run_demo.py` is the `TwinSession` printout.
+`run_alexia_goal_hit.py` builds the HMM, calls `RegimeEngine.simulate`, rolls cash with `regime.cash_engine.run`, and scores the goal with `goal_hit_rate` in `backend/regime/metrics.py`. The other `backend/run_alexia_*.py` scripts on this branch call the same `simulate`. `backend/run_demo.py` is the `TwinSession` printout.
 
 ```python
-from twin import Intervention, RegimeEngine, fit_emissions, load_transition_priors
+from regime import Intervention, RegimeEngine, fit_emissions, load_transition_priors
 
 engine = RegimeEngine(fit_emissions(), load_transition_priors())
 paths = engine.simulate(

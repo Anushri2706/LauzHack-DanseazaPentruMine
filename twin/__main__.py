@@ -46,11 +46,12 @@ def main(argv=None):
               "having a child, job loss, moving (e.g. 'What if I move to Zurich?'), or 'explore my options'.")
         return 1
     if key == "explore":
-        from .explore import frontier, print_front, print_per_decision
+        from .explore import frontier, print_front, print_per_decision, print_timing
         print(f"Question : {a.question}\nProfile  : {p['id']} {p['name']}, {p['age']}, {p['employment']}\n")
-        front, ref, per = frontier(p)
-        print_front(front, ref, limit=15)
-        print_per_decision(per)
+        res = frontier(p, only=params.get("decision"))
+        print_front(res, limit=15)
+        print_timing(res)
+        print_per_decision(res)
         print(f"\nLimits: {LIMITS}")
         return 0
     print(f"Question : {a.question}")
@@ -60,13 +61,12 @@ def main(argv=None):
     print("Inputs and provenance:")
     for k, v in p["tags"].items():
         print(f"  - {k}: {v}")
-    print(f"  Opening cash CHF {fmt(p['cash'])}, income {fmt(p['income'])}/mo, rent {fmt(p['rent'])}/mo, "
-          f"other spending ~{fmt(p['other_spend'])}/mo (estimated)\n")
+    print(f"  Opening cash CHF {fmt(p['cash'])}, income {fmt(p['income'])}/mo, rent {fmt(p['rent'])}/mo\n")
 
     res = whatif(p, key, params, a.paths)
     rows = res["rows"]
     print(f"Results over {p['horizon']} months, {a.paths} simulated futures "
-          f"(inflation regimes, market returns, income noise):\n")
+          f"(life regimes, inflation regimes, market returns), regime engine via TwinSession:\n")
     for s in rows:
         print(f"== {s['scenario']}")
         print(f"   Net worth at end (today's CHF)  P10 {fmt(s['nw_p10'])} | median {fmt(s['nw_p50'])} | P90 {fmt(s['nw_p90'])}")
@@ -75,6 +75,8 @@ def main(argv=None):
         print(f"   Median months below {A('buffer_months')}-month buffer: {s['median_buffer_months']:.0f}")
         for g, pr in s["goals"].items():
             print(f"   Goal '{g}' reached on time in {pr:.0%} of futures")
+        lives = ", ".join(f"{k} {v:.0f}" for k, v in s["months_in_state"].items() if v >= 0.5)
+        print(f"   Average months per life state: {lives}")
         for n in s["notes"]:
             print(f"   note: {n}")
         print()

@@ -2,8 +2,8 @@
 import numpy as np
 import pytest
 
-from twin import data
-from twin.types import STATES
+from regime import data
+from regime.types import STATES
 
 
 @pytest.fixture(scope="module")

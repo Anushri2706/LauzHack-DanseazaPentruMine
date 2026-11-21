@@ -46,4 +46,7 @@ def route(question: str):
         y = re.search(r"(\d+)\s*(?:year|yr)", q)
         if y:
             params["years"] = int(y.group(1))
+    if re.search(r"\bwhen (should|could|would|do|is)\b|\b(now or later|later or now)\b", q) and best in (
+            "masters", "relocate", "part_time", "family"):
+        return "explore", {"decision": best}, hit / total  # timing question: the search tries start months
     return best, params, hit / total

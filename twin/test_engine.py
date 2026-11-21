@@ -9,7 +9,6 @@ import statistics as st
 import unittest
 
 from .assumptions import A, override
-from .chat import unusual
 from .profile import canton_rent_index, profile_from_inputs
 from .scenarios import TEMPLATES
 from .sim import make_shocks, run_path
@@ -110,6 +109,10 @@ class Guards(unittest.TestCase):
         self.assertIn("trajectory", p)
 
     def test_unusual_inputs_are_flagged(self):
+        try:
+            from .chat import unusual  # the chat runs on the regime engine (numpy, pandas, scipy)
+        except ImportError as e:
+            self.skipTest(f"regime engine unavailable: {e}")
         self.assertEqual([f for f, _ in unusual({"income": 25000})], ["income"])
         self.assertEqual([f for f, _ in unusual({"income": 3000, "rent": 3500})], ["rent"])
         self.assertEqual(unusual({"income": 6000, "rent": 2000, "cash": 5000}), [])
@@ -131,26 +134,22 @@ class SavingCalibration(unittest.TestCase):
         r = det(calibrated(0.2, cash=1000, income=3000, rent=2000, other_spend=1500))
         self.assertAlmostEqual(r["final_nw_real"], -59_000, places=2)
 
-    def test_deliberate_saving_is_kept_in_full(self):
-        # a side income of 500 chosen on purpose is not calibrated away: +500 x 120 = +60,000
-        from .explore import apply_levers
-        p = calibrated(0.2)
-        with override(wage_growth_annual=0.0):
-            plan = apply_levers(TEMPLATES["baseline"](p), 0.0, 500.0)
-            r = run_path(p, plan, ([0.0] * H, [0.0] * H, [0.0] * H))
-        self.assertAlmostEqual(r["final_nw_real"] - det(p)["final_nw_real"], 60_000, places=2)
-
-    def test_fitted_table_is_sane(self):
-        from .calibration import factors, keep_factor
-        table = factors()
-        self.assertTrue(all(0.0 <= k <= 1.0 for _, _, k in table))
+    def test_fitted_tables_are_sane(self):
+        from .calibration import K_MAX, factors, keep_factor
+        old = factors("sim")  # sim.py engine: one factor per age band
+        self.assertTrue(all(0.0 <= k <= 1.0 for _, _, k in old))
+        new = factors()       # regime engine: age band x income tertile
+        self.assertTrue(all(len(c) == 5 and 0.0 <= c[-1] <= K_MAX for c in new))
         for age in (16, 20, 30, 50, 70, 90):
-            self.assertIsNotNone(keep_factor(age))
+            for income in (1000, 6000, 20000):
+                self.assertIsNotNone(keep_factor(age, new, income))
+        # every age band has its own cells: 70-year-olds must not fall back to the youngest band
+        self.assertEqual(next(c for c in new if c[0] <= 70 < c[1])[0], 65)
 
     def test_apply_sets_rate_and_tag(self):
         from . import calibration
-        p = calibration.apply(person(age=30))
-        self.assertAlmostEqual(p["calibration_rate"], 1 - calibration.keep_factor(30))
+        p = calibration.apply(person(age=30, income=6000))
+        self.assertAlmostEqual(p["calibration_rate"], 1 - calibration.keep_factor(30, income=6000))
         self.assertIn("saving calibration", p["tags"])
 
 
@@ -177,19 +176,6 @@ class Decisions(unittest.TestCase):
         self.assertAlmostEqual(diff, -194_400 - 28_800, places=2)
 
 
-class Explore(unittest.TestCase):
-    def test_front_is_non_dominated_and_complete(self):
-        from .explore import frontier, dominates
-        p = calibrated(0.2)
-        front, ref, per = frontier(p, pop=16, gens=5, paths=10)
-        objs = [(-m["wealth_median"], m["months_below_buffer"], m["sacrifice_chf_month"]) for m in front]
-        for a in objs:
-            self.assertFalse(any(dominates(b, a) for b in objs))
-        self.assertEqual(ref["sacrifice_chf_month"], 0)
-        self.assertIn("baseline", per)
-        self.assertTrue(all(r["no_sacrifice"]["sacrifice_chf_month"] == 0 for r in per.values()))
-
-
 class Language(unittest.TestCase):
     def test_router_knows_the_new_decisions(self):
         from .router import route
@@ -197,10 +183,97 @@ class Language(unittest.TestCase):
                        ("What if we have a baby?", "family"), ("Explore all my options", "explore")):
             self.assertEqual(route(q)[0], key, q)
 
+    def test_when_questions_go_to_the_search(self):
+        from .router import route
+        self.assertEqual(route("When should I do a master's?")[:2], ("explore", {"decision": "masters"}))
+        self.assertEqual(route("What if I do a master's?")[0], "masters")
+
+    def test_llm_start_month_and_focus_are_validated(self):
+        from .agents import validate
+        _, sc, params, *_ = validate({"scenario": "masters", "params": {"start_in_months": 24}})
+        self.assertEqual((sc, params["start_month"]), ("masters", 24))
+        _, sc, params, *_ = validate({"scenario": "explore", "params": {"decision": "masters"}})
+        self.assertEqual((sc, params), ("explore", {"decision": "masters"}))
+        _, _, params, *_ = validate({"scenario": "explore", "params": {"decision": "rob a bank"}})
+        self.assertEqual(params, {})
+
     def test_llm_output_validation_accepts_new_decisions(self):
         from .agents import validate
         for sc in ("part_time", "self_employed", "family", "explore"):
             self.assertEqual(validate({"inputs": {}, "scenario": sc})[1], sc)
+
+
+class RegimeBridge(unittest.TestCase):
+    """twin/engine.py: the regime engine (backend/regime) plus cash, investments, debt and inflation."""
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            from . import engine
+        except ImportError as e:  # numpy / pandas / scipy (backend/requirements.txt)
+            raise unittest.SkipTest(f"regime engine unavailable: {e}")
+        cls.engine = engine
+        from .profile import load_profile
+        cls.p = load_profile("P00001")  # Alexia, a student
+
+    def test_keep_factor_scales_only_surplus_months(self):
+        r = self.engine.run(self.p, years=2, n_paths=20)
+        full, half = r.flows(1.0), r.flows(0.5)
+        surplus = r.net() > 0
+        self.assertTrue((full[~surplus] == half[~surplus]).all())   # deficit months untouched
+        self.assertTrue((half[surplus] < full[surplus]).all())      # surplus months shrink
+
+    def test_levers_are_kept_in_full(self):
+        # a side income chosen on purpose is not calibrated away: +500 x price level every month
+        r = self.engine.run(self.p, years=2, n_paths=10)
+        gained = r.cash(0.2, side=500.0)[:, -1] - r.cash(0.2)[:, -1]
+        self.assertTrue(abs(gained - 500.0 * r.price.sum(axis=1)).max() < 1e-6)
+
+    def test_cash_reconciles(self):
+        r = self.engine.run(self.p, years=3, n_paths=10)
+        c = r.cash(0.3)
+        self.assertTrue(abs(c[:, -1] - (r.opening + r.flows(0.3).sum(axis=1))).max() < 1e-6)
+
+    def test_student_baseline_starts_working(self):
+        from regime.types import STATE_INDEX
+        r = self.engine.run(self.p, years=1, n_paths=50)
+        self.assertGreater((r.states[:, 0] == STATE_INDEX["employed"]).mean(), 0.9)
+
+    def test_decisions_share_futures(self):
+        a = self.engine.run(self.p, "baseline", years=2, n_paths=10)
+        b = self.engine.run(self.p, "relocate", {"to_canton": "GE"}, years=2, n_paths=10)
+        self.assertTrue((a.price == b.price).all())
+        self.assertTrue((a.port == b.port).all())
+
+    def test_year_zero_is_todays_net_worth(self):
+        r = self.engine.run(self.p, years=1, n_paths=5)
+        self.assertAlmostEqual(r.net_worth_years()[0, 0], self.p["cash"] + self.p["portfolio"]
+                               - sum(x for x, _ in self.p["loans"]))
+
+    def test_whatif_goes_through_the_session_tools(self):
+        from .run import whatif
+        res = whatif(dict(self.p, keep_factor=0.3), "masters", {"start_month": 12}, paths=30)
+        base, m = res["rows"]
+        self.assertEqual(base["months_in_state"]["student"], 0)
+        self.assertEqual(m["months_in_state"]["student"], 24)
+        self.assertEqual(res["median_end_wealth_difference"], m["nw_p50"] - base["nw_p50"])
+        self.assertIn("baseline", res["session"].results)
+
+    def test_search_front_is_non_dominated_and_times_the_decision(self):
+        from regime.explore import dominates
+        from .explore import frontier
+        res = frontier(dict(self.p, keep_factor=0.3), only="masters", n_paths=20, gens=4, pop=12)
+        objs = [(-m["wealth_median"], m["months_below_buffer"], m["sacrifice_chf_month"]) for m in res["front"]]
+        for o in objs:
+            self.assertFalse(any(dominates(b, o) for b in objs))
+        self.assertEqual(res["as_is"]["sacrifice_chf_month"], 0)
+        self.assertEqual([t["start_month"] for t in res["timing"]["masters"]], res["settings"]["start_months"])
+        self.assertEqual(set(res["per_decision"]), {"baseline", "masters"})
+
+    def test_a_child_never_arrives_at_month_zero(self):
+        from .explore import frontier
+        res = frontier(dict(self.p, keep_factor=0.3), only="family", n_paths=10, gens=2, pop=8)
+        self.assertTrue(all(t["start_month"] >= 12 for t in res["timing"]["family"]))
 
 
 if __name__ == "__main__":

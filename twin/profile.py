@@ -68,7 +68,6 @@ def load_profile(profile_id: str) -> dict:
         "who (age, city, canton, employment, household)": "provided",
         "cash (liquidity)": "provided", "income, rent (cash-flow baseline)": "provided",
         "other spending": "estimated from ledger history" if nets else "default (40% of income)",
-        "monthly noise": f"CHF {sd_net:,.0f} from own 24-month history" if nets else "default",
         "assets": "provided" + ("" if portfolio else " (cash only)"),
         "debt": "provided" if loans else "none on record",
         "goals": "provided" if goals else "none on record",
@@ -116,7 +115,6 @@ def profile_from_inputs(inputs: dict) -> dict:
             tags[field] = f"estimated: {how}"
     from .assumptions import A
     p["net_sd"] = A("noise_chf")
-    tags["monthly noise"] = f"default: CHF {p['net_sd']:,.0f} random swing per month (fixed, not a share of income)"
     if "loans" in inputs:
         p["loans"] = [tuple(map(float, x)) for x in inputs["loans"]]
         tags["debt"] = "provided"

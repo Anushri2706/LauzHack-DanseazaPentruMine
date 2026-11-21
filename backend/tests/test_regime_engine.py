@@ -5,15 +5,15 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from twin import RegimeEngine, cash_engine, load_profile, load_transition_priors
-from twin.cash_engine import CashPaths
-from twin.data import ASSUMPTIONS_DIR, load_cash_balances, load_goals, load_profiles
-from twin.income import IncomeTable
-from twin.net_pay import gross_from_net, net_from_gross
-from twin.metrics import goal_hit_rate
-from twin.regime_engine import _schedule, emission_loglik, fit_emissions, forward_filter, sample_yearly_lump
-from twin.types import STATE_INDEX, STATES, Intervention, Profile
-from twin import validation
+from regime import RegimeEngine, cash_engine, load_profile, load_transition_priors
+from regime.cash_engine import CashPaths
+from regime.data import ASSUMPTIONS_DIR, load_cash_balances, load_goals, load_profiles
+from regime.income import IncomeTable
+from regime.net_pay import gross_from_net, net_from_gross
+from regime.metrics import goal_hit_rate
+from regime.regime_engine import _schedule, emission_loglik, fit_emissions, forward_filter, sample_yearly_lump
+from regime.types import STATE_INDEX, STATES, Intervention, Profile
+from regime import validation
 
 E, P, J, S, R = (STATE_INDEX[s] for s in STATES)
 
@@ -597,7 +597,7 @@ def test_age_hazards_dirichlet_duration_and_occupancy(engine):
 
 
 def test_filter_on_alexia_and_a_shift(engine):
-    from twin.data import observed_net_flows
+    from regime.data import observed_net_flows
 
     alexia = load_profile("P00001")
     flows = observed_net_flows("P00001")
@@ -688,7 +688,7 @@ def test_first_job_after_masters_pins_and_pays_the_graduate_wait():
     from run_alexia_first_job_20y import (
         DECISIONS, FULL_TIME_MONTH, GRADUATION_MONTH, HIRED_MONTH, SEARCH_MONTHS, _waiting_rules,
     )
-    from twin.regime_engine import _schedule
+    from regime.regime_engine import _schedule
 
     alexia = load_profile("P00001")
     table = IncomeTable.from_csv()

@@ -426,6 +426,11 @@ def load_profile(profile_id: str = "P00001", data_dir: Path = DATA_DIR) -> Profi
     flows = cb.loc[cb["profile_id"] == profile_id, "net_transactions_chf"]
     ref_income = float(r["reference_monthly_net_income_chf"])
     mean_rate = float(flows.mean() / ref_income) if len(flows) and ref_income > 0 else None
+    assets = pd.read_csv(data_dir / "synthetic-assets.csv")
+    port = assets.loc[(assets["profile_id"] == profile_id) & (assets["asset_type"] == "investment_portfolio"),
+                      "value_chf"].sum()
+    li = pd.read_csv(data_dir / "synthetic-liabilities.csv")
+    li = li.loc[li["profile_id"] == profile_id]
     return Profile(
         age=int(r["age_at_start"]),
         employment=str(r["employment_status"]),
@@ -437,6 +442,8 @@ def load_profile(profile_id: str = "P00001", data_dir: Path = DATA_DIR) -> Profi
         name=str(r["display_name"]),
         opening_cash=float(r["opening_cash_chf"]),
         mean_savings_rate=mean_rate,
+        portfolio_chf=float(port),
+        loans=[(float(a), float(r)) for a, r in zip(li["opening_principal_chf"], li["annual_interest_rate"])],
     )
 
 

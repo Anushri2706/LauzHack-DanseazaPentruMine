@@ -5,13 +5,15 @@
 
 Type 'state' to see what the twin knows, 'quit' to exit.
 Flow per message: understand (LLM + validation) -> update state -> engine -> explain (LLM + number check).
+The engine is backend/regime's TwinSession (via twin/engine.py): a what-if calls its simulate and compare
+tools, "explore" / "when should I ...?" calls its explore tool (NSGA-II with a start-month gene).
 """
 import argparse
 import re
 
 from . import calibration
 from .agents import explain, explain_frontier, understand
-from .explore import frontier, highlights, print_front, print_per_decision
+from .explore import frontier, highlights, print_front, print_per_decision, print_timing
 from .llm import describe
 from .profile import REQUIRED, canton_rent_index, load_profile, profile_from_inputs
 from .run import whatif
@@ -23,6 +25,9 @@ ASK = {"cash": "how much cash or savings you have", "income": "your net income (
 NAMES = {"masters": "a master's degree", "job_loss": "a job loss", "relocate": "a move",
          "part_time": "working part-time", "self_employed": "becoming self-employed",
          "family": "having a child", "explore": "a trade-off search across all decisions"}
+TIMING = re.compile(r"\bwhen\b|\b(now or later|later or now|best time|which year|how soon)\b", re.I)
+WHEN = {"masters": "when to do a master's", "relocate": "when to move", "part_time": "when to go part-time",
+        "family": "when to have a child"}
 
 
 def fmt_table(results):
@@ -69,17 +74,18 @@ def _estimate_rent(state, sess, out):
                "This is not official data and not specific to students; tell me a number to replace it.")
 
 
-def run_explore(p, message):
-    """Trade-off search + explanation. Falls back to the plain tables without an LLM."""
+def run_explore(p, message, only=None):
+    """TwinSession.explore + explanation. Falls back to the plain tables without an LLM."""
     import contextlib
     import io
     from .run import warnings_for
-    front, ref, per = frontier(p)
-    text, flags = explain_frontier(p, front, ref, per, highlights(front), warnings_for(p, "explore"), message)
+    res = frontier(p, only=only)
+    text, flags = explain_frontier(p, res, highlights(res), warnings_for(p, "explore"), message)
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        print_front(front, ref, limit=8)
-        print_per_decision(per)
+        print_front(res, limit=8)
+        print_timing(res)
+        print_per_decision(res)
     if text is None:
         return buf.getvalue() + f"(explanation unavailable: {flags[0]})"
     if flags:
@@ -111,6 +117,13 @@ def handle(message, state, fixed_profile=None, paths=300):
         new = dict(sess.get("params", {}), **u["params"])  # a move during a master's = study there
         changed = new != sess.get("params")
         sess["params"] = new
+    elif u["scenario"] == "explore":
+        # An explicit search request always runs. It focuses on one decision only for a timing question;
+        # otherwise a focus copied from the previous request ("known") is dropped.
+        params = dict(u["params"])
+        if not TIMING.search(message):
+            params.pop("decision", None)
+        sess["scenario"], sess["params"], changed = "explore", params, True
     elif u["scenario"] != "none":
         changed = (u["scenario"], u["params"]) != (sess.get("scenario"), sess.get("params"))
         sess["scenario"], sess["params"] = u["scenario"], u["params"]
@@ -177,11 +190,15 @@ def handle(message, state, fixed_profile=None, paths=300):
     key, params = sess.pop("scenario"), sess.pop("params", {})
     sess["last"] = {"scenario": key, "params": params}
     if key == "explore":
-        out.append("Searching plans across all decisions (NSGA-II, a few seconds)...")
-        out.append(run_explore(p, message))
+        only = params.get("decision")
+        out.append(f"Searching {WHEN.get(only, 'plans across all decisions')}: every start month from now to "
+                   "3 years, with and without saving levers (NSGA-II, a few seconds)...")
+        out.append(run_explore(p, message, only))
         return "\n".join(out)
-    out.append(f"{'Re-running' if rerun_only else 'Simulating'} {NAMES[key]} {params or ''} against your baseline "
-               f"over {paths} possible futures...")
+    when = f" starting in month {params['start_month']}" if params.get("start_month") else ""
+    shown = {k: v for k, v in params.items() if k != "start_month"}
+    out.append(f"{'Re-running' if rerun_only else 'Simulating'} {NAMES[key]}{when} {shown or ''} against your "
+               f"baseline over {paths} possible futures...")
     results = whatif(p, key, params, paths)
     text, flags = explain(p, results, message)
     if text is None:
