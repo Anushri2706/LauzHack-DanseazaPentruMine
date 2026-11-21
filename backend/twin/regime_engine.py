@@ -430,28 +430,24 @@ def sample_december_bonus(rng: np.random.Generator, model: EmissionModel, states
 
 
 def sample_yearly_lump(rng: np.random.Generator, n: int, horizon: int, params: dict) -> np.ndarray:
-    """One holiday draw plus one emergency draw per path-year, charged in a random month.
+    """Shock around the irregular-spend mean, charged in one random month per year.
 
-    Off unless ``scaled_spending`` is set. The holiday draw is lognormal around the travel-survey
-    mean. The emergency draw is exponential around the per-person furnishing mean, because the
-    budget survey publishes that mean and not a variance.
+    ``M ~ Lognormal(mean 1, sigma)``, ``L = mean * M``, and the cash hit is ``L - mean``.
+    The mean itself sits inside the 0.25 non-housing rate. Off unless ``scaled_spending`` is set.
     """
     lump = np.zeros((n, horizon))
     if float(params.get("scaled_spending", 0.0)) < 0.5:
         return lump
-    mean = float(params["holiday_mean_chf"])
-    cv = float(params["holiday_cv"])
-    sigma = math.sqrt(math.log(1.0 + cv * cv))
-    mu = math.log(mean) - 0.5 * sigma * sigma
-    emergency_mean = float(params["emergency_mean_chf"])
+    mean = float(params["lump_mean_chf"])
+    sigma = float(params["lump_sigma"])
+    mu = -0.5 * sigma * sigma
     year = 0
     while year * 12 < horizon:
         t0 = year * 12
         width = min(12, horizon - t0)
-        holiday = rng.lognormal(mu, sigma, size=n)
-        emergency = rng.exponential(emergency_mean, size=n)
+        shock = mean * (rng.lognormal(mu, sigma, size=n) - 1.0)
         month = rng.integers(0, width, size=n)
-        lump[np.arange(n), t0 + month] = holiday + emergency
+        lump[np.arange(n), t0 + month] = shock
         year += 1
     return lump
 
@@ -735,21 +731,26 @@ class RegimeEngine:
         spend = sample_emissions(rng, self.emissions, states, month_of_year, overrides, profile)
         bonus_units = sample_december_bonus(rng, self.emissions, states, month_of_year, profile)
         income = income_table.income_paths(states, profile, interventions)
-        rent = income_table.rent_paths(states, profile, interventions)
         lump = sample_yearly_lump(rng, n, T, income_table.params)
-        net = income - rent * spend + bonus_units * income - lump
-        household = profile.attributes.get("household_type")
-        se = _is_self_employed(profile)
-        for k, name in enumerate(STATES):
-            key = f"savings_rate_{name}"
-            if key not in overrides:
-                continue
-            loc = self.emissions.location(name, household, se and name == "employed")
-            center = np.zeros(income.shape)
-            ok = np.abs(income) > 1.0
-            center[ok] = (income[ok] - rent[ok] * loc) / income[ok]
-            shift = np.where(states == k, (float(overrides[key]) - center) * income, 0.0)
-            net = net + shift
+        if income_table.scales_spending():
+            # The expense-priors recipe replaces spend_ratio x rent. Do not add both.
+            housing, nonhousing = income_table.consumption_paths(states, profile, interventions)
+            net = income - housing - nonhousing + bonus_units * income - lump
+        else:
+            rent = income_table.rent_paths(states, profile, interventions)
+            net = income - rent * spend + bonus_units * income
+            household = profile.attributes.get("household_type")
+            se = _is_self_employed(profile)
+            for k, name in enumerate(STATES):
+                key = f"savings_rate_{name}"
+                if key not in overrides:
+                    continue
+                loc = self.emissions.location(name, household, se and name == "employed")
+                center = np.zeros(income.shape)
+                ok = np.abs(income) > 1.0
+                center[ok] = (income[ok] - rent[ok] * loc) / income[ok]
+                shift = np.where(states == k, (float(overrides[key]) - center) * income, 0.0)
+                net = net + shift
         savings = np.zeros_like(net)
         ok = np.abs(income) > 1.0
         savings[ok] = net[ok] / income[ok]

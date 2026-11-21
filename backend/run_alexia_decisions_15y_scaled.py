@@ -1,8 +1,7 @@
 # Run from backend/: /opt/anaconda3/bin/python run_alexia_decisions_15y_scaled.py
-"""15-year fans with income-scaled rent and a sampled yearly lump. Same three decisions.
+"""15-year fans with scaled_spending on. The recipe is internal/expense-priors.md.
 
-``scaled_spending`` is off by default, so the fixed 1,546 rent path stays available.
-This script turns it on.
+``scaled_spending`` is off by default, so the fixed 1.75 x rent path stays available.
 """
 from __future__ import annotations
 

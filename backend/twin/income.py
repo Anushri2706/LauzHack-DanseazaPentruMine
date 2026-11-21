@@ -206,7 +206,7 @@ class IncomeTable:
         return out
 
     def rent_from_earnings(self, earnings: np.ndarray) -> np.ndarray:
-        """Housing bill from the HABE income curve, floored and capped at Vaud market rents."""
+        """Net rent on a new lease: clip(floor, cap, anchor * (gross / anchor_income) ** elasticity)."""
         p = self.params
         raw = p["rent_anchor_chf"] * np.power(
             np.maximum(np.asarray(earnings, dtype=float), 1.0) / p["rent_income_anchor_chf"],
@@ -214,18 +214,67 @@ class IncomeTable:
         )
         return np.clip(raw, p["rent_floor_chf"], p["rent_cap_chf"])
 
+    def consumption_paths(self, states: np.ndarray, profile: Profile,
+                          interventions: list[Intervention] | None = None, *,
+                          experience: bool = True) -> tuple[np.ndarray, np.ndarray]:
+        """Housing and non-housing spend under the expense-priors recipe. Both are [n, T].
+
+        While studying, housing is the student rent and the rest of the EPFL living budget
+        makes up non-housing. The 0.25 rate is not used. After school a lease is signed once,
+        at the wage on offer if she has no payslip yet, and that net rent stays put through
+        raises and unemployment. Charges sit on top of the net rent. Non-housing is then
+        ``base + rate * gross``, with gross the current wage, or the last wage, or the wage
+        the lease was underwritten on.
+        """
+        p = self.params
+        n, T = states.shape
+        ivs = interventions or []
+        if profile.initial_state == "student" and profile.rent > 0:
+            student_level = float(profile.rent)
+        else:
+            student_level = float(p["student_rent_chf"])
+        living = float(p["student_living_chf"])
+        student_other = max(0.0, living - student_level)
+        charges = float(p["rent_charges_chf"])
+        base = float(p["nonhousing_base_chf"])
+        rate = float(p["nonhousing_rate"])
+        earnings = self._capacity_earnings(states, profile, ivs, experience)
+        signed = np.zeros(n, dtype=bool)
+        lease_net = np.zeros(n)
+        housing = np.empty((n, T))
+        other = np.empty((n, T))
+        for t in range(T):
+            attrs = attributes_at(profile, ivs, t)
+            s = states[:, t]
+            studentish = s == S
+            offer = self.full_time_salary(profile, attrs)
+            gross = np.where(earnings[:, t] > 1.0, earnings[:, t], offer)
+            # Leaving school signs the lease, including a month of job search. It is not
+            # recomputed when the wage later grows, and unemployment does not cut it.
+            need = ~studentish & ~signed
+            if np.any(need):
+                lease_net = np.where(need, self.rent_from_earnings(gross), lease_net)
+                signed = signed | need
+            housing[:, t] = np.where(studentish, student_level, lease_net + charges)
+            other[:, t] = np.where(studentish, student_other, base + rate * gross)
+            if attrs.get("abroad"):
+                housing[:, t] = housing[:, t] * p["abroad_cost_multiplier"]
+        return housing, other
+
     def rent_paths(self, states: np.ndarray, profile: Profile,
                    interventions: list[Intervention] | None = None, *, experience: bool = True) -> np.ndarray:
-        """[n_paths, T] rent in CHF.
+        """[n_paths, T] housing bill in CHF.
 
         Default (``scaled_spending`` off): a student keeps their own rent until the first job,
         then moves to the fixed employed rent. Anyone else keeps their own rent, and a month
         spent as a student uses the student rent.
 
-        ``scaled_spending`` on: the student rent still holds until the first job. After that,
-        rent follows earnings along the household-budget curve and is clipped to a normal flat
-        at the bottom and a large flat at the top. Abroad multiplies the result either way.
+        ``scaled_spending`` on: the expense-priors housing bill (student rent, or the sticky
+        lease plus charges). Abroad multiplies the result either way.
         """
+        if self.scales_spending():
+            housing, _other = self.consumption_paths(states, profile, interventions, experience=experience)
+            return housing
         p = self.params
         n, T = states.shape
         ivs = interventions or []
@@ -236,18 +285,13 @@ class IncomeTable:
             student_level = float(p["student_rent_chf"])
             working_level = float(profile.rent) if profile.rent > 0 else float(p["employed_rent_chf"])
         on_student_budget = np.full(n, profile.initial_state == "student")
-        earnings = self._capacity_earnings(states, profile, ivs, experience) if self.scales_spending() else None
         out = np.empty((n, T))
         for t in range(T):
             attrs = attributes_at(profile, ivs, t)
             s = states[:, t]
             working = (s == E) | (s == P)
             on_student_budget = np.where(working, False, on_student_budget)
-            if earnings is None:
-                level = np.where((s == S) | on_student_budget, student_level, working_level)
-            else:
-                scaled = self.rent_from_earnings(earnings[:, t])
-                level = np.where((s == S) | on_student_budget, student_level, scaled)
+            level = np.where((s == S) | on_student_budget, student_level, working_level)
             if attrs.get("abroad"):
                 level = level * p["abroad_cost_multiplier"]
             out[:, t] = level

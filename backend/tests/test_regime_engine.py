@@ -5,7 +5,7 @@ import pytest
 from twin import RegimeEngine, load_profile, load_transition_priors
 from twin.data import ASSUMPTIONS_DIR, load_cash_balances, load_profiles
 from twin.income import IncomeTable
-from twin.regime_engine import emission_loglik, fit_emissions, forward_filter
+from twin.regime_engine import emission_loglik, fit_emissions, forward_filter, sample_yearly_lump
 from twin.types import STATE_INDEX, STATES, Intervention, Profile
 from twin import validation
 
@@ -115,27 +115,40 @@ def test_income_rules_match_the_sources():
     assert table.params["scaled_spending"] == pytest.approx(0)
 
 
-def test_scaled_rent_follows_income_between_a_flat_and_a_cap():
-    table = IncomeTable.from_csv()
-    scaled = table.with_overrides({"scaled_spending": 1})
+def test_scaled_spending_uses_the_expense_priors_recipe():
+    table = IncomeTable.from_csv().with_overrides({"scaled_spending": 1})
+    p = table.params
     student = load_profile("P00001")
     states = np.array([[S, S, E, E]])
-    rent = scaled.rent_paths(states, student)[0]
+    rent = table.rent_paths(states, student)[0]
     assert rent[0] == pytest.approx(900) and rent[1] == pytest.approx(900)
-    entry = scaled.rent_from_earnings(table.params["entry_salary_chf"])
-    assert rent[2] == pytest.approx(float(entry))
-    assert table.params["rent_floor_chf"] < float(entry) < table.params["rent_cap_chf"]
+    entry_net = float(table.rent_from_earnings(p["entry_salary_chf"]))
+    assert p["rent_floor_chf"] < entry_net < p["rent_cap_chf"]
+    assert rent[2] == pytest.approx(entry_net + p["rent_charges_chf"])
+    assert rent[3] == pytest.approx(rent[2])
 
-    modest = float(scaled.rent_from_earnings(8000))
-    rich = float(scaled.rent_paths(np.full((1, 1), E), _worker(income=80000))[0, 0])
-    assert modest < rich
-    assert rich == pytest.approx(table.params["rent_cap_chf"])
-    # The raise at month 12 lifts the rent, and a later job-search month keeps that lease.
+    # The lease is signed at the starting wage and does not follow later raises.
     seq = np.full((1, 14), E)
     seq[0, 13] = J
-    grown = scaled.rent_paths(seq, _worker(age=22, income=5000))[0]
-    assert grown[12] > grown[0]
-    assert grown[13] == pytest.approx(grown[12])
+    grown = table.rent_paths(seq, _worker(age=22, income=5000))[0]
+    assert grown[12] == pytest.approx(grown[0])
+    assert grown[13] == pytest.approx(grown[0])
+
+    rich = float(table.rent_paths(np.full((1, 1), E), _worker(income=80000))[0, 0])
+    assert rich == pytest.approx(p["rent_cap_chf"] + p["rent_charges_chf"])
+
+    anchor = _worker(income=p["rent_income_anchor_chf"])
+    housing, other = table.consumption_paths(np.full((1, 1), E), anchor)
+    assert housing[0, 0] == pytest.approx(p["rent_anchor_chf"] + p["rent_charges_chf"])
+    assert other[0, 0] == pytest.approx(p["nonhousing_base_chf"] + p["nonhousing_rate"] * p["rent_income_anchor_chf"])
+
+    # Student months use the EPFL all-in budget, not 0.25 x gross and not 1.75 x rent.
+    sh, so = table.consumption_paths(np.full((1, 1), S), student)
+    assert sh[0, 0] == pytest.approx(900)
+    assert sh[0, 0] + so[0, 0] == pytest.approx(p["student_living_chf"])
+
+    shocks = sample_yearly_lump(np.random.default_rng(0), 20000, 12, p).sum(axis=1)
+    assert shocks.mean() == pytest.approx(0.0, abs=150)
 
 
 def test_forward_filter_matches_a_hand_calculation():
