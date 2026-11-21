@@ -65,6 +65,41 @@ class IncomeTable:
             base *= p["abroad_income_multiplier"]
         return base
 
+    def _apply_attribute_change(self, profile: Profile, prev_attrs: dict, attrs: dict,
+                                salary: np.ndarray, last_salary: np.ndarray):
+        """Rescale the next job's wage when attributes change.
+
+        ``salary`` is the full-time wage she would earn if employed. ``last_salary``
+        is the wage she has already been paid, which is what unemployment insurance
+        uses. Turning ``abroad`` on or off changes the next job only. It does not
+        rewrite insured earnings, so a move that starts in job search still pays
+        UI on the last Swiss wage. A Zurich move does not change either wage.
+        """
+        if attrs == prev_attrs:
+            return salary, last_salary, prev_attrs
+        old = self.full_time_salary(profile, prev_attrs)
+        new = self.full_time_salary(profile, attrs)
+        if old > 0:
+            ratio = new / old
+            salary = salary * ratio
+            was_abroad = bool(prev_attrs.get("abroad"))
+            now_abroad = bool(attrs.get("abroad"))
+            if was_abroad != now_abroad:
+                factor = float(self.params["abroad_income_multiplier"])
+                abroad_ratio = factor if now_abroad else 1.0 / factor
+                ratio = ratio / abroad_ratio
+            last_salary = last_salary * ratio
+        return salary, last_salary, dict(attrs)
+
+    def _housing_location_factor(self, attrs: dict) -> float:
+        """Housing-bill prior for where she lives. Abroad and Zurich are alternatives."""
+        p = self.params
+        if attrs.get("abroad"):
+            return float(p["abroad_cost_multiplier"])
+        if attrs.get("zurich"):
+            return float(p["zurich_housing_multiplier"])
+        return 1.0
+
     def _growth_rate(self, age: float) -> float:
         p = self.params
         if age < 30:
@@ -114,13 +149,8 @@ class IncomeTable:
         prev_attrs = dict(profile.attributes)
         for t in range(T):
             attrs = attributes_at(profile, ivs, t)
-            if attrs != prev_attrs:
-                new = self.full_time_salary(profile, attrs)
-                old = self.full_time_salary(profile, prev_attrs)
-                if old > 0:
-                    salary = salary * (new / old)
-                    last_salary = last_salary * (new / old)
-                prev_attrs = attrs
+            salary, last_salary, prev_attrs = self._apply_attribute_change(
+                profile, prev_attrs, attrs, salary, last_salary)
             age = profile.age + t / 12.0
             s = states[:, t]
             inc = np.zeros(n)
@@ -188,13 +218,8 @@ class IncomeTable:
         prev_attrs = dict(profile.attributes)
         for t in range(T):
             attrs = attributes_at(profile, ivs, t)
-            if attrs != prev_attrs:
-                new = self.full_time_salary(profile, attrs)
-                old = self.full_time_salary(profile, prev_attrs)
-                if old > 0:
-                    salary = salary * (new / old)
-                    last_salary = last_salary * (new / old)
-                prev_attrs = attrs
+            salary, last_salary, prev_attrs = self._apply_attribute_change(
+                profile, prev_attrs, attrs, salary, last_salary)
             s = states[:, t]
             working = (s == E) | (s == P)
             earned = np.where(s == P, salary * p["part_time_fraction"], salary)
@@ -257,8 +282,7 @@ class IncomeTable:
                 signed = signed | need
             housing[:, t] = np.where(studentish, student_level, lease_net + charges)
             other[:, t] = np.where(studentish, student_other, base + rate * gross)
-            if attrs.get("abroad"):
-                housing[:, t] = housing[:, t] * p["abroad_cost_multiplier"]
+            housing[:, t] = housing[:, t] * self._housing_location_factor(attrs)
         return housing, other
 
     def rent_paths(self, states: np.ndarray, profile: Profile,
@@ -270,7 +294,8 @@ class IncomeTable:
         spent as a student uses the student rent.
 
         ``scaled_spending`` on: the expense-priors housing bill (student rent, or the sticky
-        lease plus charges). Abroad multiplies the result either way.
+        lease plus charges). Abroad multiplies the result by the Germany factor, and a
+        Zurich move multiplies it by ``zurich_housing_multiplier``. The two do not stack.
         """
         if self.scales_spending():
             housing, _other = self.consumption_paths(states, profile, interventions, experience=experience)
@@ -292,8 +317,7 @@ class IncomeTable:
             working = (s == E) | (s == P)
             on_student_budget = np.where(working, False, on_student_budget)
             level = np.where((s == S) | on_student_budget, student_level, working_level)
-            if attrs.get("abroad"):
-                level = level * p["abroad_cost_multiplier"]
+            level = level * self._housing_location_factor(attrs)
             out[:, t] = level
         return out
 
