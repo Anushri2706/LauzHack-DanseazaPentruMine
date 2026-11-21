@@ -1,8 +1,9 @@
 """FastAPI app. All maths lives in app.engine; this layer only translates JSON."""
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import service
+from . import hmm, service
 from .data.loader import build_persona, load_dataset
 from .engine.assumptions import assumption_table
 from .engine.decisions import InvalidDecision
@@ -106,3 +107,29 @@ def catalogue(pid: str) -> dict:
 @app.get("/validation")
 def validation() -> list[dict]:
     return run_checks()
+
+
+# ============================================================== regime HMM twin (teammate's backend/twin)
+class HmmFanRequest(BaseModel):
+    persona_id: str
+    decisions: list[str] = Field(default_factory=lambda: ["stay"])
+    horizon_months: int = 240
+    n_paths: int = 2000
+    seed: int = 0
+    start_month: int = 0
+
+
+@app.get("/hmm/decisions/{pid}")
+def hmm_decisions(pid: str) -> dict:
+    """Big life decisions the regime HMM can simulate for this persona (do() on the regime chain)."""
+    return _guard(hmm.decisions_for, pid)
+
+
+@app.post("/hmm/fan")
+def hmm_fan(req: HmmFanRequest) -> dict:
+    """Cash fans (P10/P50/P90), regime occupancy and goal hit rates per decision, same seed for all."""
+    def f():
+        goals = list(build_persona(req.persona_id).goals)
+        return hmm.fan(req.persona_id, req.decisions, req.horizon_months, req.n_paths, req.seed,
+                       req.start_month, goals)
+    return _guard(f)

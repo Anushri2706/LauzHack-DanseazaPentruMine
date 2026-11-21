@@ -76,6 +76,13 @@ try {
   await page.getByRole('button', { name: /Roll another world/ }).click()
   await page.locator('.note', { hasText: 'same choices, different luck' }).waitFor()
   step('rolled another world')
+  // Life odds: the regime HMM twin (backend/twin) behind /hmm/*
+  await page.locator('.phone-nav button', { hasText: 'Life odds' }).click()
+  await page.locator('.phone-screen .cmp-table tbody tr').nth(1).waitFor({ timeout: 30000 })
+  await page.locator('.phone-screen .chip', { hasText: 'Move to Zurich' }).click()
+  await page.locator('.phone-screen .cmp-table tbody tr').nth(2).waitFor({ timeout: 30000 })
+  await shot('07-life-odds')
+  step(`life odds: ${await page.locator('.phone-screen .cmp-table tbody tr').count()} decisions fanned by the HMM`)
   for (const app of ['Goals', 'Settings', 'Mail', 'Checks']) {
     await page.locator('.phone-nav button', { hasText: app }).click()
     await page.waitForTimeout(400)

@@ -3,6 +3,7 @@ import { setStore, useStore, type AppId } from '../store/game'
 import { ChecksApp } from './apps/ChecksApp'
 import { GoalsApp } from './apps/GoalsApp'
 import { MailApp } from './apps/MailApp'
+import { LifeOddsApp } from './apps/LifeOddsApp'
 import { MoneyApp } from './apps/MoneyApp'
 import { MultiverseApp } from './apps/MultiverseApp'
 import { SettingsApp } from './apps/SettingsApp'
@@ -11,6 +12,7 @@ import { useProjection } from './useGame'
 
 const APPS: { id: AppId; icon: string; label: string }[] = [
   { id: 'money', icon: '💰', label: 'Money' }, { id: 'multiverse', icon: '🌀', label: 'Multiverse' },
+  { id: 'odds', icon: '🔮', label: 'Life odds' },
   { id: 'goals', icon: '🎯', label: 'Goals' }, { id: 'settings', icon: '⚙️', label: 'Settings' },
   { id: 'checks', icon: '✅', label: 'Checks' }, { id: 'mail', icon: '📬', label: 'Mail' },
 ]
@@ -31,6 +33,7 @@ export function Phone({ st }: { st: GameState }) {
         <div className="phone-screen">
           {app === 'money' && <MoneyApp st={st} />}
           {app === 'multiverse' && <MultiverseApp horizon={st.horizon} startAge={st.persona.age} />}
+          {app === 'odds' && <LifeOddsApp personaId={st.persona.profile_id} />}
           {app === 'goals' && <GoalsApp st={st} proj={proj.data} />}
           {app === 'settings' && <SettingsApp personaId={st.persona.profile_id} />}
           {app === 'checks' && <ChecksApp />}

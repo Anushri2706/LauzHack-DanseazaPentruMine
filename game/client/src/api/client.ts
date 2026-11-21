@@ -1,5 +1,6 @@
 import type {
-  AssumptionRow, Catalogue, Check, CompareResult, GameRequest, GameState, PersonaCard, Projection, Roll,
+  AssumptionRow, Catalogue, Check, CompareResult, GameRequest, GameState, HmmDecisions, HmmFan, PersonaCard, Projection,
+  Roll,
 } from './types'
 
 const BASE = '/api'
@@ -46,4 +47,7 @@ export const api = {
   compare: (a: GameRequest, b: GameRequest, name_a: string, name_b: string) =>
     call<CompareResult>('POST', '/compare', { a, b, name_a, name_b }),
   validation: () => call<Check[]>('GET', '/validation'),
+  hmmDecisions: (id: string) => call<HmmDecisions>('GET', `/hmm/decisions/${id}`),
+  hmmFan: (persona_id: string, decisions: string[], horizon_months = 240, n_paths = 2000, seed = 0) =>
+    call<HmmFan>('POST', '/hmm/fan', { persona_id, decisions, horizon_months, n_paths, seed }),
 }

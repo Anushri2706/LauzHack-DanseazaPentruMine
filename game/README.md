@@ -216,6 +216,24 @@ includes the starter-kit cross-check, to the cent, for all three scenarios.
   10%/year chance. Seed 42.
 - Asking for a raise uses one draw from your world, `rng(seed, world, month)`, so it is reproducible.
 
+## 🔮 Life odds: the regime HMM twin (`backend/twin`)
+
+The phone's **Life odds** app runs the teammate's regime-switching HMM (repo-root `backend/`, merged from
+`feature/hmm-decisions`). Each month of each simulated life is `employed`, `part_time`, `job_search`, `student`
+or `retired`; transition hazards, the income table and the spending recipe are the CSVs in `backend/assumptions/`.
+A big decision is a preset list of `Intervention`s (master's now / later, part-time, job search, parental leave,
+move to Zurich / Germany, bigger flat, buy a home), taken from the `backend/run_alexia_*.py` scripts.
+All decisions share one seed, so the fans differ by decision, not luck.
+
+- Bridge: `game/backend/app/hmm.py` (adds `backend/` to `sys.path`, caches the fitted engine).
+- API: `GET /hmm/decisions/{pid}`, `POST /hmm/fan` `{persona_id, decisions[], horizon_months, n_paths, seed}` →
+  cash P10/P50/P90 per month, regime occupancy, months per regime, share of lives with cash < 0, goal hit rates
+  (`twin.metrics.goal_hit_rate` on the persona's goals from `Data/synthetic-goals.csv`).
+- In the teammate's chain `student` is absorbing (graduation is a decision), so for students every non-study
+  decision starts with one pinned `employed` month ("Finish studies, start working").
+- The Life-odds fans start in Jan 2025 and are independent of the moves made in the town.
+- `vite.config.ts` proxies to `API_TARGET` (default `http://127.0.0.1:8000`).
+
 ## Design choices (made without asking; easy to change)
 
 - **Habit level 0 = nothing on top of the profile's living costs.** The starter-kit living costs already
