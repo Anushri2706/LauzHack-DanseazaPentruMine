@@ -979,3 +979,120 @@ def test_use_existing_loan_rate_is_read_when_the_masters_pin_starts(engine):
         assumption_overrides={"dirichlet": 0},
     )
     assert missed.debt_chf[0, 1] == pytest.approx(accrual * 2.0)
+
+
+def test_investments_total_tracks_positive_net_flow_and_is_not_a_mortgage(engine):
+    """Investments sit beside cash and debt: a path total, not a regime and not a mortgage."""
+    alexia = load_profile("P00001")
+    paths = engine.simulate(
+        alexia, horizon_months=6, n_paths=3, seed=0, assumption_overrides={"dirichlet": 0},
+    )
+    assert paths.investments_chf.shape == paths.net_flow_chf.shape == paths.debt_chf.shape
+    assert np.allclose(paths.investments_chf, np.cumsum(np.maximum(paths.net_flow_chf, 0.0), axis=1))
+    assert "mortgage" not in paths.__dict__
+    priced = engine.simulate(
+        alexia, horizon_months=2, n_paths=2, seed=0,
+        assumption_overrides={"dirichlet": 0, "investment_annual_rate": 0.12},
+    )
+    net = priced.net_flow_chf
+    monthly = 0.12 / 12.0
+    first = np.maximum(net[:, 0], 0.0)
+    second = first * (1.0 + monthly) + np.maximum(net[:, 1], 0.0)
+    assert priced.investments_chf[:, 0] == pytest.approx(first)
+    assert priced.investments_chf[:, 1] == pytest.approx(second)
+
+
+def test_simulate_until_next_decision_matches_simulate_and_rejects_unknowns(engine):
+    import inspect
+
+    from twin import branch_decisions
+    from twin.data import observed_net_flows
+    from twin.twin_session import decision_interventions
+    from twin.types import DecisionSnapshot
+
+    sim = inspect.signature(RegimeEngine.simulate)
+    filt = inspect.signature(RegimeEngine.filter)
+    assert list(sim.parameters) == [
+        "self", "profile", "horizon_months", "n_paths", "interventions",
+        "assumption_overrides", "initial_belief", "seed",
+    ]
+    assert list(filt.parameters) == ["self", "profile", "observed_net_flows", "assumption_overrides"]
+    assert sim.parameters["horizon_months"].default == 60
+    assert sim.parameters["n_paths"].default == 5000
+    assert sim.parameters["interventions"].default is None
+    assert sim.parameters["initial_belief"].default is None
+    assert sim.parameters["seed"].default == 0
+    assert filt.parameters["assumption_overrides"].default is None
+
+    alexia = load_profile("P00001")
+    wrapped = engine.simulate_until_next_decision(
+        alexia, "masters", from_month=0, until_month=24, n_paths=6, seed=0,
+        assumption_overrides={"dirichlet": 0},
+    )
+    ivs, _offs = decision_interventions("masters", 0, {})
+    direct = engine.simulate(
+        alexia, horizon_months=24, n_paths=6, seed=0, interventions=ivs,
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert np.array_equal(wrapped.states, direct.states)
+    assert np.allclose(wrapped.income_chf, direct.income_chf)
+    assert np.allclose(wrapped.net_flow_chf, direct.net_flow_chf)
+    assert (wrapped.states[:, :24] == S).all()
+    assert wrapped.horizon == 24
+
+    with pytest.raises(ValueError):
+        engine.simulate_until_next_decision(alexia, "university", from_month=0, until_month=12)
+    with pytest.raises(ValueError):
+        engine.simulate_until_next_decision(alexia, "buy_home", from_month=0, until_month=12)
+    with pytest.raises(ValueError):
+        engine.simulate_until_next_decision(alexia, "masters", from_month=5, until_month=5)
+
+    home = engine.simulate_until_next_decision(
+        alexia, "owns_home", from_month=0, until_month=2, n_paths=2, seed=0,
+        assumption_overrides={"dirichlet": 0},
+    )
+    home_iv, home_off = decision_interventions("owns_home", 0, {})
+    assert len(home_iv) == 1 and home_iv[0].kind == "set_attribute"
+    assert home_iv[0].attribute == ("owns_home", True) and home_off == []
+    assert "mortgage" not in home.__dict__
+
+    later = engine.simulate_until_next_decision(
+        alexia, "masters", from_month=12, until_month=24, n_paths=3, seed=0,
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert later.horizon == 12 and (later.states == S).all()
+
+    flows = observed_net_flows("P00001")
+    overrides = {"dirichlet": 0}
+    belief = engine.filter(alexia, flows, overrides)
+    assert belief["student"] > 0.9
+    attrs = set(engine.__dict__)
+    snap = DecisionSnapshot(
+        month=0, profile=alexia, belief=belief, observed_net_flows=list(flows),
+        interventions=[], one_offs=[], assumption_overrides=overrides,
+        seed=1, parent_id=None, snapshot_id="root",
+    )
+    assert engine.filter(snap.profile, snap.observed_net_flows, snap.assumption_overrides) == snap.belief
+    assert set(engine.__dict__) == attrs
+    before = list(snap.observed_net_flows)
+    calls = {"n": 0}
+    original = engine.filter
+
+    def _counting(*args, **kwargs):
+        calls["n"] += 1
+        return original(*args, **kwargs)
+
+    engine.filter = _counting
+    try:
+        first = branch_decisions(engine, snap, ["masters", "start_working"], until_month=12, n_paths=4)
+        second = branch_decisions(engine, snap, ["masters", "start_working"], until_month=12, n_paths=4)
+    finally:
+        del engine.filter
+    assert calls["n"] == 0
+    assert snap.observed_net_flows == before
+    assert set(engine.__dict__) == attrs
+    assert first["masters"].n_paths == first["start_working"].n_paths == 4
+    assert np.array_equal(first["masters"].states, second["masters"].states)
+    assert np.array_equal(first["masters"].income_chf, second["masters"].income_chf)
+    assert np.array_equal(first["masters"].net_flow_chf, second["masters"].net_flow_chf)
+    assert not np.array_equal(first["masters"].states, first["start_working"].states)

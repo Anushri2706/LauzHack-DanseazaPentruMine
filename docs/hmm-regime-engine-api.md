@@ -119,6 +119,34 @@ Open questions, not settled by this extension:
 - `study_duration_years` is 2 on every S001 row. The window length is the pin's duration, not that column.
 - `TwinSession`'s master's decision still posts the annual tuition as a cash one-off. That payment is separate from this loan draw.
 
+## Extension: investments total
+
+Investments are a running total on the path, the same idea as `debt_chf`. They are not a regime and not a mortgage. `simulate` still returns every field it returned before.
+
+`I` before month 0 is 0. With `m` the annual rate divided by 12:
+
+`I_t = I_{t-1} * (1 + m) + max(net_flow_t, 0)`
+
+The rate is `assumption_overrides["investment_annual_rate"]` when that override is set, and **0** otherwise. There is no sourced investment return on the assumptions CSV, so the default total is the cumulative positive net flow. A negative month does not withdraw. There is no fee. Cash accounting is unchanged: this total is not taken out of `cash_engine` cash. The adapter reads `investments_chf` next to cash and `debt_chf`.
+
+## Wrappers
+
+`simulate` and `filter` are unchanged. These call them:
+
+```python
+engine.simulate_until_next_decision(
+    profile, decision, *, from_month, until_month,
+    n_paths=5000, interventions=None, assumption_overrides=None,
+    initial_belief=None, seed=0,
+) -> RegimePaths
+
+branch_decisions(engine, snapshot, decisions, *, until_month, n_paths=5000) -> dict[str, RegimePaths]
+```
+
+`decision` is a `TwinSession.DECISIONS` key, or `rent_step` / `owns_home` (one `set_attribute` each). The block passed to `simulate` is `until_month - from_month` months. Intervention months are life months; they are shifted by `from_month` so the block starts at index 0. At `from_month == 0` that shift does nothing. `branch_decisions` does not write a snapshot and does not call `filter`.
+
+`DecisionSnapshot` is the caller's record: `month`, `profile`, `belief`, `observed_net_flows`, `interventions`, `one_offs`, `assumption_overrides`, `seed`, `parent_id`, `snapshot_id`. No balance-sheet fields. Restore is `filter` on the stored flows, then the next `simulate` with `initial_belief` from that snapshot. The phone draws these snapshots and jumps between them.
+
 ## How the team consumes it
 
 ```python

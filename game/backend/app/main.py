@@ -7,7 +7,8 @@ from .data.loader import build_persona, load_dataset
 from .engine.assumptions import assumption_table
 from .engine.decisions import InvalidDecision
 from .models import (BranchRequest, BranchResult, CompareRequest, GameProjectionRequest, GameRequest,
-                     GameRollRequest, MonteCarloRequest, WorldRequest)
+                     GameRollRequest, HmmBranchRequest, HmmCommitRequest, HmmDistributionRequest,
+                     HmmRestoreRequest, HmmStartRequest, MonteCarloRequest, WorldRequest)
 from .validation import run_checks
 
 DISCLAIMER = "Simulation, not a prediction or financial advice. Synthetic data only."
@@ -101,6 +102,36 @@ def game_roll(req: GameRollRequest) -> dict:
 @app.get("/catalogue/{pid}")
 def catalogue(pid: str) -> dict:
     return _guard(service.catalogue, pid)
+
+
+@app.post("/hmm/start")
+def hmm_start(req: HmmStartRequest) -> dict:
+    """Root rollback snapshot for the phone branch tree."""
+    return _guard(service.hmm_start, req.persona_id)
+
+
+@app.post("/hmm/branch")
+def hmm_branch(req: HmmBranchRequest) -> dict:
+    """Side-by-side forks. Does not commit a snapshot."""
+    return _guard(service.hmm_branch, req)
+
+
+@app.post("/hmm/commit")
+def hmm_commit(req: HmmCommitRequest) -> dict:
+    """Append the caller's flows, filter, and return the new snapshot."""
+    return _guard(service.hmm_commit, req)
+
+
+@app.post("/hmm/restore")
+def hmm_restore(req: HmmRestoreRequest) -> dict:
+    """Replay filter on a rollback snapshot so the phone can jump to it."""
+    return _guard(service.hmm_restore, req)
+
+
+@app.post("/hmm/distribution")
+def hmm_distribution(req: HmmDistributionRequest) -> dict:
+    """Final life distribution: cash fan, debt, investments, disclaimer."""
+    return _guard(service.hmm_distribution, req)
 
 
 @app.get("/validation")

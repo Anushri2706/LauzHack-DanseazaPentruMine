@@ -58,7 +58,7 @@ export function HudBar({ st }: { st: GameState | undefined }) {
       <span className="hud-world" title="Your seeded world: market drops, job losses and rent rises come from it. Every reality uses the same world.">🌍 World #{st.world}</span>
       <span className="badge" title="All people are fictional. Outputs are conditional what-ifs under stated assumptions.">Simulation · not a prediction or advice</span>
       <button className="icon-btn" title={muted ? 'Sound off' : 'Sound on'} onClick={() => { setMuted(!muted); setM(!muted) }}>{muted ? '🔇' : '🔊'}</button>
-      <button className="btn phone-btn" onClick={() => { sfx('phoneUp'); setStore({ phone: 'money' }) }} title="Open your phone (P)">📱 Phone</button>
+      <button className="btn phone-btn" onClick={() => { sfx('phoneUp'); setStore({ phone: 'branches' }) }} title="Open your phone (P)">📱 Phone</button>
     </div>
   )
 }

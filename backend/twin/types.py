@@ -82,6 +82,8 @@ class RegimePaths:
     # Extension. Tuition debt is a running total, not a regime. None on paths built outside simulate.
     debt_chf: np.ndarray | None = None            # [n_paths, T] end-of-month tuition-debt total
     tuition_accrual_chf: np.ndarray | None = None  # [n_paths, T] loan principal booked that month
+    # Extension. Investments are a running total of positive net flow, not a regime and not a mortgage.
+    investments_chf: np.ndarray | None = None     # [n_paths, T] end-of-month investments total
 
     @property
     def n_paths(self) -> int:
@@ -90,3 +92,25 @@ class RegimePaths:
     @property
     def horizon(self) -> int:
         return self.states.shape[1]
+
+
+@dataclass
+class DecisionSnapshot:
+    """Frozen record the caller stores. ``RegimeEngine`` does not hold it.
+
+    Restore replays ``filter`` on ``observed_net_flows``, then the next ``simulate``
+    uses ``initial_belief=belief`` and these interventions. There is no balance-sheet
+    field: opening cash lives only on ``profile``. ``snapshot_id`` and ``parent_id``
+    are the branch tree the phone draws. ``one_offs`` are ``cash_engine.OneOff``.
+    """
+
+    month: int
+    profile: Profile
+    belief: dict[str, float]
+    observed_net_flows: list[float]
+    interventions: list[Intervention]
+    one_offs: list
+    assumption_overrides: dict
+    seed: int
+    parent_id: str | None
+    snapshot_id: str

@@ -40,6 +40,64 @@ DECISIONS: dict[str, str] = {
 }
 
 
+def decision_interventions(kind: str, start_month: int, params: dict | None = None,
+                           horizon_months: int | None = None) -> tuple[list[Intervention], list[OneOff]]:
+    """Map one decision name to interventions and one-off costs.
+
+    ``apply_decision`` and ``simulate_until_next_decision`` both use this list.
+    ``rent_step`` and ``owns_home`` are the two housing attributes that already exist;
+    each is a single ``set_attribute``. They are not ``DECISIONS`` keys, so
+    ``apply_decision`` still rejects them. ``horizon_months`` drops one-offs that
+    fall outside a session horizon; ``None`` keeps every one-off.
+    """
+    p = dict(params or {})
+    t0 = int(start_month)
+    dur = p.get("duration")
+    dur = None if dur is None else int(dur)
+    if kind == "masters":
+        d = int(p.get("duration", 24))
+        tuition = float(p.get("annual_tuition_chf", 8000.0))
+        offs = []
+        for y in range((d + 11) // 12):
+            month = t0 + 12 * y
+            if horizon_months is not None and month >= int(horizon_months):
+                continue
+            offs.append(OneOff(month, tuition, "tuition"))
+        return ([Intervention("force_state", t0, d, state="student"),
+                 Intervention("set_attribute", t0 + d, attribute=("has_masters", True))], offs)
+    if kind == "start_working":
+        return [Intervention("force_state", t0, None, state="employed")], []
+    if kind == "move_abroad":
+        ivs = [Intervention("set_attribute", t0, attribute=("abroad", True))]
+        js = int(p.get("job_search_months", 0))
+        if js > 0:
+            ivs.append(Intervention("force_state", t0, js, state="job_search"))
+        return ivs, [OneOff(t0, float(p.get("relocation_cost_chf", 6500.0)), "relocation")]
+    if kind == "job_loss":
+        return [Intervention("force_state", t0, dur, state="job_search")], []
+    if kind == "parental_leave":
+        return [Intervention("parental_leave", t0, dur)], []
+    if kind == "part_time":
+        return [Intervention("force_state", t0, dur, state="part_time")], []
+    if kind == "downturn":
+        return [Intervention("scale_hazard", t0, dur, transition=("employed", "job_search"),
+                             factor=float(p.get("factor", 2.0)))], []
+    if kind == "one_off":
+        return [], [OneOff(t0, float(p["amount_chf"]), str(p.get("label", "one-off")))]
+    if kind == "force_state":
+        return [Intervention("force_state", t0, dur, state=p["state"])], []
+    if kind == "scale_hazard":
+        return [Intervention("scale_hazard", t0, dur, transition=(p["from_state"], p["to_state"]),
+                             factor=float(p["factor"]))], []
+    if kind == "set_attribute":
+        return [Intervention("set_attribute", t0, attribute=(p["name"], p["value"]))], []
+    if kind == "rent_step":
+        return [Intervention("set_attribute", t0, attribute=("rent_step", True))], []
+    if kind == "owns_home":
+        return [Intervention("set_attribute", t0, attribute=("owns_home", True))], []
+    raise ValueError(f"Unknown decision kind {kind!r}; choose from {sorted(DECISIONS)}")
+
+
 def _r(x, nd=0):
     if x is None:
         return None
@@ -123,7 +181,7 @@ class TwinSession:
         s = self._scenario(scenario_id)
         if kind not in DECISIONS:
             raise ValueError(f"Unknown decision kind {kind!r}; choose from {sorted(DECISIONS)}")
-        ivs, offs = self._decision_to_interventions(kind, int(start_month), params)
+        ivs, offs = decision_interventions(kind, int(start_month), params, horizon_months=self.horizon_months)
         s.interventions.extend(ivs)
         s.one_offs.extend(offs)
         s.decisions.append({"kind": kind, "start_month": int(start_month), **params})
@@ -279,39 +337,4 @@ class TwinSession:
         }
 
     def _decision_to_interventions(self, kind: str, t0: int, p: dict) -> tuple[list[Intervention], list[OneOff]]:
-        dur = p.get("duration")
-        dur = None if dur is None else int(dur)
-        if kind == "masters":
-            d = int(p.get("duration", 24))
-            tuition = float(p.get("annual_tuition_chf", 8000.0))
-            offs = [OneOff(t0 + 12 * y, tuition, "tuition") for y in range((d + 11) // 12)
-                    if t0 + 12 * y < self.horizon_months]
-            return ([Intervention("force_state", t0, d, state="student"),
-                     Intervention("set_attribute", t0 + d, attribute=("has_masters", True))], offs)
-        if kind == "start_working":
-            return [Intervention("force_state", t0, None, state="employed")], []
-        if kind == "move_abroad":
-            ivs = [Intervention("set_attribute", t0, attribute=("abroad", True))]
-            js = int(p.get("job_search_months", 0))
-            if js > 0:
-                ivs.append(Intervention("force_state", t0, js, state="job_search"))
-            return ivs, [OneOff(t0, float(p.get("relocation_cost_chf", 6500.0)), "relocation")]
-        if kind == "job_loss":
-            return [Intervention("force_state", t0, dur, state="job_search")], []
-        if kind == "parental_leave":
-            return [Intervention("parental_leave", t0, dur)], []
-        if kind == "part_time":
-            return [Intervention("force_state", t0, dur, state="part_time")], []
-        if kind == "downturn":
-            return [Intervention("scale_hazard", t0, dur, transition=("employed", "job_search"),
-                                 factor=float(p.get("factor", 2.0)))], []
-        if kind == "one_off":
-            return [], [OneOff(t0, float(p["amount_chf"]), str(p.get("label", "one-off")))]
-        if kind == "force_state":
-            return [Intervention("force_state", t0, dur, state=p["state"])], []
-        if kind == "scale_hazard":
-            return [Intervention("scale_hazard", t0, dur, transition=(p["from_state"], p["to_state"]),
-                                 factor=float(p["factor"]))], []
-        if kind == "set_attribute":
-            return [Intervention("set_attribute", t0, attribute=(p["name"], p["value"]))], []
-        raise ValueError(kind)
+        return decision_interventions(kind, t0, p, horizon_months=self.horizon_months)

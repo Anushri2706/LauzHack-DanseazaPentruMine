@@ -45,7 +45,7 @@ export function GameScreen() {
         const s = getStore()
         if (s.place) return
         sfx(s.phone ? 'phoneDown' : 'phoneUp')
-        setStore({ phone: s.phone ? null : 'money' })
+        setStore({ phone: s.phone ? null : 'branches' })
       }
     }
     window.addEventListener('keydown', onKey)

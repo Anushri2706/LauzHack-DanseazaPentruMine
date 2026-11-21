@@ -2,13 +2,13 @@
 // month's queue. The backend is stateless and replays a reality from month 0 on every request, so this
 // store holds only choices, never money.
 import { useSyncExternalStore } from 'react'
-import type { ActionIn, Goal, GameRequest, PersonaCard, TurnIn } from '../api/types'
+import type { ActionIn, Goal, GameRequest, HmmDecision, HmmSnapshot, PersonaCard, TurnIn } from '../api/types'
 
 export interface Look { skin: number; hair: number; hairColor: number; top: number; legs: number }
 export const DEFAULT_LOOK: Look = { skin: 0, hair: 2, hairColor: 0, top: 2, legs: 0 }
 
 export type Dim = 'money' | 'safety' | 'goals' | 'freedom' | 'experience' | 'joy'
-export type AppId = 'money' | 'multiverse' | 'goals' | 'settings' | 'checks' | 'mail'
+export type AppId = 'money' | 'multiverse' | 'goals' | 'settings' | 'checks' | 'mail' | 'branches' | 'decide' | 'life'
 
 export interface TNode {
   id: string
@@ -46,6 +46,9 @@ export interface Store {
   busy: boolean
   endSeen: boolean
   nearPlace: string | null
+  hmmNodes: Record<string, HmmSnapshot>
+  hmmCursor: string | null
+  hmmMenu: HmmDecision[]
 }
 
 export const REALITY_COLORS = ['#9a7fd8', '#ef8aa0', '#4fb38a', '#e8a64a', '#5aa9d6', '#c77dc9', '#7c9a3d', '#d9785b']
@@ -57,12 +60,20 @@ const fresh = (): Store => ({
   nodes: { root: { id: 'root', parent: null, turn: null, children: [], color: 0, label: 'Start', reached: 0 } },
   root: 'root', cursor: 'root', current: 0, queue: [], nextColor: 1, matters: [], place: null, phone: null,
   pinA: null, pinB: null, toasts: [], busy: false, endSeen: false, nearPlace: null,
+  hmmNodes: {}, hmmCursor: null, hmmMenu: [],
 })
 
 function load(): Store {
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw) return { ...fresh(), ...JSON.parse(raw), toasts: [], place: null, phone: null, busy: false }
+    if (raw) {
+      const saved = JSON.parse(raw)
+      return {
+        ...fresh(), ...saved,
+        hmmNodes: saved.hmmNodes ?? {}, hmmMenu: saved.hmmMenu ?? [], hmmCursor: saved.hmmCursor ?? null,
+        toasts: [], place: null, phone: null, busy: false,
+      }
+    }
   } catch { /* storage unavailable: start fresh */ }
   return fresh()
 }

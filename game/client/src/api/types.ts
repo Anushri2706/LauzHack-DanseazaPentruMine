@@ -188,6 +188,67 @@ export interface AssumptionRow {
 }
 export interface Check { name: string; passed: boolean; detail: string }
 
+export interface HmmSnapshot {
+  snapshot_id: string
+  parent_id: string | null
+  month: number
+  label: string
+  profile_id: string
+  belief: Record<string, number>
+  observed_net_flows: number[]
+  interventions: unknown[]
+  one_offs: { month: number; amount_chf: number; label: string }[]
+  assumption_overrides: Record<string, number>
+  seed: number
+  cash: number | null
+  debt: number | null
+  investments: number | null
+}
+
+export interface HmmDecision { decision: string; label: string }
+
+export interface HmmFork {
+  decision: string
+  label: string
+  horizon_months: number
+  cash: number
+  debt: number
+  investments: number
+  seeded_net_flows: number[]
+}
+
+export interface HmmBranch {
+  snapshot_id: string
+  from_month: number
+  until_month: number
+  forks: HmmFork[]
+  committed: boolean
+}
+
+export interface HmmRestore {
+  snapshot_id: string
+  month: number
+  belief: Record<string, number>
+  matches: boolean
+  cash: number | null
+  debt: number | null
+  investments: number | null
+  label: string
+}
+
+export interface HmmFan {
+  p05: number[]
+  p25: number[]
+  p50: number[]
+  p75: number[]
+  p95: number[]
+  debt: number[]
+  investments: number[]
+  occupancy: number[][]
+  disclaimer: string
+  horizon_months: number
+}
+
 export interface Catalogue {
   habits: { id: string; label: string; place: Place; levels: { level: number; label: string; cost: number; joy: number }[] }[]
   items: { id: string; label: string; place: Place; kind: string; price: number; joy: number; abroad_only: boolean }[]

@@ -132,4 +132,35 @@ class GameRollRequest(GameRequest):
     roll: int = Field(ge=0, lt=N_WORLDS)
 
 
+class HmmStartRequest(BaseModel):
+    persona_id: str = "P00001"
+
+
+class HmmBranchRequest(BaseModel):
+    snapshot: dict
+    decisions: list[str]
+    until_month: int | None = None
+    n_paths: int = Field(default=40, ge=2, le=5000)
+
+
+class HmmCommitRequest(BaseModel):
+    snapshot: dict
+    flows: list[float]
+    decision: str | None = None
+    label: str = ""
+    cash: float | None = None
+    debt: float | None = None
+    investments: float | None = None
+
+
+class HmmRestoreRequest(BaseModel):
+    snapshot: dict
+
+
+class HmmDistributionRequest(BaseModel):
+    snapshot: dict
+    horizon_months: int = Field(default=60, ge=1, le=240)
+    n_paths: int = Field(default=40, ge=2, le=5000)
+
+
 CompareRequest.model_rebuild()

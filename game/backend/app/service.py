@@ -421,3 +421,29 @@ def catalogue(pid: str) -> dict:
         "note": "All catalogue numbers are our labelled assumptions (🟡), editable in Settings. "
                 "Purchases are consumption, not assets. Joy is a game preference score, not money.",
     }
+
+
+def hmm_start(persona_id: str) -> dict:
+    from .engine.hmm_adapter import start_snapshot
+    return start_snapshot(persona_id)
+
+
+def hmm_branch(req) -> dict:
+    from .engine.hmm_adapter import branch_view
+    return branch_view(req.snapshot, req.decisions, until_month=req.until_month, n_paths=req.n_paths)
+
+
+def hmm_commit(req) -> dict:
+    from .engine.hmm_adapter import commit
+    return commit(req.snapshot, req.flows, decision=req.decision, label=req.label,
+                  cash=req.cash, debt=req.debt, investments=req.investments)
+
+
+def hmm_restore(req) -> dict:
+    from .engine.hmm_adapter import restore
+    return restore(req.snapshot)
+
+
+def hmm_distribution(req) -> dict:
+    from .engine.hmm_adapter import life_distribution
+    return life_distribution(req.snapshot, horizon_months=req.horizon_months, n_paths=req.n_paths)

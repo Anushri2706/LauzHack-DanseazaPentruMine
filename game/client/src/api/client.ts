@@ -1,5 +1,6 @@
 import type {
-  AssumptionRow, Catalogue, Check, CompareResult, GameRequest, GameState, PersonaCard, Projection, Roll,
+  AssumptionRow, Catalogue, Check, CompareResult, GameRequest, GameState, HmmBranch, HmmFan, HmmRestore,
+  HmmSnapshot, PersonaCard, Projection, Roll,
 } from './types'
 
 const BASE = '/api'
@@ -46,4 +47,12 @@ export const api = {
   compare: (a: GameRequest, b: GameRequest, name_a: string, name_b: string) =>
     call<CompareResult>('POST', '/compare', { a, b, name_a, name_b }),
   validation: () => call<Check[]>('GET', '/validation'),
+  hmmStart: (persona_id: string) => call<{ snapshot: HmmSnapshot; decisions: { decision: string; label: string }[] }>('POST', '/hmm/start', { persona_id }),
+  hmmBranch: (snapshot: HmmSnapshot, decisions: string[]) =>
+    call<HmmBranch>('POST', '/hmm/branch', { snapshot, decisions, n_paths: 40 }),
+  hmmCommit: (body: { snapshot: HmmSnapshot; flows: number[]; decision: string; label: string; cash: number; debt: number; investments: number }) =>
+    call<HmmSnapshot>('POST', '/hmm/commit', body),
+  hmmRestore: (snapshot: HmmSnapshot) => call<HmmRestore>('POST', '/hmm/restore', { snapshot }),
+  hmmDistribution: (snapshot: HmmSnapshot) =>
+    call<HmmFan>('POST', '/hmm/distribution', { snapshot, horizon_months: 60, n_paths: 40 }),
 }
