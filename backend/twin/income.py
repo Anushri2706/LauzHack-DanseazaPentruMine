@@ -52,6 +52,28 @@ class IncomeTable:
         p.update({k: float(v) for k, v in overrides.items() if k in p})
         return IncomeTable(p, self.table, self.baseline_levels)
 
+    def masters_field_multiplier(self, attrs: dict) -> float:
+        """Field of the master's, applied on top of the 1.10 premium.
+
+        ``same`` is 1.00 (and the default when the attribute is absent). ``higher`` and
+        ``lower`` are the ±15% prior in the assumptions CSV. The multiplier is 1 until
+        ``has_masters`` is set, so choosing the field at the start of the degree does
+        not change the student stipend.
+        """
+        if not attrs.get("has_masters"):
+            return 1.0
+        field = attrs.get("masters_field") or "same"
+        key = {
+            "same": "masters_field_same_multiplier",
+            "higher": "masters_field_higher_multiplier",
+            "lower": "masters_field_lower_multiplier",
+        }.get(str(field))
+        if key is None:
+            raise ValueError(
+                f"masters_field must be 'same', 'higher', or 'lower', got {field!r}"
+            )
+        return float(self.params[key])
+
     def full_time_salary(self, profile: Profile, attrs: dict) -> float:
         """Offer for someone with no work history yet.
 
@@ -66,7 +88,7 @@ class IncomeTable:
         else:
             base = p["entry_salary_chf"]
         if attrs.get("has_masters"):
-            base *= 1.0 + p["masters_premium_pct"]
+            base *= (1.0 + p["masters_premium_pct"]) * self.masters_field_multiplier(attrs)
         if attrs.get("abroad"):
             base *= p["abroad_income_multiplier"]
         return base

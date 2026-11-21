@@ -115,6 +115,60 @@ def test_income_rules_match_the_sources():
     assert table.params["scaled_spending"] == pytest.approx(0)
 
 
+def test_masters_field_scales_the_master_entry():
+    table = IncomeTable.from_csv()
+    notes = (ASSUMPTIONS_DIR / "income_assumptions.csv").read_text()
+    assert "The ±15% field gap is a prior, not a survey figure." in notes
+    assert table.params["masters_field_same_multiplier"] == pytest.approx(1.0)
+    assert table.params["masters_field_higher_multiplier"] == pytest.approx(1.15)
+    assert table.params["masters_field_lower_multiplier"] == pytest.approx(0.85)
+
+    alexia = load_profile("P00001")
+    entry = table.params["entry_salary_chf"]
+    master = entry * (1.0 + table.params["masters_premium_pct"])
+    states = np.full((1, 25), S)
+    states[0, 24] = E
+    bare = [Intervention("set_attribute", 24, attribute=("has_masters", True))]
+    got = table.income_paths(states, alexia, bare, experience=False)[0]
+    assert got[23] == pytest.approx(alexia.ref_income)
+    assert got[24] == pytest.approx(master)
+
+    for field, factor in (("same", 1.0), ("higher", 1.15), ("lower", 0.85)):
+        iv = bare + [Intervention("set_attribute", 0, attribute=("masters_field", field))]
+        wage = table.full_time_salary(alexia, {"has_masters": True, "masters_field": field})
+        assert wage == pytest.approx(master * factor)
+        assert table.income_paths(states, alexia, iv, experience=False)[0, 24] == pytest.approx(wage)
+        # The field is chosen at the start. It does not change the stipend before the degree.
+        early = table.income_paths(
+            states, alexia,
+            [Intervention("set_attribute", 0, attribute=("masters_field", field))],
+            experience=False,
+        )[0]
+        assert early[0] == pytest.approx(alexia.ref_income)
+        assert early[24] == pytest.approx(entry)
+
+    with pytest.raises(ValueError):
+        table.full_time_salary(alexia, {"has_masters": True, "masters_field": "medicine"})
+
+    scaled = table.with_overrides({"scaled_spending": 1})
+    higher_iv = [
+        Intervention("set_attribute", 0, attribute=("masters_field", "higher")),
+        Intervention("set_attribute", 24, attribute=("has_masters", True)),
+    ]
+    lower_iv = [
+        Intervention("set_attribute", 0, attribute=("masters_field", "lower")),
+        Intervention("set_attribute", 24, attribute=("has_masters", True)),
+    ]
+    housing_h, _other = scaled.consumption_paths(states, alexia, higher_iv, experience=False)
+    housing_l, _other = scaled.consumption_paths(states, alexia, lower_iv, experience=False)
+    assert housing_h[0, 23] == pytest.approx(900) and housing_l[0, 23] == pytest.approx(900)
+    assert housing_h[0, 24] > housing_l[0, 24]
+    high_offer = master * 1.15
+    assert housing_h[0, 24] == pytest.approx(
+        float(scaled.rent_from_earnings(high_offer)) + scaled.params["rent_charges_chf"]
+    )
+
+
 def test_scaled_spending_uses_the_expense_priors_recipe():
     table = IncomeTable.from_csv().with_overrides({"scaled_spending": 1})
     p = table.params
