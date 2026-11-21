@@ -1,0 +1,11 @@
+assumption_name,from_state,to_state,monthly_hazard,row_concentration,age_min,age_max,source,notes
+job_loss_hazard,employed,job_search,0.004,200,,,PLACEHOLDER - SECO monthly inflow to registered unemployment / employed labour force,~0.3-0.5%/month; verify and cite before demo
+employed_to_part_time,employed,part_time,0.002,200,,,PLACEHOLDER - BFS SAKE labour-market flows,Voluntary or involuntary reduction in hours
+employed_to_student,employed,student,0.0005,200,18,35,PLACEHOLDER - assumption,Rare return to education; decisions use force_state instead
+job_search_exit_rate,job_search,employed,0.15,50,,,PLACEHOLDER - SECO mean duration of registered unemployment (~6-8 months),Exit to employment; 1/rate = mean months in job search
+job_search_to_part_time,job_search,part_time,0.02,50,,,PLACEHOLDER - assumption,Re-entry via part-time work
+part_time_to_employed,part_time,employed,0.02,100,,,PLACEHOLDER - BFS SAKE flows,Return to full-time
+part_time_job_loss_hazard,part_time,job_search,0.005,100,,,PLACEHOLDER - SECO,Slightly higher hazard than full-time
+student_to_job_search,student,job_search,0.0,20,,,PLACEHOLDER - assumption,Graduation is scheduled (HSMM / force_state) not a hazard; edit only for open-ended study
+student_to_employed,student,employed,0.0,20,,,PLACEHOLDER - assumption,See above; graduation timing comes from the decision layer
+retired_absorbing,retired,retired,1.0,1000,,,Modelling assumption,Retired is absorbing; retirement at 65 is a deterministic age rule (retirement_age in income_assumptions.csv)

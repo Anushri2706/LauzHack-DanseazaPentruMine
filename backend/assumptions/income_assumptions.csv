@@ -1,0 +1,13 @@
+parameter,value,unit,applies_to,source,notes
+student_income_chf,1200,CHF/month,student,Data/synthetic-profiles.csv P00001 reference income,Part-time job / support while studying
+entry_salary_chf,4200,CHF/month net,employed,starter-kit/scenario_config.json (Start working),PLACEHOLDER - replace with BFS LSE entry salary by education level
+masters_premium_pct,0.14,fraction,employed,starter-kit/scenario_config.json (4800 vs 4200),PLACEHOLDER - BFS graduate survey entry salaries master vs bachelor
+annual_experience_growth,0.02,fraction/year,employed;part_time,PLACEHOLDER - BFS LSE age-earnings profile,Applied per 12 months employed
+part_time_fraction,0.6,fraction of full-time,part_time,PLACEHOLDER - assumption,Matches S002 (work 60%)
+ui_replacement_rate,0.75,fraction of last salary,job_search,PLACEHOLDER - AVIG Art. 22 (70% or 80% of insured salary),Paid as net income during job search
+ui_max_months,18,months,job_search,PLACEHOLDER - AVIG Art. 27 (260-520 daily allowances),After this income drops to job_search_floor_chf
+job_search_floor_chf,0,CHF/month,job_search,Modelling assumption,No social assistance modelled
+retired_income_fraction,0.6,fraction of last salary,retired,PLACEHOLDER - AHV/BVG replacement ~60%,Used only when a path transitions into retirement
+retirement_age,65,years,all,AHV reference age,Deterministic age rule
+abroad_income_multiplier,0.88,fraction,employed;part_time,starter-kit/scenario_config.json (3700 vs 4200),PLACEHOLDER - abroad city salary level vs Lausanne
+abroad_cost_multiplier,0.97,fraction,all,starter-kit/scenario_config.json (2900 vs 3000),PLACEHOLDER - cost-of-living index; consumed by cash engine
