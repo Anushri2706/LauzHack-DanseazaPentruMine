@@ -2,6 +2,8 @@
 
 Plan only. Implementation comes later, on this branch (`feature/hmm-and-frontend`). Do not merge to `main`. Do not change `RegimeEngine.simulate` or `RegimeEngine.filter`. Do not restyle the town.
 
+In the same scope as the adapter and the frontend work, not a follow-up: wire the existing `📱 Phone` button to the HMM branch browser. It displays the simulated branch tree (the rollback snapshots from `simulate_until_next_decision`) and lets the user jump between paths. Workstream 3 specifies the browser. Work order step 5 is where it sits.
+
 The contract to extend is the Project-store document `hmm-regime-engine-api.md` (this repo does not contain that file; `backend/twin/types.py` points at it). A later edit adds the sections in [Contract additions](#contract-additions). It leaves the current signatures in place. The game does not import `backend/twin` today (`README.md`, Regime engine section).
 
 ## Current simulate / filter contract
@@ -99,7 +101,7 @@ Fields the current types can fill:
 - `one_offs: list[cash_engine.OneOff]`
 - `assumption_overrides: dict`
 - `seed: int`
-- `parent_id: str | None` and `snapshot_id: str` — the branch tree. This is not `TwinSession.scenarios` (flat dict, no belief) and not the client `TNode` (turns only).
+- `parent_id: str | None` and `snapshot_id: str` — the simulated branch tree. The nodes are the rollback snapshots from `simulate_until_next_decision` mode. This is not `TwinSession.scenarios` (flat dict, no belief) and not the client `TNode` (turns only). The existing Phone button displays this tree and jumps between its paths (workstream 3, work order step 5).
 
 Restore is a pure replay, the same idea as git checking out a commit, and the same idea as the game replaying turns:
 
@@ -136,6 +138,8 @@ Behavior that is fixed:
 - Return that `RegimePaths` unchanged. The outcome distribution is the existing arrays, summarized later with `metrics.fan_quantiles`, `metrics.compute_metrics`, and `metrics.goal_hit_rate`. Do not add a second path type.
 
 `EXIT_STATE` (`student` → `employed`, `job_search` → `employed`) stays inside `sample_regime_paths`. A master's roll whose `until_month` equals `from_month + duration` does not include the exit month; a roll one month longer does, because that is how `force_state` with a duration already works (`test_simulate_contract_interventions_and_heterogeneity`). The wrapper does not special-case it.
+
+The caller stores a `DecisionSnapshot` at each rollback point of this mode. Those snapshots are the branch tree the Phone button shows. This method still returns only `RegimePaths` and does not store the snapshot.
 
 ### `branch_decisions`
 
@@ -213,6 +217,8 @@ JSON for the client goes through new handlers next to the existing ones in `game
 - `POST /hmm/commit` → append flows, `filter`, return the new `DecisionSnapshot` as JSON (no arrays of paths)
 - `POST /hmm/distribution` → the fan above
 
+Snapshots the caller keeps for `simulate_until_next_decision` (`snapshot_id`, `parent_id`) are the simulated branch tree. `POST /hmm/commit` returns the new node. The existing `📱 Phone` button reads that tree (workstream 3), in the same scope as this adapter, not a follow-up. `branch_decisions` does not write a snapshot.
+
 `POST /game/state` and `POST /game/projection` stay. An adapter that is not called leaves the town identical.
 
 ### Tests (workstream 2)
@@ -232,7 +238,7 @@ Style stays. Reuse `btn`, `phone`, `phone-nav`, `mv-node`, `cmp-table`, and `Mon
 
 What is already on screen, and must keep working:
 
-- HUD button `📱 Phone` (`HudBar.tsx`, title "Open your phone (P)") and the `P` key (`GameScreen.tsx`) set `phone: 'money'`.
+- HUD button `📱 Phone` (`HudBar.tsx`, title "Open your phone (P)") and the `P` key (`GameScreen.tsx`) open `Phone.tsx`. Today both set `phone: 'money'`. The wiring below points that open at the HMM branch browser. The Money app and the other phone apps stay in `phone-nav`.
 - `Phone.tsx` apps: Money, Multiverse, Goals, Settings, Checks, Mail (`AppId` in `store/game.ts`).
 - `MultiverseApp` draws the client `TNode` tree, `goBack` / `continueReality`, and pin A/B. Compare posts `/compare` (`compare_games`), which is the town engine in one shared world. Nodes store turns, not an HMM belief.
 - `MoneyChart` plots the lived path, `no_surprises`, and P10–P90 from `/game/projection`.
@@ -240,13 +246,14 @@ What is already on screen, and must keep working:
 
 Add UI only for HMM decision kinds the town does not already show, and only after the map says the kind is real. `parental_leave` is a real `DECISIONS` key with no town button. A control for it uses `available_actions` / `_entry` (place, label, preview, enabled, reason), the same row shape as `master_ft`. Which building it sits in is an open question; until that is answered, do not put it on the university door next to the master's.
 
-There is no control labeled "check your phone". The phone menu that does exist is the HUD button and `Phone.tsx` above. Branch browsing and fork compare already exist for town turns, not for `DecisionSnapshot`s. The new button's label and which existing surface it opens are an open question. Do not add a second phone, and do not add the button until that question is answered.
+There is no control labeled "check your phone", and this plan does not add one. Town-turn browsing stays on `MultiverseApp` (`TNode`, `goBack`, `continueReality`). In the same scope as the adapter and the rest of this frontend work, not a follow-up: wire the existing `📱 Phone` button to the HMM branch browser inside `Phone.tsx`. The `P` key already opens that phone; it follows the button. Draw the tree with the existing `mv-node` class. Do not add a second phone.
 
-What the frontend does once those questions are answered, and not before:
+The browser displays the simulated branch tree: the rollback `DecisionSnapshot`s from `simulate_until_next_decision` mode, linked by `snapshot_id` and `parent_id`. The user can jump between those paths. A jump selects one snapshot and restores it with the steps under `DecisionSnapshot`: replay `filter` on that snapshot's `observed_net_flows`, then the next `simulate` with `initial_belief` from that snapshot. `commitSleep`, `rollbackTo`, and `TNode` stay the town tree. This plan does not make `TNode` the HMM snapshot. The client store comment still holds for money: the backend replays, the store holds choices.
 
-- A year action calls `POST /hmm/branch` or the year advance, then `POST /hmm/commit` only after the player keeps a fork. Compare-before-commit reads the `/hmm/branch` payload and does not call `/hmm/commit`.
-- The final distribution is a `MoneyChart`-style chart bound to `fan_quantiles` from `POST /hmm/distribution`. It is an added series or an added phone section. It does not restyle the lived town line.
-- `commitSleep`, `rollbackTo`, and `TNode` stay the town tree. An HMM snapshot id may be stored on the node later; this plan does not make `TNode` the HMM snapshot. The client store comment still holds for money: the backend replays, the store holds choices.
+The Phone wiring above is in scope now. These stay behind their open questions:
+
+- A year action calls `POST /hmm/branch` or the year advance, then `POST /hmm/commit` only after the player keeps a fork. Compare-before-commit reads the `/hmm/branch` payload and does not call `/hmm/commit`. Where that compare renders is still open (question 10).
+- The final distribution is a `MoneyChart`-style chart bound to `fan_quantiles` from `POST /hmm/distribution`. It is an added series or an added phone section. It does not restyle the lived town line. Where it renders is still open (question 10).
 
 ### Tests (workstream 3)
 
@@ -255,7 +262,8 @@ No component test runner in `game/client`. Checks:
 - `npm run typecheck` in `game/client`.
 - `game/backend/tests/test_api.py` still accepts a `master_ft` turn on `/game/state`.
 - `node scripts/smoke.mjs` still queues "Full-time master's" and still opens the phone. Run it only when the town backend and Vite are up, as the script's header says. New copy must not steal the accessible name `/Full-time master's/`.
-- When the phone-button question is answered, extend `smoke.mjs` with one step that opens that control, sees two fork labels from a fixture `/hmm/branch` response, and does not commit. Do not add that step before the control exists.
+- Phone branch browser, when this workstream is implemented: extend `smoke.mjs` with one step that opens the existing `📱 Phone` button, sees the simulated branch tree (rollback snapshots from `simulate_until_next_decision`), and jumps to another path. Do not add that step before the browser exists.
+- When the compare-before-commit surface is chosen, extend `smoke.mjs` with one step that opens that control, sees two fork labels from a fixture `/hmm/branch` response, and does not commit. Do not add that step before the control exists.
 
 ## Work order
 
@@ -263,8 +271,9 @@ No component test runner in `game/client`. Checks:
 2. Workstream 1 and its tests. `game/` untouched.
 3. Later, separate change: extend the store's `hmm-regime-engine-api.md` as specified above. Still no game code.
 4. Workstream 2 and its tests. Town routes unchanged. New `/hmm/*` routes only.
-5. Workstream 3, and only the pieces whose open questions are closed. `parental_leave`'s building and the phone button wait. `master_ft` needs no new town control.
-6. Smoke the town. Do not merge to `main`.
+5. Wire the existing `📱 Phone` button to the HMM branch browser, alongside the adapter (step 4) and the frontend work, not as a follow-up. It displays the simulated branch tree (the rollback snapshots from `simulate_until_next_decision`) and lets the user jump between paths. It needs workstreams 1 and 2. Do not add a second phone.
+6. The rest of workstream 3, and only the pieces whose open questions are closed. `parental_leave`'s building waits. `master_ft` needs no new town control.
+7. Smoke the town. Do not merge to `main`.
 
 ## Open questions
 
@@ -279,6 +288,6 @@ No answer is implied by the code. Do not pick one while implementing the steps a
 7. Who sets `until_month`. The wrapper requires the caller to pass it. The game's next decision point is `decision_reasons` (start, birthday, `program_end`). A master's pin has its own duration (default 24), which is not the birthday. A year advance is +12. Which of these wins when they disagree is undecided.
 8. Commit statistic. "Mean/convergent simulation" does not name a function. `RegimePaths.net_flow_chf` is `[n_paths, T]`. `fan_quantiles` and `occupancy` are summaries. `filter` wants one scalar per month. Which reduction is appended (cross-sectional mean, median, one seeded path, or something else) is undecided. The seam stays empty until then.
 9. Does `sleep(1)` move the HMM at all, or only the year advance? The year advance is specified as one 12-month `simulate`. Month sleep is still `step_month`. Whether a month of town time is also an HMM observation is undecided.
-10. "Check your phone". A phone menu exists (`📱 Phone`, `Phone.tsx`, and the Multiverse tree of town turns). A button with that label does not, and nothing in the phone reads `DecisionSnapshot` or `/hmm/branch`. Whether the new entry is a new HUD label, a new `AppId`, or the existing Multiverse pointed at HMM forks is undecided. Fork compare before commit and the final fan chart wait on this, because both need a place to render.
+10. Where fork-compare-before-commit and the final fan chart render. The existing `📱 Phone` button is decided: work order step 5 wires it to the HMM branch browser, which shows the rollback snapshots from `simulate_until_next_decision` and lets the user jump between paths. No new HUD label and no second phone. Whether compare-before-commit and the fan chart share that browser or another existing surface (`MoneyChart`, the town Multiverse) is undecided.
 11. Where a new HMM-only action sits in the town. `parental_leave` has no `LIFE_PLACE`. Putting it on `university` would sit beside the master's the smoke test already clicks. The building is undecided.
 12. `master_ft_months` in the game assumptions versus the HMM default duration of 24. Whether the adapter passes the game number through as `duration` is undecided. Until then, `masters` uses the HMM default.
