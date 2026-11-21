@@ -1,5 +1,6 @@
 """HMM regime engine: emissions, transitions, interventions, filter, held-out checks."""
 import numpy as np
+import pandas as pd
 import pytest
 
 from twin import RegimeEngine, load_profile, load_transition_priors
@@ -39,6 +40,9 @@ def test_assumptions_replace_placeholders():
     assert table["retirement_age"] == pytest.approx(65)
     assert table["abroad_income_multiplier"] == pytest.approx(0.51)
     assert table["abroad_cost_multiplier"] == pytest.approx(0.63)
+    assert table["zurich_housing_multiplier"] == pytest.approx(1.20)
+    assert table["zurich_move_cost_chf"] == pytest.approx(4000)
+    assert table["germany_move_cost_chf"] == pytest.approx(5000)
     assert table["student_rent_chf"] == pytest.approx(900)
     assert table["employed_rent_chf"] == pytest.approx(1546)
     assert table["entry_salary_chf"] * (1 + table["masters_premium_pct"]) * 12 == pytest.approx(80900, rel=1e-4)
@@ -167,6 +171,46 @@ def test_masters_field_scales_the_master_entry():
     assert housing_h[0, 24] == pytest.approx(
         float(scaled.rent_from_earnings(high_offer)) + scaled.params["rent_charges_chf"]
     )
+
+
+def test_zurich_scales_housing_only_and_germany_ui_stays_swiss():
+    df = pd.read_csv(ASSUMPTIONS_DIR / "income_assumptions.csv")
+    for name in ("zurich_housing_multiplier", "zurich_move_cost_chf", "germany_move_cost_chf"):
+        source = str(df.loc[df["parameter"] == name, "source"].iloc[0])
+        assert source.strip().lower() == "prior"
+
+    table = IncomeTable.from_csv()
+    worker = _worker(age=30, income=8000, rent=2000)
+    moved = table.income_paths(
+        np.array([[E, E, J, J, J, J, E]]),
+        worker,
+        [Intervention("set_attribute", 2, attribute=("abroad", True))],
+        experience=False,
+    )[0]
+    assert moved[1] == pytest.approx(8000)
+    assert moved[2] == pytest.approx(5600)          # 70% of the Swiss wage, not of the German wage
+    assert moved[5] == pytest.approx(5600)
+    assert moved[6] == pytest.approx(8000 * 0.51)
+
+    zurich = [Intervention("set_attribute", 1, attribute=("zurich", True))]
+    pay = table.income_paths(np.array([[E, E, E]]), worker, zurich, experience=False)[0]
+    assert pay == pytest.approx([8000, 8000, 8000])
+    rent = table.rent_paths(np.array([[E, E, E]]), worker, zurich)[0]
+    assert rent[0] == pytest.approx(2000)
+    assert rent[1] == pytest.approx(2000 * 1.20)
+    assert rent[2] == pytest.approx(rent[1])
+
+    scaled = table.with_overrides({"scaled_spending": 1})
+    housing, other = scaled.consumption_paths(np.array([[E, E, E]]), worker, zurich, experience=False)
+    assert housing[0, 1] == pytest.approx(housing[0, 0] * 1.20)
+    assert other[0, 1] == pytest.approx(other[0, 0])
+
+    away = table.rent_paths(
+        np.array([[E, E]]), worker,
+        [Intervention("set_attribute", 1, attribute=("abroad", True))],
+    )[0]
+    assert away[0] == pytest.approx(2000)
+    assert away[1] == pytest.approx(2000 * 0.63)
 
 
 def test_scaled_spending_uses_the_expense_priors_recipe():
