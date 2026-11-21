@@ -61,9 +61,52 @@ class IncomeTable:
             base = p["entry_salary_chf"]
         if attrs.get("has_masters"):
             base *= 1.0 + p["masters_premium_pct"]
+        if attrs.get("has_phd"):
+            # Guess. Sits on top of the master's premium when that attribute is also set.
+            base *= 1.0 + p["phd_premium_pct"]
         if attrs.get("abroad"):
             base *= p["abroad_income_multiplier"]
         return base
+
+    def aged_bachelor_salary(self, profile: Profile, entry_month: int, month: int) -> float:
+        """Bachelor entry salary grown to the age at ``month``.
+
+        The master's premium does not enter. Raises use the same anniversary as
+        ``income_paths``: the end of every 12th month from ``entry_month`` up to,
+        but not including, ``month``. ``entry_month`` is when that entry salary
+        starts (graduation, when the degree began at month 0). A partial year
+        after the last anniversary is not compounded.
+        """
+        p = self.params
+        if profile.initial_state in ("employed", "part_time") and profile.ref_income > 0:
+            wage = profile.ref_income if profile.initial_state == "employed" else profile.ref_income / p["part_time_fraction"]
+        else:
+            wage = float(p["entry_salary_chf"])
+        for t in range(int(entry_month), int(month)):
+            if (t + 1) % 12 == 0:
+                wage *= 1.0 + self._growth_rate(profile.age + (t + 1) / 12.0)
+        return float(wage)
+
+    def _retarget_salary(self, salary: np.ndarray, last_salary: np.ndarray, profile: Profile,
+                         prev_attrs: dict, attrs: dict, t: int) -> tuple[np.ndarray, np.ndarray]:
+        """Apply an attribute change to the running full-time salary.
+
+        ``bachelor_age_wage`` replaces the running wage with the bachelor entry
+        salary grown to this age. The value is the month that entry salary
+        started. Other attribute changes keep the grown wage and rescale it by
+        the new premium (master's, PhD, abroad).
+        """
+        if attrs == prev_attrs:
+            return salary, last_salary
+        if "bachelor_age_wage" in attrs and "bachelor_age_wage" not in prev_attrs:
+            level = self.aged_bachelor_salary(profile, int(attrs["bachelor_age_wage"]), t)
+            return np.full(salary.shape, level), last_salary
+        new = self.full_time_salary(profile, attrs)
+        old = self.full_time_salary(profile, prev_attrs)
+        if old > 0:
+            ratio = new / old
+            return salary * ratio, last_salary * ratio
+        return salary, last_salary
 
     def _growth_rate(self, age: float) -> float:
         p = self.params
@@ -115,11 +158,7 @@ class IncomeTable:
         for t in range(T):
             attrs = attributes_at(profile, ivs, t)
             if attrs != prev_attrs:
-                new = self.full_time_salary(profile, attrs)
-                old = self.full_time_salary(profile, prev_attrs)
-                if old > 0:
-                    salary = salary * (new / old)
-                    last_salary = last_salary * (new / old)
+                salary, last_salary = self._retarget_salary(salary, last_salary, profile, prev_attrs, attrs, t)
                 prev_attrs = attrs
             age = profile.age + t / 12.0
             s = states[:, t]
@@ -189,11 +228,7 @@ class IncomeTable:
         for t in range(T):
             attrs = attributes_at(profile, ivs, t)
             if attrs != prev_attrs:
-                new = self.full_time_salary(profile, attrs)
-                old = self.full_time_salary(profile, prev_attrs)
-                if old > 0:
-                    salary = salary * (new / old)
-                    last_salary = last_salary * (new / old)
+                salary, last_salary = self._retarget_salary(salary, last_salary, profile, prev_attrs, attrs, t)
                 prev_attrs = attrs
             s = states[:, t]
             working = (s == E) | (s == P)
