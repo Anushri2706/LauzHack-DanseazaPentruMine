@@ -47,6 +47,7 @@ def test_assumptions_replace_placeholders():
     assert table["student_rent_chf"] == pytest.approx(900)
     assert table["employed_rent_chf"] == pytest.approx(1546)
     assert table["entry_salary_chf"] * (1 + table["masters_premium_pct"]) * 12 == pytest.approx(80900, rel=1e-4)
+    assert table["phd_premium_pct"] == pytest.approx(0.1)
     assert table["long_term_unemployment_multiplier"] == pytest.approx(0.5)
     assert table["rent_step_factor"] == pytest.approx(1.4)
     assert table["purchase_deposit_fraction"] == pytest.approx(0.15)
@@ -58,6 +59,8 @@ def test_assumptions_replace_placeholders():
     assert table["parental_leave_months"] == pytest.approx(12)
     assumptions = (ASSUMPTIONS_DIR / "income_assumptions.csv").read_text()
     assert assumptions.count("EO is more complicated") == 1
+    phd_line = next(line for line in assumptions.splitlines() if line.startswith("phd_premium_pct,"))
+    assert "Guess" in phd_line and "guess" in phd_line.lower()
 
     priors = load_transition_priors()
     assert priors.hazards[E, J] == pytest.approx(0.005)
@@ -222,6 +225,49 @@ def test_zurich_scales_housing_only_and_germany_ui_stays_swiss():
     )[0]
     assert away[0] == pytest.approx(2000)
     assert away[1] == pytest.approx(2000 * 0.63)
+
+
+def test_bachelor_age_wage_and_phd_premium():
+    """Year-5 switch drops the master's premium. A PhD adds another 1.10, as a guess."""
+    table = IncomeTable.from_csv()
+    alexia = load_profile("P00001")
+    entry = table.params["entry_salary_chf"]
+    g = table.params["annual_experience_growth"]
+    grown = entry * (1.0 + g) ** 3
+    assert table.aged_bachelor_salary(alexia, 24, 69) == pytest.approx(grown)
+
+    T = 110
+    worked = np.full((1, T), E)
+    worked[0, :24] = S
+    masters = [Intervention("set_attribute", 24, attribute=("has_masters", True))]
+    stay = table.income_paths(worked, alexia, masters)[0]
+    assert stay[24] == pytest.approx(entry * 1.10)
+    assert stay[60] == pytest.approx(grown * 1.10)
+    assert stay[69] == pytest.approx(grown * 1.10)
+
+    gappy = worked.copy()
+    gappy[0, 35] = J
+    switch = masters + [
+        Intervention("set_attribute", 69, attribute=("bachelor_age_wage", 24)),
+        Intervention("set_attribute", 69, attribute=("has_masters", False)),
+    ]
+    switched = table.income_paths(gappy, alexia, switch)[0]
+    missed = table.income_paths(gappy, alexia, masters)[0, 69] / 1.10
+    assert switched[69] == pytest.approx(grown)
+    assert missed == pytest.approx(entry * (1.0 + g) ** 2)
+    assert switched[69] == pytest.approx(missed * (1.0 + g))
+
+    phd_states = worked.copy()
+    phd_states[0, 60:102] = S
+    phd = masters + [Intervention("set_attribute", 102, attribute=("has_phd", True))]
+    phd_pay = table.income_paths(phd_states, alexia, phd)[0]
+    assert np.allclose(phd_pay[60:102], 1200.0)
+    assert phd_pay[102] == pytest.approx(stay[60] * 1.10)
+    assert phd_pay[102] == pytest.approx(entry * 1.10 * 1.10 * (1.0 + g) ** 3)
+
+    scaled = table.with_overrides({"scaled_spending": 1})
+    housing, other = scaled.consumption_paths(phd_states, alexia, phd)
+    assert np.allclose(housing[0, 60:102] + other[0, 60:102], scaled.params["student_living_chf"])
 
 
 def test_scaled_spending_uses_the_expense_priors_recipe():

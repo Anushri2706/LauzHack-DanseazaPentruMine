@@ -125,24 +125,54 @@ class IncomeTable:
             base = p["entry_salary_chf"]
         if attrs.get("has_masters"):
             base *= (1.0 + p["masters_premium_pct"]) * self.masters_field_multiplier(attrs)
+        if attrs.get("has_phd"):
+            # Guess. Sits on top of the master's premium when that attribute is also set.
+            base *= 1.0 + p["phd_premium_pct"]
         if attrs.get("abroad"):
             base *= p["abroad_income_multiplier"]
         return base
 
+    def aged_bachelor_salary(self, profile: Profile, entry_month: int, month: int) -> float:
+        """Bachelor entry salary grown to the age at ``month``.
+
+        The master's premium does not enter. Raises use the same anniversary as
+        ``income_paths``: the end of every 12th month from ``entry_month`` up to,
+        but not including, ``month``. ``entry_month`` is when that entry salary
+        starts (graduation, when the degree began at month 0). A partial year
+        after the last anniversary is not compounded.
+        """
+        p = self.params
+        if profile.initial_state in ("employed", "part_time") and profile.ref_income > 0:
+            wage = profile.ref_income if profile.initial_state == "employed" else profile.ref_income / p["part_time_fraction"]
+        else:
+            wage = float(p["entry_salary_chf"])
+        for t in range(int(entry_month), int(month)):
+            if (t + 1) % 12 == 0:
+                wage *= 1.0 + self._growth_rate(profile.age + (t + 1) / 12.0)
+        return float(wage)
+
     def _apply_attribute_change(self, profile: Profile, prev_attrs: dict, attrs: dict,
-                                salary: np.ndarray, last_salary: np.ndarray):
+                                salary: np.ndarray, last_salary: np.ndarray, t: int):
         """Rescale the next job's wage when attributes change.
 
         ``salary`` is the full-time wage she would earn if employed. ``last_salary``
         is the wage she has already been paid, which is what unemployment insurance
         uses. The premium lands on the wage in force this month (entry, or entry
-        grown by the months she has already worked), not on a fresh offer. Turning
-        ``abroad`` on or off changes the next job only. It does not rewrite insured
-        earnings, so a move that starts in job search still pays UI on the last
-        Swiss wage. A Zurich move does not change either wage.
+        grown by the months she has already worked), not on a fresh offer.
+
+        ``bachelor_age_wage`` replaces that running wage with the bachelor entry
+        salary grown to this age. The value is the month that entry salary
+        started. It does not rewrite insured earnings. Other changes keep the
+        grown wage and rescale it by the new premium (master's, field, PhD).
+        Turning ``abroad`` on or off changes the next job only. It does not
+        rewrite insured earnings, so a move that starts in job search still pays
+        UI on the last Swiss wage. A Zurich move does not change either wage.
         """
         if attrs == prev_attrs:
             return salary, last_salary, prev_attrs
+        if "bachelor_age_wage" in attrs and "bachelor_age_wage" not in prev_attrs:
+            level = self.aged_bachelor_salary(profile, int(attrs["bachelor_age_wage"]), t)
+            return np.full(salary.shape, level), last_salary, dict(attrs)
         old = self.full_time_salary(profile, prev_attrs)
         new = self.full_time_salary(profile, attrs)
         if old > 0:
@@ -220,7 +250,7 @@ class IncomeTable:
         for t in range(T):
             attrs = attributes_at(profile, ivs, t)
             salary, last_salary, prev_attrs = self._apply_attribute_change(
-                profile, prev_attrs, attrs, salary, last_salary)
+                profile, prev_attrs, attrs, salary, last_salary, t)
             age = profile.age + t / 12.0
             s = states[:, t]
             inc = np.zeros(n)
@@ -294,7 +324,7 @@ class IncomeTable:
             attrs = attributes_at(profile, ivs, t)
             # Same rescale as income_paths: the premium hits the wage she has now.
             salary, last_salary, prev_attrs = self._apply_attribute_change(
-                profile, prev_attrs, attrs, salary, last_salary)
+                profile, prev_attrs, attrs, salary, last_salary, t)
             s = states[:, t]
             on_leave = on_parental_leave(ivs, p, t)
             working = ((s == E) | (s == P)) & (not on_leave)
