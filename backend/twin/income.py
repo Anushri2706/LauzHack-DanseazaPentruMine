@@ -53,7 +53,13 @@ class IncomeTable:
         return IncomeTable(p, self.table, self.baseline_levels)
 
     def full_time_salary(self, profile: Profile, attrs: dict) -> float:
-        """Starting full-time salary for this person when entering 'employed'."""
+        """Offer for someone with no work history yet.
+
+        The master's premium is a multiplier on that offer. ``income_paths`` applies
+        the ratio of two offers to the salary she has already reached, so a degree
+        taken after she has worked raises that wage. It does not replace the wage
+        with this offer.
+        """
         p = self.params
         if profile.initial_state in ("employed", "part_time") and profile.ref_income > 0:
             base = profile.ref_income if profile.initial_state == "employed" else profile.ref_income / p["part_time_fraction"]
@@ -115,6 +121,8 @@ class IncomeTable:
         for t in range(T):
             attrs = attributes_at(profile, ivs, t)
             if attrs != prev_attrs:
+                # The premium lands on the wage in force this month (entry, or entry
+                # grown by the months she has already worked), not on a fresh offer.
                 new = self.full_time_salary(profile, attrs)
                 old = self.full_time_salary(profile, prev_attrs)
                 if old > 0:
@@ -189,6 +197,7 @@ class IncomeTable:
         for t in range(T):
             attrs = attributes_at(profile, ivs, t)
             if attrs != prev_attrs:
+                # Same rescale as income_paths: the premium hits the wage she has now.
                 new = self.full_time_salary(profile, attrs)
                 old = self.full_time_salary(profile, prev_attrs)
                 if old > 0:
@@ -220,11 +229,18 @@ class IncomeTable:
         """Housing and non-housing spend under the expense-priors recipe. Both are [n, T].
 
         While studying, housing is the student rent and the rest of the EPFL living budget
-        makes up non-housing. The 0.25 rate is not used. After school a lease is signed once,
-        at the wage on offer if she has no payslip yet, and that net rent stays put through
-        raises and unemployment. Charges sit on top of the net rent. Non-housing is then
-        ``base + rate * gross``, with gross the current wage, or the last wage, or the wage
-        the lease was underwritten on.
+        makes up non-housing. The 0.25 rate is not used. Leaving school signs a lease on
+        the wage in force that month (the payslip if she has one, otherwise the offer).
+        A later spell of study ends that lease, and the next month out of school signs
+        a new one. A master's taken after she has worked is therefore underwritten on
+        the wage at graduation, experience and premium included, not on the entry salary
+        from before she worked. Between those dates the net rent stays put through
+        raises and unemployment. Charges sit on top of the net rent. Non-housing is
+        ``base + rate * gross``, with gross the current wage, or the last wage, or the
+        offer.
+
+        ``lease_signed_on`` is set to ``[n, T]``: the gross wage the lease then in
+        force was signed on, or 0 while she is a student.
         """
         p = self.params
         n, T = states.shape
@@ -240,25 +256,32 @@ class IncomeTable:
         rate = float(p["nonhousing_rate"])
         earnings = self._capacity_earnings(states, profile, ivs, experience)
         signed = np.zeros(n, dtype=bool)
+        signed_wage = np.zeros(n)
         lease_net = np.zeros(n)
+        lease_wage = np.zeros((n, T))
         housing = np.empty((n, T))
         other = np.empty((n, T))
         for t in range(T):
             attrs = attributes_at(profile, ivs, t)
             s = states[:, t]
             studentish = s == S
+            # Studying ends the lease. The next month out of school signs again,
+            # including a month of job search, on the wage she has then.
+            signed = np.where(studentish, False, signed)
             offer = self.full_time_salary(profile, attrs)
             gross = np.where(earnings[:, t] > 1.0, earnings[:, t], offer)
-            # Leaving school signs the lease, including a month of job search. It is not
-            # recomputed when the wage later grows, and unemployment does not cut it.
+            # Not recomputed when the wage later grows, and unemployment does not cut it.
             need = ~studentish & ~signed
             if np.any(need):
                 lease_net = np.where(need, self.rent_from_earnings(gross), lease_net)
+                signed_wage = np.where(need, gross, signed_wage)
                 signed = signed | need
             housing[:, t] = np.where(studentish, student_level, lease_net + charges)
             other[:, t] = np.where(studentish, student_other, base + rate * gross)
+            lease_wage[:, t] = np.where(studentish, 0.0, signed_wage)
             if attrs.get("abroad"):
                 housing[:, t] = housing[:, t] * p["abroad_cost_multiplier"]
+        self.lease_signed_on = lease_wage
         return housing, other
 
     def rent_paths(self, states: np.ndarray, profile: Profile,

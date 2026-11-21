@@ -5,7 +5,7 @@ import pytest
 from twin import RegimeEngine, load_profile, load_transition_priors
 from twin.data import ASSUMPTIONS_DIR, load_cash_balances, load_profiles
 from twin.income import IncomeTable
-from twin.regime_engine import emission_loglik, fit_emissions, forward_filter, sample_yearly_lump
+from twin.regime_engine import _schedule, emission_loglik, fit_emissions, forward_filter, sample_yearly_lump
 from twin.types import STATE_INDEX, STATES, Intervention, Profile
 from twin import validation
 
@@ -149,6 +149,60 @@ def test_scaled_spending_uses_the_expense_priors_recipe():
 
     shocks = sample_yearly_lump(np.random.default_rng(0), 20000, 12, p).sum(axis=1)
     assert shocks.mean() == pytest.approx(0.0, abs=150)
+
+
+def test_masters_after_work_signs_the_lease_on_the_graduation_wage():
+    """A job before the master's must not freeze the lease on the entry salary.
+
+    The premium and the new lease both use the wage at graduation: entry grown
+    by the months she worked, then times 1.10. The no-history offer is only
+    the wage when she has not worked.
+    """
+    table = IncomeTable.from_csv().with_overrides({"scaled_spending": 1})
+    alexia = load_profile("P00001")
+    p = table.params
+    entry = p["entry_salary_chf"]
+    premium = 1.0 + p["masters_premium_pct"]
+
+    def wage_at_graduation(work_months: int) -> float:
+        salary = entry
+        for t in range(work_months):
+            if (t + 1) % 12 == 0:
+                salary *= 1.0 + table._growth_rate(alexia.age + (t + 1) / 12.0)
+        return salary * premium
+
+    for work in (0, 24, 36):
+        grad = work + 24
+        ivs = []
+        if work:
+            ivs.append(Intervention("force_state", 0, work, state="employed"))
+        ivs.append(Intervention("force_state", work, 24, state="student"))
+        ivs.append(Intervention("set_attribute", grad, attribute=("has_masters", True)))
+        forced, _prev = _schedule(grad + 2, ivs)
+        if work:
+            assert (forced[:work] == E).all()
+        assert (forced[work:grad] == S).all()
+        assert forced[grad] == E
+
+        states = np.full((1, grad + 4), E)
+        states[0, :grad] = S
+        if work:
+            states[0, :work] = E
+        income = table.income_paths(states, alexia, ivs)[0]
+        housing, _other = table.consumption_paths(states, alexia, ivs)
+        wage = wage_at_graduation(work)
+        assert income[grad] == pytest.approx(wage)
+        assert table.lease_signed_on[0, grad] == pytest.approx(wage)
+        assert housing[0, grad] == pytest.approx(table.rent_from_earnings(wage) + p["rent_charges_chf"])
+        assert housing[0, grad + 1] == pytest.approx(housing[0, grad])
+        assert housing[0, grad - 1] == pytest.approx(alexia.rent)
+        assert table.lease_signed_on[0, grad - 1] == pytest.approx(0.0)
+        if work == 0:
+            assert wage == pytest.approx(entry * premium)
+        else:
+            assert wage > entry * premium
+            assert table.lease_signed_on[0, 0] == pytest.approx(entry)
+            assert abs(housing[0, grad] - housing[0, 0]) > 1.0
 
 
 def test_forward_filter_matches_a_hand_calculation():
