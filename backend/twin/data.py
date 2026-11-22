@@ -21,10 +21,10 @@ from .types import STATES, Profile
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_DIR.parent
-DATA_DIR = REPO_ROOT / "Data"
+DATA_DIR = REPO_ROOT / "challenge-instructions-and-data" / "Data"
 ASSUMPTIONS_DIR = BACKEND_DIR / "assumptions"
 ARTIFACTS_DIR = BACKEND_DIR / "artifacts"
-STARTER_KIT_DIR = REPO_ROOT / "starter-kit"
+STARTER_KIT_DIR = REPO_ROOT / "challenge-instructions-and-data" / "starter-kit"
 
 AGE_BINS = [17, 25, 35, 50, 65, 120]
 AGE_LABELS = ["18-25", "26-35", "36-50", "51-65", "65+"]

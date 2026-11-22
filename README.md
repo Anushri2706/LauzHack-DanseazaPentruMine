@@ -1,74 +1,127 @@
-# LauzHack-DanseazaPentruMine
+# Many Lives: an AI Financial Twin you can walk around in
 
-## Backend: regime-switching financial twin (`backend/`)
+Our entry for the **UBS × LauzHack 2026 "AI Financial Twin"** challenge.
+Motto: *Don't predict the future. Make it explorable.*
 
-A stochastic what-if simulator for a fictional person (default: Alexia, `P00001`). It is not a forecast.
+> **This is a simulation, not a prediction or financial advice. All people and data are synthetic.**
 
+## What we built
+
+You pick a fictional person (Alexia, 20, a student in Lausanne, is the featured one) and walk around a small
+pixel-art lakeside town. In its buildings you make life and money choices: study a master's, start working,
+eat out, buy a flat, move abroad, borrow, save. Each choice re-runs a Python engine, which shows how that
+person's finances could unfold month by month up to age 120, with uncertainty ranges and not a single
+"right answer".
+
+The repo has three parts:
+
+| Part | Folder | What it is |
+|---|---|---|
+| **The game** | [`game/`](game/) | FastAPI engine (`game/backend`) + React/Vite pixel-art town (`game/client`). This is the demo. |
+| **Regime twin** | [`backend/`](backend/) | A regime-switching HMM: each month a person is *employed*, *part-time*, *job search*, *student* or *retired*, with sourced Swiss hazards, income by state, gross-to-net pay, and a vectorised cash engine. The game uses it for life states. |
+| **Challenge materials** | [`challenge-instructions-and-data/`](challenge-instructions-and-data/) | Everything the organizers gave us, unchanged: the challenge PDF and docs, synthetic data (`Data/`), starter kit, FAQ, evaluation criteria, examples, resources. |
+
+### Main features
+
+- **Life timeline to age 120.** Drag forward to live months, drag back to rewind exactly. Right of "now" the
+  timeline fans out the P10–P90 net-worth band and the share of simulated lives in each state.
+- **Multiverse.** Every choice branches a new reality. Go back to any choice, undo it, or pin two realities
+  side by side to see why they differ.
+- **Six scores, no single "best" number:** net worth, cash safety, goals hit and more, each with a range.
+- **Learned twin.** The regime HMM (life states) is combined with models learned from the synthetic data: a GMM
+  for spending by state, December bonus, holiday months, month-to-month noise, and "people like you" (kNN/GMM
+  on a normalised profile map).
+- **💬 Ask companion.** An optional LLM agent that answers only with numbers the engine produced and can propose
+  one allowed action that you confirm. Without an API key the game falls back to rule-based answers.
+- **Transparent assumptions.** Every assumption is tagged with where it came from and can be edited in the
+  phone's Settings app. The Checks app runs validation live, including a to-the-cent cross-check against the
+  official starter kit.
+
+The full gameplay guide, architecture, model and limitations are in [`game/README.md`](game/README.md). There's
+a scripted demo walkthrough in [`game/DEMO.md`](game/DEMO.md).
+
+## How to run it
+
+Requirements: **Python 3.11+**, **Node.js 18+** and npm.
+
+### The game (one command)
+
+```bash
+cd game
+./start.sh
 ```
-regime_engine (HMM: life regime per month -> income_chf, savings_rate, net_flow_chf)
-  -> cash_engine (starter-kit accounting, vectorised over paths)
-  -> metrics (fan quantiles, P(cash < reserve), P(goal met), months per regime)
-TwinSession wraps the pipeline per scenario; its methods are the LLM tools used by agent.py.
+
+This creates `game/backend/.venv`, installs dependencies, starts the engine on http://localhost:8000 (API docs at
+`/docs`) and opens the town at http://localhost:5173.
+
+Or start them by hand in two terminals:
+
+```bash
+# terminal 1: engine
+cd game/backend
+python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/uvicorn app.main:app --reload --port 8000
+
+# terminal 2: town
+cd game/client
+npm install
+npm run dev
 ```
 
-| Module | Role |
-|---|---|
-| `backend/twin/types.py` | `STATES`, `Profile`, `Intervention`, `RegimePaths` (interface contract) |
-| `backend/twin/regime_engine.py` | `RegimeEngine.simulate/filter`; working **stub** mode; real HMM functions marked `TODO` (`fit_emissions`, `forward_filter`, `sample_regime_paths`, `sample_emissions`) |
-| `backend/twin/transitions.py` + `backend/assumptions/transitions.csv` | Monthly hazards (sourced, editable assumptions) and Dirichlet uncertainty |
-| `backend/twin/income.py` + `backend/assumptions/income_assumptions.csv` | Absolute income by regime, age/experience, attributes (master's, abroad), unemployment insurance |
-| `backend/twin/net_pay.py` + `backend/assumptions/tax_assumptions.csv` | Gross pay to what lands in the account: AHV/IV/EO, ALV, accident insurance, BVG employee share by age, income tax (Vaud, `[EST]`). `income_chf` is net, `gross_income_chf` is gross. Switch: `apply_income_tax` |
-| `backend/twin/cash_engine.py` | `C_{t+1} = C_t + net_flow - one_offs`; no clamping of negative cash |
-| `backend/twin/metrics.py` | Risk and goal metrics |
-| `backend/twin/twin_session.py` | Scenarios, decisions, assumptions; tools: `get_state`, `create_scenario`, `apply_decision`, `set_assumption`, `simulate`, `compare`, `sensitivity`, `sample_paths` |
-| `backend/twin/agent.py` | Function-calling loop + tool schemas (key from `OPENAI_API_KEY`, never committed) |
-| `backend/twin/validation.py` | Starter-kit deterministic equivalence, transition/occupancy checks; emission fit and calibration backtest `TODO` |
+URL options: `?world=9` fixes the random world (for reproducible demos), and `?fresh` clears the saved game.
 
-Run:
+Controls: **WASD**/arrows or click to walk, **E**/Enter or click a building to enter, **P** for the phone,
+**T** to pin the life timeline, **Esc** to close.
+
+### Optional: the 💬 Ask companion (LLM)
+
+Create a `.env` file in the repo root (it is git-ignored) with one provider:
+
+```bash
+LLM_PROVIDER=gemini        # or groq, or ollama (local, no key)
+GEMINI_API_KEY=...         # or GROQ_API_KEY=...
+```
+
+Set `GAME_DISABLE_LLM=1` to turn it off completely.
+
+### The regime twin on its own
 
 ```bash
 pip install -r backend/requirements.txt
-python -m pytest backend -q        # smoke tests (stub pipeline end to end)
-python backend/run_demo.py         # Alexia: baseline vs start working / master's / move abroad
+python backend/run_demo.py              # Alexia: baseline vs start working / master's / move abroad
 ```
 
-All numbers in `backend/assumptions/*.csv` marked `PLACEHOLDER` must be replaced with cited values before the demo. Transition probabilities are assumptions, not learned: the synthetic data contains no regime switches.
+The `backend/run_alexia_*.py` scripts explore specific decisions (when to do a master's, breaks, where to
+live, first job, housing).
 
-## Regime engine
-
-A regime HMM (`backend/twin/regime_engine.py`) for one person, default Alexia `P00001`. Each month of each path is one of `employed`, `part_time`, `job_search`, `student`, `retired` (`STATES` in `backend/twin/types.py`). A decision is an `Intervention` on that chain. The engine returns monthly income and net flow. `backend/twin/cash_engine.py` keeps the balance: cash starts at opening cash and adds `net_flow_chf` each month, minus one-off costs. That net flow is income minus spending, so cash is savings after spending.
-
-From `backend/`, use this machine's interpreter:
+### Tests
 
 ```bash
-/opt/anaconda3/bin/python run_alexia_goal_hit.py
+cd game/backend && .venv/bin/pytest -q          # game engine (113 tests)
+game/backend/.venv/bin/python -m pytest backend -q   # regime twin (46 tests), run from the repo root
+cd game/client && npx tsc -b                    # client type-check
+cd game/client && npm run smoke                 # headless walk through the demo (needs both servers + Chrome)
 ```
 
-`run_alexia_goal_hit.py` builds the HMM, calls `RegimeEngine.simulate`, rolls cash with `twin.cash_engine.run`, and scores the goal with `goal_hit_rate` in `backend/twin/metrics.py`. The other `backend/run_alexia_*.py` scripts on this branch call the same `simulate`. `backend/run_demo.py` is the `TwinSession` printout.
+## Repo layout
 
-```python
-from twin import Intervention, RegimeEngine, fit_emissions, load_transition_priors
-
-engine = RegimeEngine(fit_emissions(), load_transition_priors())
-paths = engine.simulate(
-    profile,
-    horizon_months=60,          # default 60
-    n_paths=4000,               # default 5000
-    interventions=[
-        Intervention("force_state", 0, 24, state="student"),
-        Intervention("set_attribute", 24, attribute=("has_masters", True)),
-    ],
-    assumption_overrides={"scaled_spending": 1},
-    seed=0,
-)
+```
+.
+├── game/                              the playable demo
+│   ├── backend/                       FastAPI engine: app/ (engine, API, AI), learned/, peers/, tests/
+│   ├── client/                        React + Vite pixel-art town
+│   ├── start.sh                       one-command launcher
+│   ├── README.md                      full game documentation
+│   └── DEMO.md                        demo script
+├── backend/                           regime-switching HMM twin
+│   ├── twin/                          engine, transitions, income, net pay, cash engine, metrics, agent
+│   ├── assumptions/                   editable, sourced assumption CSVs
+│   └── run_*.py                       scenario scripts
+└── challenge-instructions-and-data/   organizer materials (PDF, docs, Data/, starter-kit/, faq/, ...)
 ```
 
-`simulate(profile, horizon_months=60, n_paths=5000, interventions=None, assumption_overrides=None, initial_belief=None, seed=0)` returns a `RegimePaths`: `states`, `income_chf`, `savings_rate`, `net_flow_chf`, `occupancy`, `transition_draws`, and, in hmm mode, `lump_chf` (zeros unless `scaled_spending` is on). `RegimeEngine(...)` runs in mode `"hmm"`. `RegimeEngine.stub()` is the deterministic mode.
+## Data and responsibility
 
-`Intervention.kind` is `force_state`, `set_attribute`, `scale_hazard`, or `parental_leave`. `force_state` pins `state` at `start_month`. With `duration`, those months stay pinned. When the pin ends inside the horizon, `student` and `job_search` take one further month of `employed`, and any other state takes one further month of the regime from just before the pin. With `duration` omitted, only `start_month` is pinned. `set_attribute` writes `attribute` `(name, value)` from `start_month` through the rest of the horizon. `("has_masters", True)` is the graduate wage. Pass `scaled_spending` in `assumption_overrides` (also the row in `backend/assumptions/expense_assumptions.csv`, default `0`). At `1`, `IncomeTable.scales_spending` is on (the flag counts as on at `0.5` or above) and the bill is the expense-priors housing and non-housing recipe, plus a December bonus in income units, minus the yearly lump shock. That recipe replaces `spend_ratio * rent`. At `0`, net flow is income minus `spend_ratio * rent`, plus the December bonus.
-
-`fit_emissions` learns a Student-t of `spend_ratio` (spend / rent) per regime on the training profiles. Household type shifts the location. Self-employed rows get their own Student-t and are used when the profile is self-employed and the state is `employed`. The December bonus is a separate empirical quantile draw from training Decembers. Transitions, income, and the consumption recipe are assumptions: monthly hazards in `backend/assumptions/transitions.csv` (the ledger has no regime switches), the income table in `backend/assumptions/income_assumptions.csv`, and the recipe in `backend/assumptions/expense_assumptions.csv`.
-
-`goal_hit_rate(cash, start, goal)` is the share of paths whose cash is at least the target in the goal's month. `cash` has shape `(n_paths, n_months)`, and a `CashPaths` is accepted. Month 0 is `start` (`"2025-01"` or a date). `goal` is one row of `Data/synthetic-goals.csv` (`target_amount_chf` and `target_date`; `amount` and `date` are accepted names) or an `(amount, date)` pair. The index is `(Y_goal - Y_start) * 12 + (M_goal - M_start)`, and the day is ignored. A month inside the horizon is used as-is (`evaluated_at` `"goal_month"`). A goal past the horizon is scored on the last month (`"last_simulated_month"`). A goal before `start` is scored on month 0 (`"before_start"`). `median_cross_month` is the first month from which the cross-sectional median stays at or above the target through the end, and it is null when the last median is still short. `median_cash_at_goal`, `p10_cash_at_goal`, and `p90_cash_at_goal` are the linear quantiles in that same month. `run_alexia_goal_hit.py` scores Alexia's Emergency savings row (12,800 CHF by 2029-12-31) on the master's-now path: student for 24 months, then `has_masters`, `scaled_spending` 1, 4,000 paths, 60 months from 2025-01, seed 0. The printed `hit_rate` is that share of simulated paths. The return carries `disclaimer`: simulated under the stated assumptions.
-
-This note is on `feature/hmm-decisions`. `main` was not updated.
+All profiles and transactions come from the organizers' synthetic dataset in
+`challenge-instructions-and-data/Data/`. We use no real personal data. The engine reports ranges under stated
+assumptions and never says which life is "best". The game always shows that it is a simulation and not advice.

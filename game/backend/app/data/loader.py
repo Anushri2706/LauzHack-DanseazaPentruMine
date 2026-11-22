@@ -14,7 +14,7 @@ from ..engine.catalogue import CANTON_PRICE_LEVEL, HOMES, home_price_key
 from ..engine.assumptions import (ALEXIA_DEFAULTS, COST_SHARE_BY_HOUSEHOLD, LIVING_BY_HOUSEHOLD,
                                   LIVING_SHARE_OF_INCOME)
 
-DATA_DIR = Path(__file__).resolve().parents[4] / "Data"
+DATA_DIR = Path(__file__).resolve().parents[4] / "challenge-instructions-and-data" / "Data"
 AS_OF = pd.Timestamp("2025-01-01")
 
 STATUS_MAP = {

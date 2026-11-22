@@ -27,7 +27,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-DATA = Path(__file__).resolve().parents[3] / "Data"
+DATA = Path(__file__).resolve().parents[3] / "challenge-instructions-and-data" / "Data"
 STATUSES = ("employed", "part_time", "self_employed", "student", "unemployed", "retired")
 HOUSEHOLDS = ("single", "couple", "family", "shared_housing")
 GROUPS = ("age", "income", "rent", "wealth", "household", "canton")

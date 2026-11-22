@@ -13,7 +13,7 @@ from app.engine.simulate import run_branch
 from app.engine.state import Decision
 from tests.conftest import PLAIN, make_params
 
-KIT = Path(__file__).resolve().parents[3] / "starter-kit"
+KIT = Path(__file__).resolve().parents[3] / "challenge-instructions-and-data" / "starter-kit"
 sys.path.insert(0, str(KIT))
 import financial_twin  # noqa: E402
 
