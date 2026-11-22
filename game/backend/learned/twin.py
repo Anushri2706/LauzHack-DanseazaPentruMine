@@ -54,7 +54,14 @@ def model_card() -> dict:
     return {"task": r["task"], "sizes": r["sizes"], "chosen_on_validation": r["chosen_on_validation"],
             "test": {m: {k: v[k] for k in keep} for m, v in r["test"].items()},
             "test_life_events_on": {m: {k: v[k] for k in keep} for m, v in r["test_life_events_on"].items()},
-            "learned": r["learned"]}
+            "learned": r["learned"],
+            "tried_from_combined_engine": {
+                k: {"mae_cash_end_chf": v["mae_cash_end_chf"], "range_hit_rate_p10_p90": v["range_hit_rate_p10_p90"],
+                    "validation_gain": v.get("validation_gain", 0.0), "adopted": v.get("adopted")}
+                for k, v in r.get("ablation_on_validation", {}).items()},
+            "gross_to_net": {"included": True, "why": "correctness: survey salaries are gross; also lowers the "
+                             "validation error with life events on",
+                             "validation_life_events_on": {"with": 5227, "without": 5373}}}
 
 
 def _q(a: np.ndarray, step: int) -> dict:

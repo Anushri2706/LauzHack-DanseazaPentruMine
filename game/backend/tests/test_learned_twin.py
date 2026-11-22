@@ -43,7 +43,7 @@ def test_backtest_learned_twin_beats_hmm_alone_and_persistence_on_the_locked_tes
     assert t["hmm+gmm+history"]["mae_cash_end_chf"] < t["hmm"]["mae_cash_end_chf"]
     assert t["hmm+gmm+history"]["mae_cash_end_chf"] < t["persistence"]["mae_cash_end_chf"]
     assert 0.7 <= t["hmm+gmm+history"]["range_hit_rate_p10_p90"] <= 0.9
-    assert set(rep["chosen_on_validation"]) == {"n_components", "kappa", "noise_scale"}
+    assert set(rep["chosen_on_validation"]) == {"n_components", "kappa", "noise_scale", "layers"}
     assert model_card()["sizes"] == {"train": 958, "validation": 121, "test": 121}
 
 
@@ -82,3 +82,24 @@ def test_companion_answers_from_engine_facts_and_only_proposes_allowed_actions()
     assert r["action"] is None or r["action"]["enabled"] is False   # not enrolled any more: not offered as doable
     r = client.post("/ai/ask", json={"request": req, "message": "How accurate is your model?"}).json()
     assert any("model.mae" in a["facts"] for a in r["answer"])
+
+
+def test_combined_engine_layers_are_judged_on_validation():
+    rep = json.loads((ART / "backtest.json").read_text())
+    abl = rep["ablation_on_validation"]
+    assert {"baseline", "keep 0.95", "inflation regimes", "major expenses"} <= set(abl)
+    for name, v in abl.items():
+        if name != "baseline":   # adopted only when it lowered the validation error
+            assert v["adopted"] == (v["validation_gain"] >= 0.005 and v["adopted"])
+    assert rep["chosen_on_validation"]["layers"] == rep["adopted_layers"]
+    tc = rep["tax_check_on_validation"]
+    assert set(tc) == {"with_gross_to_net", "without_gross_to_net"}
+
+
+def test_hmm_income_is_net_of_swiss_contributions_and_tax():
+    from learned.twin import hmm
+    from learned.hmm import profile_for
+    row = ledger().people.loc["P00001"]
+    p = profile_for(row, age=40, opening_cash=0, employment="employed", ref_income=8000, rent=1500)
+    paths = hmm().simulate(p, horizon_months=24, n_paths=20, seed=0)
+    assert (paths.gross_income_chf >= paths.income_chf - 1e-6).all() and (paths.gross_income_chf > paths.income_chf).any()

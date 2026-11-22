@@ -73,7 +73,7 @@ class Intervention:
 @dataclass
 class RegimePaths:
     states: np.ndarray           # [n_paths, T] int, index into STATES
-    income_chf: np.ndarray       # [n_paths, T] absolute monthly net income in CHF
+    income_chf: np.ndarray       # [n_paths, T] monthly NET income in CHF (what lands in the account)
     savings_rate: np.ndarray     # [n_paths, T] net flow / income_chf
     net_flow_chf: np.ndarray     # [n_paths, T] savings_rate * income_chf (one-offs are added downstream)
     occupancy: np.ndarray        # [T, K] simulated P(state_t = k); equals pi0 A^t when A is fixed and nothing is pinned
@@ -84,6 +84,7 @@ class RegimePaths:
     tuition_accrual_chf: np.ndarray | None = None  # [n_paths, T] loan principal booked that month
     # Extension. Investments are a running total of positive net flow, not a regime and not a mortgage.
     investments_chf: np.ndarray | None = None     # [n_paths, T] end-of-month investments total
+    gross_income_chf: np.ndarray | None = None  # [n_paths, T] pay before social contributions and tax
 
     @property
     def n_paths(self) -> int:

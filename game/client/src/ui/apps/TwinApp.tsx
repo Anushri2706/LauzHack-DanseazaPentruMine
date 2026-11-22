@@ -79,6 +79,19 @@ export function TwinApp({ st }: { st: GameState }) {
           <p className="tiny muted">Life states held as in the data (the synthetic people never change state: nobody retires
             or finds a job in two years). With the HMM's life events switched on the learned twin's error is
             {' '}{chf(c.test_life_events_on['hmm+gmm+history'].mae_cash_end_chf)}: events the data cannot reward.</p>
+          <details className="tiny"><summary>Tried from the combined engine (judged on validation)</summary>
+            <table className="cmp-table">
+              <thead><tr><th>Layer</th><th>Avg error</th><th>In range</th><th>Change</th><th>Kept?</th></tr></thead>
+              <tbody>{Object.entries(c.tried_from_combined_engine).map(([name, v]) => (
+                <tr key={name}><td>{name}</td><td>{chf(v.mae_cash_end_chf)}</td><td>{pct(v.range_hit_rate_p10_p90)}</td>
+                  <td>{name === 'baseline' ? '—' : `${v.validation_gain >= 0 ? '−' : '+'}${Math.abs(100 * v.validation_gain).toFixed(1)}% error`}</td>
+                  <td>{name === 'baseline' ? '—' : v.adopted ? '✅' : '❌'}</td></tr>))}
+                <tr><td>Gross → net pay (taxes, social contributions)</td><td colSpan={2}>life events on: {chf(c.gross_to_net.validation_life_events_on.without)} → {chf(c.gross_to_net.validation_life_events_on.with)}</td><td>−2.7% error</td><td>✅</td></tr>
+              </tbody>
+            </table>
+            <p>Keeping only part of each surplus, inflation regimes and random major expenses all made the predictions worse
+              on people the model never saw, so they are not used. Gross → net pay is used: the HMM's survey salaries are gross.</p>
+          </details>
           {learned && (
             <details className="tiny"><summary>What it learned</summary>
               <ul>

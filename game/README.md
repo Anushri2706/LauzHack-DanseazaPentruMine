@@ -95,6 +95,14 @@ people-like-you models (958 train / 121 validation / 121 test, by person, strati
 | HMM + GMM | CHF 2,714 | 74% |
 | **Learned twin (HMM + GMM + history)** | **CHF 2,654** | **77%** |
 
+**From `feature/combined-engine`, tried and judged on validation** (`ablation_on_validation` in `backtest.json`):
+keeping only part of each surplus (keep factor 0.98 / 0.95 / 0.90: error +10% / +33% / +90%), yearly inflation
+regimes (+3%) and random major expenses (+3%) all made predictions worse on unseen people, so they are **not used**.
+**Gross → net pay** (the teammates' fix `c8ae446`: AHV/IV/EO, ALV, accident insurance, BVG by age, estimated Vaud
+income tax) **is used**: the HMM's survey salaries are gross, and it lowers the validation error with life events on
+(CHF 5,373 → 5,227). It also brings the long run down: Alexia's typical savings at 65 fall from 3.9M to 3.2M and a
+master's adds 0.7M instead of 2.1M.
+
 Honest notes: the synthetic people never change state in two years, so the fair test holds each person in their
 state (with the HMM's life events on, the error is CHF 4,790: events the data cannot reward). In this synthetic data
 spending follows rent, not income (rent barely rises with income: elasticity 0.02), so long-run savings are very

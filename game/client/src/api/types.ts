@@ -222,9 +222,12 @@ export interface TwinFan {
   basis: string; note: string; inputs: Record<string, number | string | boolean | null>; model: ModelScore
 }
 export interface TwinModel {
-  task: string; sizes: Record<string, number>; chosen_on_validation: Record<string, number>
+  task: string; sizes: Record<string, number>
+  chosen_on_validation: { n_components: number; kappa: number; noise_scale: number; layers: Record<string, unknown> }
   test: Record<string, ModelScore>; test_life_events_on: Record<string, ModelScore>
   learned: Record<string, Record<string, number | number[]>>
+  tried_from_combined_engine: Record<string, { mae_cash_end_chf: number; range_hit_rate_p10_p90: number; validation_gain: number; adopted: boolean | null }>
+  gross_to_net: { included: boolean; why: string; validation_life_events_on: { with: number; without: number } }
 }
 export interface AskAction { type: string; id: string | null; value: number | null; label: string; enabled: boolean; reason: string | null; preview: string }
 export interface AskReply {

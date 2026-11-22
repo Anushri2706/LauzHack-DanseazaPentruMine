@@ -78,14 +78,17 @@ class Behaviour:
         return self
 
     # ------------------------------------------------------------------ pieces
-    def mean_flow(self, status: np.ndarray, income: np.ndarray, rent) -> np.ndarray:
+    def spending(self, status: np.ndarray, income: np.ndarray, rent) -> np.ndarray:
         out = np.empty(np.shape(income))
         X = _x(income, rent)
         for s in DATA_STATUSES:
             m = status == s
             if m.any():
-                out[m] = income[m] - self.spend[s].predict(X[m])
+                out[m] = self.spend[s].predict(X[m])
         return out
+
+    def mean_flow(self, status: np.ndarray, income: np.ndarray, rent) -> np.ndarray:
+        return income - self.spending(status, income, rent)
 
     def season(self, status: np.ndarray, month: np.ndarray, income: np.ndarray, rent) -> np.ndarray:
         out = np.zeros(np.shape(income))
@@ -118,14 +121,21 @@ class Behaviour:
     # ------------------------------------------------------------------ simulate
     def flows(self, states: np.ndarray, income: np.ndarray, rent, first_month: int, self_employed: bool,
               rng: np.random.Generator, offset: float = 0.0, home_state: int | None = None,
-              e_last: float = 0.0) -> np.ndarray:
+              e_last: float = 0.0, keep: float = 1.0, price: np.ndarray | None = None,
+              events: np.ndarray | None = None) -> np.ndarray:
         """Monthly flows [n, T] for HMM state paths and incomes (rent: scalar or [n, T]).
         `offset` applies while in `home_state`."""
         n, T = states.shape
         rent = np.broadcast_to(np.asarray(rent, dtype=float), (n, T))
         status = status_of_state(states, self_employed)
         months = ((first_month - 1 + np.arange(T)) % 12 + 1)[None, :].repeat(n, 0)
-        mean = self.mean_flow(status, income, rent) + self.season(status, months, income, rent)
+        # Optional layers from feature/combined-engine's wealth layer, each kept only if it helped on validation
+        # (learned/backtest.py): `price` scales learned spending (inflation regimes), `keep` keeps that share of
+        # surplus months, `events` are independent one-off costs.
+        spend = self.spending(status, income, rent)
+        if price is not None:
+            spend = spend * price
+        mean = income - spend + self.season(status, months, income, rent)
         if home_state is not None:
             mean = mean + np.where(states == home_state, offset, 0.0)
         sd = self.noise_sd(status, income)
@@ -136,4 +146,9 @@ class Behaviour:
         for t in range(T):
             prev = phi[:, t] * prev + sd[:, t] * np.sqrt(1 - phi[:, t] ** 2) * z[:, t]
             e[:, t] = prev
-        return mean + e
+        out = mean + e
+        if keep != 1.0:
+            out = np.where(out > 0, keep * out, out)
+        if events is not None:
+            out = out - events
+        return out

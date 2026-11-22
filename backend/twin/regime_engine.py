@@ -830,7 +830,8 @@ class RegimeEngine:
         overrides = dict(assumption_overrides or {})
         table = self.income_table.with_overrides(overrides)
         seqs = np.stack([np.full(T, k, dtype=int) for k in range(K)])
-        incomes = table.income_paths(seqs, profile, experience=False)  # [K, T]
+        table.income_paths(seqs, profile, experience=False)
+        incomes = table.net_income  # [K, T], net: the ledger flows are net
         rent = float(profile.rent) if profile.rent > 0 else float(table.params["employed_rent_chf"])
         ratios = ((incomes - flows[None, :]) / rent).T  # [T, K]
         month = (profile.start_month_of_year - 1 + np.arange(T)) % 12 + 1
@@ -924,7 +925,8 @@ class RegimeEngine:
 
     def _income_rent_level(self, state: str, profile: Profile) -> tuple[float, float]:
         seq = np.full((1, 1), STATE_INDEX[state], dtype=int)
-        inc = float(self.income_table.income_paths(seq, profile, experience=False)[0, 0])
+        self.income_table.income_paths(seq, profile, experience=False)
+        inc = float(self.income_table.net_income[0, 0])
         rent = float(self.income_table.rent_paths(seq, profile)[0, 0])
         return inc, rent
 
@@ -932,7 +934,8 @@ class RegimeEngine:
         seq = scheduled_states(profile, T, interventions, income_table.params["retirement_age"],
                                income_table.params)
         states = np.repeat(seq[None, :], n, axis=0)
-        income = np.repeat(income_table.income_paths(seq[None, :], profile, interventions), n, axis=0)
+        gross = np.repeat(income_table.income_paths(seq[None, :], profile, interventions), n, axis=0)
+        income = np.repeat(income_table.net_income, n, axis=0)
         rate_by_state = np.array([self.savings_rate_for(s, profile, overrides) for s in STATES])
         savings_rate = rate_by_state[states]
         occupancy = np.zeros((T, K))
@@ -951,6 +954,7 @@ class RegimeEngine:
             debt_chf=debt,
             tuition_accrual_chf=accrual,
             investments_chf=investments,
+            gross_income_chf=gross,
         )
 
     def _simulate_hmm(self, profile, T, n, interventions, overrides, initial_belief, seed, income_table) -> RegimePaths:
@@ -975,7 +979,8 @@ class RegimeEngine:
         # The replacement prior is the whole paycheck. Do not also draw a 13th salary.
         leave = parental_leave_mask(T, interventions, income_table.params)
         bonus_units[:, leave] = 0.0
-        income = income_table.income_paths(states, profile, interventions)
+        gross = income_table.income_paths(states, profile, interventions)
+        income = income_table.net_income  # what lands in the account; rent rules use gross
         lump = sample_yearly_lump(rng, n, T, income_table.params)
         if income_table.scales_spending():
             # The expense-priors recipe replaces spend_ratio x rent. Do not add both.
@@ -1002,7 +1007,7 @@ class RegimeEngine:
         occupancy = np.stack([(states == k).mean(axis=0) for k in range(K)], axis=1)
         debt, accrual = _tuition_debt_paths(profile, T, n, interventions, income_table.params, overrides)
         investments = _investment_total(net, _investment_rate(overrides))
-        return RegimePaths(states, income, savings, net, occupancy, A_draws, lump, debt, accrual, investments)
+        return RegimePaths(states, income, savings, net, occupancy, A_draws, lump, debt, accrual, investments, gross)
 
 
 def branch_decisions(

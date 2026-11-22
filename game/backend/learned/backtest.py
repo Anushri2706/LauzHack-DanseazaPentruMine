@@ -29,6 +29,7 @@ import numpy as np
 from .behaviour import Behaviour
 from .data import ledger
 from .hmm import STATE_INDEX, Intervention, engine, profile_for, run_cash
+from .market import major_expenses, price_level
 
 ART = Path(__file__).resolve().parent / "artifacts"
 N_PATHS = 400
@@ -57,7 +58,7 @@ def _summary(truth_end: np.ndarray, truth_path: np.ndarray, sims: list[np.ndarra
 class Case:
     """One person in the backtest: what is known (2025) and what happened (2026)."""
 
-    def __init__(self, L, i: int, eng, start: str = "known", life_events: bool = True):
+    def __init__(self, L, i: int, eng, start: str = "known", life_events: bool = True, overrides: dict | None = None):
         self.row = L.people.iloc[i]
         self.hist, self.future = L.flows[i, :H], L.flows[i, H:2 * H]
         self.cash12 = L.opening[i] + self.hist.sum()
@@ -75,8 +76,9 @@ class Case:
         # changes anyone's state (nobody retires at 65 or finds a job), so the fair test of the learned money
         # behaviour pins the state. life_events=True is how the game runs the chain.
         pins = [] if life_events else [Intervention("force_state", 0, H, state=prof.initial_state)]
+        self.seed = SEED + i
         self.paths = eng.simulate(prof, horizon_months=H, n_paths=N_PATHS, initial_belief=belief,
-                                  interventions=pins, seed=SEED + i)
+                                  interventions=pins, assumption_overrides=overrides, seed=SEED + i)
         self.hmm_cash = run_cash(prof, self.paths).cash
         self.home = STATE_INDEX[prof.initial_state]
 
@@ -84,16 +86,19 @@ class Case:
         m, s = self.hist.mean(), self.hist.std()
         return self.cash12 + np.cumsum(m + s * rng.standard_normal((N_PATHS, H)), 1)
 
-    def twin(self, beh: Behaviour, history: bool, rng) -> np.ndarray:
+    def twin(self, beh: Behaviour, history: bool, rng, opts: dict | None = None) -> np.ndarray:
+        opts = opts or {}
         offset, e_last = (beh.history_offset(self.row.status, self.row.income, self.row.rent, self.hist, self.months)
                           if history else (0.0, 0.0))
         f = beh.flows(self.paths.states, self.paths.income_chf, self.row.rent, first_month=1,
                       self_employed=self.row.status == "self_employed", rng=rng, offset=offset,
-                      home_state=self.home, e_last=e_last)
+                      home_state=self.home, e_last=e_last, keep=opts.get("keep", 1.0),
+                      price=price_level(N_PATHS, H, self.seed) if opts.get("inflation_regimes") else None,
+                      events=major_expenses(N_PATHS, H, self.seed) if opts.get("major_expenses") else None)
         return self.cash12 + np.cumsum(f, 1)
 
 
-def evaluate(cases: list[Case], model: str, beh: Behaviour | None = None) -> dict:
+def evaluate(cases: list[Case], model: str, beh: Behaviour | None = None, opts: dict | None = None) -> dict:
     rng = np.random.default_rng(SEED)
     sims = []
     for c in cases:
@@ -102,7 +107,7 @@ def evaluate(cases: list[Case], model: str, beh: Behaviour | None = None) -> dic
         elif model == "hmm":
             sims.append(c.hmm_cash)
         else:
-            sims.append(c.twin(beh, model == "hmm+gmm+history", rng))
+            sims.append(c.twin(beh, model == "hmm+gmm+history", rng, opts))
     truth_end = np.array([c.truth_path[-1] for c in cases])
     truth_path = np.array([c.truth_path for c in cases])
     return _summary(truth_end, truth_path, sims)
@@ -137,18 +142,49 @@ def main() -> None:
     beh = fitted[best["n_components"]]
     beh.kappa, beh.noise_scale = best["kappa"], best_noise["noise_scale"]
 
+    # ---- candidate layers from feature/combined-engine, each judged on VALIDATION against the baseline
+    TWIN = "hmm+gmm+history"
+    base = evaluate(val, TWIN, beh)
+    candidates = {"keep 0.98": {"keep": 0.98}, "keep 0.95": {"keep": 0.95}, "keep 0.90": {"keep": 0.90},
+                  "inflation regimes": {"inflation_regimes": True}, "major expenses": {"major_expenses": True}}
+    ablation = {"baseline": base}
+    adopted: dict = {}
+    for name, o in candidates.items():
+        r = evaluate(val, TWIN, beh, o)
+        gain = 1 - r["mae_cash_end_chf"] / base["mae_cash_end_chf"]
+        calib_ok = abs(r["range_hit_rate_p10_p90"] - 0.8) <= abs(base["range_hit_rate_p10_p90"] - 0.8) + 0.03
+        r["validation_gain"] = gain
+        r["adopted"] = bool(gain >= 0.005 and calib_ok and not (set(o) & set(adopted)))
+        if r["adopted"]:
+            adopted.update(o)
+        ablation[name] = r
+    if adopted:  # re-calibrate the noise with the adopted layers on
+        cand = []
+        for s_ in NOISE:
+            beh.noise_scale = s_
+            cand.append({"noise_scale": s_, **evaluate(val, TWIN, beh, adopted)})
+        pick = min(cand, key=lambda r: (abs(r["range_hit_rate_p10_p90"] - 0.8), r["mae_cash_end_chf"]))
+        beh.noise_scale = pick["noise_scale"]
+        best_noise = pick
+    # Gross -> net (feature/combined-engine c8ae446) is a correctness fix for the HMM's survey salaries; shown here
+    # for transparency (held-state incomes come from the data, already net).
+    val_no_tax = [Case(L, i, eng, life_events=False, overrides={"apply_income_tax": 0}) for i in va]
+    tax_check = {"with_gross_to_net": evaluate(val, TWIN, beh, adopted),
+                 "without_gross_to_net": evaluate(val_no_tax, TWIN, beh, adopted)}
+
     report = {"task": "known: 12 months of 2025; predicted: cash over the 12 months of 2026",
+              "ablation_on_validation": ablation, "adopted_layers": adopted, "tax_check_on_validation": tax_check,
               "sizes": {"train": len(tr), "validation": len(va), "test": len(te)},
               "chosen_on_validation": {"n_components": best["n_components"], "kappa": best["kappa"],
-                                       "noise_scale": best_noise["noise_scale"]},
-              "validation": {m: evaluate(val, m, beh) for m in MODELS},
+                                       "noise_scale": best_noise["noise_scale"], "layers": adopted},
+              "validation": {m: evaluate(val, m, beh, adopted) for m in MODELS},
               "grid_top5": grid[:5], "noise_grid": noise}
 
     # ---- the locked test people, once: states held (fair test) and life events on (as in the game)
     test_held = [Case(L, i, eng, life_events=False) for i in te]
     test_live = [Case(L, i, eng, life_events=True) for i in te]
-    report["test"] = {m: evaluate(test_held, m, beh) for m in MODELS}
-    report["test_life_events_on"] = {m: evaluate(test_live, m, beh) for m in MODELS}
+    report["test"] = {m: evaluate(test_held, m, beh, adopted) for m in MODELS}
+    report["test_life_events_on"] = {m: evaluate(test_live, m, beh, adopted) for m in MODELS}
     report["learned"] = {"phi": beh.phi, "noise_sd_alpha_beta": beh.sd_ab,
                          "december_income_share": {s: round(float(beh.season_a[s][12]), 3) for s in beh.season_a},
                          "february_rent_share": {s: round(float(beh.season_c[s][2]), 3) for s in beh.season_c},
@@ -157,6 +193,10 @@ def main() -> None:
     (ART / "backtest.json").write_text(json.dumps(report, indent=1, default=float))
     r = lambda d: {k: (round(v, 3) if isinstance(v, float) else v) for k, v in d.items()}  # noqa: E731
     print("chosen on validation:", report["chosen_on_validation"])
+    for name, v in ablation.items():
+        print(f"  ablation {name:18s} mae {v['mae_cash_end_chf']:8.0f}  range {v['range_hit_rate_p10_p90']:.3f}"
+              f"  gain {v.get('validation_gain', 0):+.3f}  adopted {v.get('adopted', '-')}")
+    print("  tax check:", {k: round(v["mae_cash_end_chf"]) for k, v in tax_check.items()})
     for part in ("validation", "test", "test_life_events_on"):
         for m, v in report[part].items():
             print(f"{part:20s} {m:18s}", r(v))
