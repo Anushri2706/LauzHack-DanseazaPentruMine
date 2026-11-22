@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { api } from '../../api/client'
 import type { GameState, Projection, Roll } from '../../api/types'
 import { actionLabel, colorOf, getStore, pathIds, requestFor, setStore, useStore, type Dim } from '../../store/game'
-import { chf, k, pct } from '../format'
+import { chf, EDU_LABEL, k, pct } from '../format'
 import { useProjection } from '../useGame'
 import { MoneyChart, type Metric } from './MoneyChart'
 
@@ -71,8 +71,11 @@ export function ScoreTiles({ st, proj }: { st: GameState; proj?: Projection }) {
         main={s.freedom.runway_months == null ? '—' : `${Math.max(0, Math.round(s.freedom.runway_months))} months`}
         sub={<>of costs covered by savings now{fs?.freedom.runway_months != null ? ` · ${Math.max(0, Math.round(fs.freedom.runway_months))} at ${endAge}` : ''}{s.freedom.debt_free ? ' · debt-free' : ''}</>} />
       <Tile dim="experience" title="🎓 Experience"
-        main={[s.experience.degree && "Master's", s.experience.studying && 'Studying', s.experience.months_abroad > 0 && `${(s.experience.months_abroad / 12).toFixed(1)}y abroad`].filter(Boolean).join(' · ') || '—'}
-        sub={`${s.experience.months_studying} months studying so far`} />
+        main={EDU_LABEL[s.experience.education]}
+        sub={[`${s.experience.months_studying} months studying so far`,
+          s.experience.months_abroad > 0 && `${(s.experience.months_abroad / 12).toFixed(1)} years abroad`,
+          fs && !proj?.ended && fs.experience.education !== s.experience.education && `${EDU_LABEL[fs.experience.education]} by ${endAge} if nothing changes`,
+        ].filter(Boolean).join(' · ')} />
       <Tile dim="joy" title="🌸 Joy (not money)" main={`${Math.round(s.joy.total)} pts`}
         sub={<>{fs && !proj?.ended ? `≈ ${Math.round(fs.joy.total)} by ${endAge} if nothing changes · ` : ''}🟡 a game preference score, not a measure of a good life</>} />
     </div>

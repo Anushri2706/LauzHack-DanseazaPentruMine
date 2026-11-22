@@ -75,3 +75,19 @@ def fast_replace(s: State, **changes) -> State:
     d.update(changes)
     object.__setattr__(n, "__dict__", d)
     return n
+
+
+EDUCATION = ("none", "bachelor_studying", "bachelor", "master_studying", "master")  # low → high
+
+
+def education(s: "State") -> str:
+    """Highest education reached, from the state. The game assumes a starting student is doing a
+    bachelor's and that anyone who starts work without dropping out holds one (salary_work is
+    the bachelor's salary); there is no PhD in this engine."""
+    if s.has_master:
+        return "master"
+    if s.program is not None:
+        return "master_studying"
+    if s.no_degree:
+        return "none"
+    return "bachelor_studying" if s.status == "studying" else "bachelor"

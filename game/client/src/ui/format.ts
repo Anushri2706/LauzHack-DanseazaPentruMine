@@ -1,3 +1,4 @@
+import type { Education } from '../api/types'
 export const chf = (x: number) => `CHF ${Math.round(x).toLocaleString('de-CH').replace(/’/g, "'")}`.replace('CHF -', 'CHF −')
 export const k = (x: number) => {
   const a = Math.abs(x)
@@ -24,3 +25,13 @@ export const STATUS_LABEL: Record<string, string> = {
   studying: 'Studying', working: 'Working', abroad: 'Abroad', unemployed: 'Between jobs', retired: 'Retired',
   student: 'Student', employed: 'Employed', part_time: 'Part-time', self_employed: 'Self-employed',
 }
+
+/** Highest education reached. No PhD in this engine. */
+export const EDU_LABEL: Record<Education, string> = {
+  none: 'No degree', bachelor_studying: "Bachelor's (studying)", bachelor: "Bachelor's",
+  master_studying: "Master's (studying)", master: "Master's",
+}
+export const EDU_SHORT: Record<Education, string> = {
+  none: 'No degree', bachelor_studying: 'BSc 📚', bachelor: 'BSc', master_studying: 'MSc 📚', master: 'MSc 🎓',
+}
+export const EDU_RANK: Record<Education, number> = { none: 0, bachelor_studying: 1, bachelor: 2, master_studying: 3, master: 4 }

@@ -6,7 +6,7 @@ import { continueReality, goBack } from '../../store/actions'
 import {
   colorOf, pathIds, realities, realityName, requestFor, setStore, useStore, type Dim, type Store,
 } from '../../store/game'
-import { chf, k, monthLabel } from '../format'
+import { chf, EDU_RANK, k, monthLabel } from '../format'
 import { SCORE_META } from '../HudBar'
 
 /** The reality tree over age (adapted from the old Multiverse map; nodes are months with choices). */
@@ -86,7 +86,7 @@ function lean(dim: Dim, a: FinalScores, b: FinalScores): number {
     case 'safety': return (a.safety.months_negative_cash - b.safety.months_negative_cash) * 100 + (a.safety.months_below_buffer - b.safety.months_below_buffer)
     case 'goals': return b.goals.met - a.goals.met
     case 'freedom': return (b.freedom.runway_months ?? 0) - (a.freedom.runway_months ?? 0)
-    case 'experience': return (Number(b.experience.degree) - Number(a.experience.degree)) * 100 + (b.experience.months_abroad - a.experience.months_abroad)
+    case 'experience': return (EDU_RANK[b.experience.education] - EDU_RANK[a.experience.education]) * 100 + (b.experience.months_abroad - a.experience.months_abroad)
     case 'joy': return b.joy.total - a.joy.total
   }
 }

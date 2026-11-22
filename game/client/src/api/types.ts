@@ -35,6 +35,7 @@ export interface PersonaCard {
   goals: Goal[]
 }
 
+export type Education = 'none' | 'bachelor_studying' | 'bachelor' | 'master_studying' | 'master'
 export interface ActionIn { type: string; id?: string | null; value?: number | null }
 export interface TurnIn { month: number; actions: ActionIn[] }
 
@@ -100,7 +101,7 @@ export interface ScoresNow {
   safety: { level: 'steady' | 'tight' | 'shortfall'; months_below_buffer: number; months_negative_cash: number; recovered: boolean }
   goals: { met: number; due: number; total: number }
   freedom: { runway_months: number | null; debt_free: boolean }
-  experience: { degree: boolean; studying: boolean; months_abroad: number; months_studying: number }
+  experience: { degree: boolean; studying: boolean; education: Education; months_abroad: number; months_studying: number }
   joy: { total: number }
 }
 
@@ -151,7 +152,7 @@ export interface FinalScores {
   safety: { level: 'steady' | 'tight' | 'shortfall'; months_below_buffer: number; months_negative_cash: number; min_cash: number; recovered: boolean }
   goals: { met: number; total: number; beyond_horizon: number }
   freedom: { runway_months: number | null; debt_free: boolean }
-  experience: { degree: boolean; months_abroad: number; months_studying: number }
+  experience: { degree: boolean; education: Education; months_abroad: number; months_studying: number }
   joy: { total: number }
 }
 export interface Projection {

@@ -1,6 +1,8 @@
 """Summary metrics and goal checks computed from a branch's monthly rows."""
 import numpy as np
 
+from .state import education
+
 
 def summarize(rows: list[dict]) -> dict:
     last = rows[-1]
@@ -99,7 +101,8 @@ def scores(rows: list[dict], goals_checked: list[dict], points: list[dict]) -> d
     else:
         safety = "steady"
     counted = [g for g in goals_checked if g["status"] != "beyond_horizon"]
-    degree = any("degree_finished" in p["reasons"] for p in points)
+    edu = last.get("education", "bachelor")
+    degree = edu == "master" or any("degree_finished" in p["reasons"] for p in points)
     return {
         "wealth": {"net_worth": last["net_worth"], "cash": last["cash"], "investments": last["investments"],
                    "debt": last["debt"]},
@@ -109,7 +112,7 @@ def scores(rows: list[dict], goals_checked: list[dict], points: list[dict]) -> d
         "goals": {"met": sum(g["status"] == "met" for g in counted), "total": len(counted),
                   "beyond_horizon": len(goals_checked) - len(counted)},
         "freedom": {"runway_months": runway, "debt_free": last["debt"] <= 0},
-        "experience": {"degree": degree, "months_abroad": m["months_abroad"],
+        "experience": {"degree": degree, "education": edu, "months_abroad": m["months_abroad"],
                        "months_studying": m["months_studying"]},
         "joy": {"total": m["total_joy"]},
     }
@@ -136,6 +139,7 @@ def scores_now(rows: list[dict], goals_checked: list[dict], state, current: int)
         "freedom": {"runway_months": (liquid / last_costs) if last_costs else None,
                     "debt_free": state.debt <= 0 and state.mortgage <= 0},
         "experience": {"degree": state.has_master, "studying": state.program is not None,
+                       "education": education(state),
                        "months_abroad": sum(1 for r in rows if r["status"] == "abroad"),
                        "months_studying": sum(1 for r in rows if r["status"] == "studying")},
         "joy": {"total": sum(r["joy"] for r in rows)},

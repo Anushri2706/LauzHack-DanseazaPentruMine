@@ -21,7 +21,7 @@ from .assumptions import validate_params
 from .decisions import (InvalidDecision, apply_decision, complete_programs, decision_reasons,
                         default_decision, options)
 from .finance import annuity_payment, inflation_factor, monthly_compound_rate
-from .state import Decision, State, fast_replace
+from .state import Decision, State, education, fast_replace
 
 CONSUMPTION_KINDS = ("purchase", "trip")
 
@@ -146,7 +146,7 @@ def step_month(s: State, p: dict, ret_month: float | None = None, income_mult: f
                   mortgage=mortgage, home_value=home_value)
     joy = month_joy(s, due, p)
     row = {
-        "t": t, "age": round(s.age, 4), "status": s.status, "program": s.program,
+        "t": t, "age": round(s.age, 4), "status": s.status, "program": s.program, "education": education(s),
         "income": income, "expenses": expenses, "one_offs": one_offs,
         "one_off_labels": [o.label for o in due],
         "interest": interest, "principal": principal, "debt_payment": payment,

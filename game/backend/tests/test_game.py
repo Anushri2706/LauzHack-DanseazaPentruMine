@@ -392,7 +392,8 @@ def test_recovered_dip_is_not_a_lasting_shortfall():
     from app.engine.metrics import scores, scores_now
     rows = [_row(0, -500), _row(1, -200), _row(2, 3000)]   # in the red while studying, then recovered
     now = scores_now(rows, [], SimpleNamespace(cash=3000, investments=0, home_value=0, debt=0, mortgage=0,
-                                               has_master=False, program=None), 3)["safety"]
+                                               has_master=False, program=None, no_degree=False,
+                                               status="working"), 3)["safety"]
     assert now["level"] == "steady" and now["recovered"] and now["months_negative_cash"] == 2
     full = scores(rows, [], [])["safety"]
     assert full["level"] == "tight" and full["recovered"]
@@ -415,3 +416,16 @@ def test_projection_reports_forward_risk():
     out = game_projection(GameProjectionRequest(turns=[], current_month=0, n=20))
     assert 0 <= out["risk"]["below_zero_12m"] <= out["risk"]["below_zero_ahead"] <= 1
     assert out["share_worlds_shortfall"] == out["risk"]["below_zero_ahead"]
+
+
+# ----------------------------------------------------------------------------- education level
+def test_education_level_follows_the_path(plain):
+    from app.engine.state import education
+    assert education(state_at(plain, [], 0)) == "bachelor_studying"
+    assert education(state_at(plain, [T(0, WORK)], 0)) == "bachelor"
+    assert education(state_at(plain, [T(0, A("life_choice", "quit_school"))], 0)) == "none"
+    rows = run_turns(plain, [T(0, A("life_choice", "master_ft"))]).rows
+    assert rows[0]["education"] == "master_studying" and rows[-1]["education"] == "master"
+    from app.engine.metrics import scores
+    exp = scores(rows, [], [])["experience"]
+    assert exp["education"] == "master" and exp["degree"]          # no decision points needed any more
