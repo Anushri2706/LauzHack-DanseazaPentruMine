@@ -42,8 +42,8 @@ def fmt(f: dict) -> str:
         return _chf(v) + "/month"
     if u == "share":
         return f"{100 * v:.0f}%"
-    if u == "months":
-        return f"{v:.0f} months"
+    if u == "months":  # long spans read better in years
+        return f"{v / 12:.0f} years" if v >= 24 else f"{v:.0f} months"
     if u == "age":
         return f"{v:.0f}"
     return str(v)
@@ -111,7 +111,7 @@ def build_facts(st: dict, proj: dict | None, twin: dict | None, card: dict | Non
         _f(facts, "model.mae_hmm", "HMM alone backtest: average error", t["hmm"]["mae_cash_end_chf"], "chf", M)
         _f(facts, "model.mae_persist", "'keep your past average' backtest: average error",
            t["persistence"]["mae_cash_end_chf"], "chf", M)
-        _f(facts, "model.coverage", "learned twin backtest: true value inside the 80% CI (P10–P90)",
+        _f(facts, "model.coverage", "learned twin backtest: true value inside the likely range (where 8 in 10 lives land)",
            t["hmm+gmm+history"]["range_hit_rate_p10_p90"], "share", M)
         _f(facts, "model.n_test", "locked test people", t["hmm+gmm+history"]["n"], "count", M)
     return facts

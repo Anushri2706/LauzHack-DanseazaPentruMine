@@ -59,7 +59,7 @@ export function MoneyChart({ proj, startAge, opening, metric, color, showBand, s
           contentStyle={{ background: '#fff6e9', border: '2px solid #4a4063', borderRadius: 0, fontFamily: 'inherit' }}
           labelFormatter={(a) => `Age ${Number(a).toFixed(1)}`}
           formatter={(v, name) => (Array.isArray(v)
-            ? [`${chf(Number(v[0]))} – ${chf(Number(v[1]))}`, '80% CI under our assumptions (P10–P90)']
+            ? [`${chf(Number(v[0]))} – ${chf(Number(v[1]))}`, 'likely range: 8 in 10 simulated lives, under our assumptions']
             : [chf(Number(v)), String(name)])}
         />
         {m < H && (

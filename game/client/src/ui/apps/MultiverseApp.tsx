@@ -8,6 +8,7 @@ import {
 } from '../../store/game'
 import { chf, EDU_RANK, k, monthLabel } from '../format'
 import { SCORE_META } from '../HudBar'
+import { StoryBox } from '../StoryBox'
 
 /** The reality tree over age (adapted from the old Multiverse map; nodes are months with choices). */
 function Tree({ s, horizon, startAge, selected, onSelect }: {
@@ -120,7 +121,7 @@ function Compare({ s, a, b }: { s: Store; a: string; b: string }) {
           <table className="cmp-table">
             <thead><tr><th /><th style={{ color: ca }}>A</th><th style={{ color: cb }}>B</th></tr></thead>
             <tbody>
-              <tr><td>🔵 Net worth at {d.at_age != null ? Math.round(d.at_age) : 'the end'}, 80% CI (P10–P90)</td>
+              <tr><td>🔵 Net worth at {d.at_age != null ? Math.round(d.at_age) : 'the end'} (likely range, 8 in 10 lives)</td>
                 <td>{d.ranges.a ? `${k(d.ranges.a.p10)} – ${k(d.ranges.a.p90)}` : '—'}</td>
                 <td>{d.ranges.b ? `${k(d.ranges.b.p10)} – ${k(d.ranges.b.p90)}` : '—'}</td></tr>
               {d.table.map((r) => {
@@ -136,6 +137,7 @@ function Compare({ s, a, b }: { s: Store; a: string; b: string }) {
               })}
             </tbody>
           </table>
+          <StoryBox story={d.story} />
           <h4>Why they differ</h4>
           <ul className="explain">{d.explanation.map((e, i) => <li key={i}>{e}</li>)}</ul>
           <h4>Fit with what matters to you</h4>

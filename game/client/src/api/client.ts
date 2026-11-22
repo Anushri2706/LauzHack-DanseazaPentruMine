@@ -1,6 +1,6 @@
 import type {
   AssumptionRow, Catalogue, Check, CompareResult, GameRequest, GameState, PersonaCard, Projection,
-  Roll, Sensitivity, TwinFan, TwinModel, AskReply,
+  Roll, Sensitivity, TwinFan, TwinModel, AskReply, Story, TimelineInsights,
 } from './types'
 
 const BASE = '/api'
@@ -51,5 +51,8 @@ export const api = {
   validation: () => call<Check[]>('GET', '/validation'),
   twinFan: (req: GameRequest, n = 60) => call<TwinFan>('POST', '/twin/fan', { ...req, n }),
   twinModel: () => call<TwinModel>('GET', '/twin/model'),
+  outcome: (req: GameRequest, n = 60) => call<Story>('POST', '/ai/outcome', { ...req, n }),
+  twinStory: (req: GameRequest, n = 60) => call<Story>('POST', '/ai/twin', { ...req, n }),
+  timeline: (req: GameRequest, n = 60) => call<TimelineInsights>('POST', '/ai/timeline', { ...req, n }),
   ask: (request: GameRequest, message: string) => call<AskReply>('POST', '/ai/ask', { request, message }),
 }

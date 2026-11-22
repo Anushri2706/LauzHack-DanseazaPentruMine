@@ -3,6 +3,7 @@ import { realityName, setStore, useStore } from '../store/game'
 import { ScoreTiles } from './apps/MoneyApp'
 import { useProjection } from './useGame'
 import { Avatar } from './Sprite'
+import { StoryBox } from './StoryBox'
 
 /** Postcard at the end of the horizon: this reality's six scores, honestly framed. */
 export function EndScreen({ st }: { st: GameState }) {
@@ -20,6 +21,7 @@ export function EndScreen({ st }: { st: GameState }) {
             <p className="small" style={{ margin: 0 }}>{st.persona.name} lived a whole life, to age {st.age_years}, of “<b>{realityName(s, s.cursor)}</b>” in world #{st.world}.</p>
           </div>
         </div>
+        <StoryBox story={proj.data?.story} style={{ marginBottom: 10 }} />
         <ScoreTiles st={st} proj={proj.data} />
         <p className="note small" style={{ marginTop: 14 }}>This is <b>one of many possible futures</b>: a simulation under stated assumptions, not a prediction or advice.
           A higher net worth is not a better life. What would a different choice have changed?</p>

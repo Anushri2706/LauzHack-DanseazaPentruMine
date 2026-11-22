@@ -4,6 +4,7 @@ import type { GameState, Projection, Roll } from '../../api/types'
 import { actionLabel, colorOf, getStore, pathIds, requestFor, setStore, useStore, type Dim } from '../../store/game'
 import { chf, EDU_LABEL, k, pct } from '../format'
 import { useDeflate, useProjection } from '../useGame'
+import { ExplainOutcome } from '../StoryBox'
 import { MoneyChart, type Metric } from './MoneyChart'
 
 /** P10–P90 range bar with a P50 tick (from the old Hud). */
@@ -11,7 +12,7 @@ function RangeBar({ lo, mid, hi }: { lo: number; mid: number; hi: number }) {
   const min = Math.min(0, lo), max = Math.max(hi * 1.1, 1)
   const x = (v: number) => `${((v - min) / (max - min)) * 100}%`
   return (
-    <div className="rangebar" title="80% CI under our assumptions (P10–P90 of simulated worlds)">
+    <div className="rangebar" title="8 in 10 simulated lives land inside this range, under our assumptions">
       <div className="rangebar-fill" style={{ left: x(lo), width: `calc(${x(hi)} - ${x(lo)})` }} />
       <div className="rangebar-tick" style={{ left: x(mid) }} />
     </div>
@@ -64,7 +65,7 @@ export function ScoreTiles({ st, proj }: { st: GameState; proj?: Projection }) {
         main={head ? <>≈ {k(D(head.p10, headM))} – {k(D(head.p90, headM))}</> : k(D(s.money.net_worth, st.month))}
         sub={proj?.ended
           ? <>🔵 lived: {k(D(s.money.net_worth, st.month))} · range = same choices in {proj.n} worlds (other luck)</>
-          : <>🔵 net worth · middle {head ? k(D(head.p50, headM)) : '…'} · now {k(D(s.money.net_worth, st.month))} · 80% CI over {proj?.n ?? '…'} worlds
+          : <>🔵 net worth · middle {head ? k(D(head.p50, headM)) : '…'} · now {k(D(s.money.net_worth, st.month))} · likely range over {proj?.n ?? '…'} worlds
             {at65 && f && <><br />at {endAge}: {k(D(f.p10, H))} – {k(D(f.p90, H))} (no mortality model: "if you live that long")</>}</>}>
         {head && <RangeBar lo={D(head.p10, headM)} mid={D(head.p50, headM)} hi={D(head.p90, headM)} />}
       </Tile>
@@ -127,10 +128,11 @@ export function MoneyApp({ st }: { st: GameState }) {
         {s.real ? <> Amounts in <b>today's francs</b> (Jan 2025 prices, engine price index).</> : <> Amounts in nominal francs.</>}{' '}
         <button className="link" onClick={() => setStore({ real: !s.real })}>💱 switch to {s.real ? 'nominal' : "today's"} CHF</button></p>
       <ScoreTiles st={st} proj={p} />
+      <ExplainOutcome />
       <div className="chart-tools">
         <button className={`chip ${metric === 'net_worth' ? 'on' : ''}`} onClick={() => setMetric('net_worth')}>Net worth</button>
         <button className={`chip ${metric === 'cash' ? 'on' : ''}`} onClick={() => setMetric('cash')}>Cash</button>
-        <label><input type="checkbox" checked={band} onChange={(e) => setBand(e.target.checked)} /> 80% CI (P10–P90)</label>
+        <label><input type="checkbox" checked={band} onChange={(e) => setBand(e.target.checked)} /> Likely range (8 in 10 lives)</label>
         <label><input type="checkbox" checked={ghosts} onChange={(e) => setGhosts(e.target.checked)} /> Stress tests</label>
         <button className="btn" onClick={() => void doRoll()} disabled={!p || st.ended}>🎲 Roll another world</button>
         {proj.loading && <span className="tiny muted">computing worlds…</span>}

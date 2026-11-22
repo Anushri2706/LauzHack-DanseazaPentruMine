@@ -2,14 +2,15 @@
 //
 // Left of the playhead is the life you lived: your net worth and, below it, your life status every month
 // (working / reduced hours / between jobs / studying / retired) in your world.
-// Right of the playhead is what the simulated worlds fan out from where you are now: the P10–P90 net-worth
+// Right of the playhead is what the simulated worlds fan out from where you are now: the likely range (8 in 10 lives) of net-worth
 // band over many simulated lives and, per month, the share of lives in each status.
 // Your choices sit on the timeline as markers. Click or drag anywhere to move through time; click a
 // marker to go back to it or to undo it. Later choices stay ahead as plans until you choose differently.
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { GameState, Regime } from '../api/types'
+import { api } from '../api/client'
+import type { GameState, Regime, TimelineInsights } from '../api/types'
 import { travelTo, undoChoice, unqueue } from '../store/actions'
-import { actionIcon, actionLabel, colorOf, pathIds, setStore, tipOf, useStore } from '../store/game'
+import { actionIcon, actionLabel, colorOf, getStore, pathIds, requestFor, setStore, tipOf, useStore } from '../store/game'
 import { chf, k, monthLabel, pct } from './format'
 import { useDeflate, useProjection, useTwin } from './useGame'
 
@@ -58,6 +59,33 @@ export function Timeline({ st }: { st: GameState }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
   const area = useRef<HTMLDivElement>(null)
+
+  // AI insights pinned to moments on this timeline. They are part of the workflow: whenever your life changes (a
+  // choice, another month) and settles for a moment, the AI reads the engines' numbers and explains the key moments.
+  // The code picks the moments; results are remembered per situation, so going back to one costs nothing.
+  const reqKey = JSON.stringify(requestFor(s, undefined, false))
+  const [ai, setAi] = useState<{ key: string; data?: TimelineInsights; busy: boolean; error?: string } | null>(null)
+  const seen = useRef(new Map<string, TimelineInsights>())
+  const explain = async (force = false) => {
+    const req = requestFor(getStore(), undefined, false)
+    const key = JSON.stringify(req)
+    const hit = !force && seen.current.get(key)
+    if (hit) { setAi({ key, data: hit, busy: false }); return }
+    setAi((x) => ({ key, data: x?.data, busy: true }))
+    try {
+      const data = await api.timeline(req)
+      seen.current.set(key, data)
+      setAi({ key, data, busy: false })
+    } catch (e) { setAi((x) => ({ key, data: x?.data, busy: false, error: (e as Error).message })) }
+  }
+  useEffect(() => {
+    if (busy) return
+    const t = setTimeout(() => void explain(), 1200)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reqKey, busy])
+  const aiData = ai?.data
+  const aiStale = !!aiData && ai?.key !== reqKey
 
   const p = proj.data && proj.data.month === m && !proj.data.ended ? proj.data : null
   // The future right of 📍 comes from one of two engines:
@@ -176,7 +204,7 @@ export function Timeline({ st }: { st: GameState }) {
     const i = Math.max(0, Math.min(Math.floor((t - m - 1) / fut.step), b.p50.length - 1))
     const regs = ORDER.map((r) => [r, fut.shares[r][i]] as const).filter(([, v]) => v >= 0.01)
       .sort((a, c) => c[1] - a[1]).map(([r, v]) => `${REGIME_META[r].label} ${pct(v)}`)
-    return { head, lines: [`Median ${metricName.toLowerCase()} ${k(b.p50[i])} (80% CI, P10–P90: ${k(b.p10[i])} to ${k(b.p90[i])})`,
+    return { head, lines: [`Typical ${metricName.toLowerCase()}: ${k(b.p50[i])} · 8 in 10 simulated lives land between ${k(b.p10[i])} and ${k(b.p90[i])}`,
       `Of ${fut.n} simulated lives (${view === 'twin' ? 'learned twin' : 'town engine'}): ${regs.join(' · ')}`] }
   }
 
@@ -212,6 +240,10 @@ export function Timeline({ st }: { st: GameState }) {
         <span className="tl-now">
           {busy ? '⏳ Living…' : <>📍 <b>{st.date.label}</b> · age {st.age_years} · {REGIME_META[(st.rows[m - 1]?.regime ?? (st.state.status === 'studying' ? 'student' : st.state.status === 'retired' ? 'retired' : 'employed')) as Regime].label}</>}
         </span>
+        <button className="chip tiny tl-explain" disabled={busy || ai?.busy} onClick={() => void explain(true)}
+          title="The AI explains the key moments automatically; press to have it read the timeline again">
+          {ai?.busy ? '✨ Reading…' : '✨ Re-read'}
+        </button>
         {s.queue.length > 0 && <span className="tl-plans">🗓️ {s.queue.length} plan{s.queue.length > 1 ? 's' : ''} this month · they happen as you move forward</span>}
         <span className="tl-legend">
           {ORDER.map((r) => <span key={r}><i style={{ background: REGIME_META[r].color }} />{REGIME_META[r].label}</span>)}
@@ -224,7 +256,7 @@ export function Timeline({ st }: { st: GameState }) {
           <button className={`chip tiny ${s.real ? 'on' : ''}`} onClick={() => setStore({ real: !s.real })}
             title={`Amounts in today's (Jan 2025) francs: each value is divided by the engine's price index (inflation ${pct(st.inflation_annual)}/year). Off = nominal francs of that year.`}>
             💱 {s.real ? "today's CHF" : 'nominal CHF'}</button>
-          <span className="muted" title={fut && fut.n < 200 ? 'Few simulated lives keep the whole-life fan fast; its P10–P90 edges are rough. The Money app uses more worlds.' : undefined}>
+          <span className="muted" title={fut && fut.n < 200 ? 'Few simulated lives keep the whole-life fan fast; the edges of its likely range are rough. The Money app uses more worlds.' : undefined}>
             {fut ? `${fut.n} lives${fut.n < 200 ? ' (rough band)' : ''} · ${metricName.toLowerCase()}` : loading ? 'simulating…' : ''}</span>
         </span>
       </div>
@@ -253,6 +285,15 @@ export function Timeline({ st }: { st: GameState }) {
           <span key={i} className="tl-event" style={{ left: `${(l.month / H) * 100}%`, top: `calc(${(STRIP_TOP / SVG_H) * 100}% - 15px)` }} title={`${l.title} (age ${Math.floor(ageAt(l.month))}): ${l.text}`}
             onPointerDown={(e) => e.stopPropagation()}>{l.icon}</span>
         ))}
+        {aiData?.insights.map((x, _i, all) => {
+          const same = all.filter((y) => y.month === x.month)  // moments at the same age sit side by side
+          const off = (same.indexOf(x) - (same.length - 1) / 2) * 20
+          return (
+          <button key={x.id} className={`tl-insight ${aiStale ? 'stale' : ''} ${open === 'ins:' + x.id ? 'open' : ''}`}
+            style={{ left: `calc(${(x.month / H) * 100}% + ${off}px)` }} onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => setOpen(open === 'ins:' + x.id ? null : 'ins:' + x.id)} title={`${x.title}: ${x.text}`}>✨</button>
+          )
+        })}
         {markers.map((n) => {
           const t = n.turn!
           const future = t.month >= m
@@ -276,13 +317,37 @@ export function Timeline({ st }: { st: GameState }) {
             {drag && <div className="muted">Release to {shown > m ? 'live until here' : shown < m ? 'go back here' : 'stay'}</div>}
           </div>
         )}
-        {open && (
+        {open?.startsWith('ins:') && aiData && (() => {
+          const x = aiData.insights.find((i) => i.id === open.slice(4))
+          return x ? (
+            <div className="tl-pop px-box" style={{ left: `${Math.min(62, Math.max(0, (x.month / H) * 100 - 8))}%`, width: 300 }}
+              onPointerDown={(e) => e.stopPropagation()}>
+              <header><b>✨ Age {x.age} · {x.title}</b><button className="icon-btn" onClick={() => setOpen(null)}>✕</button></header>
+              <p className="small" style={{ margin: '4px 0' }}>{x.text}</p>
+              <p className="tiny muted">{x.by === 'llm' ? 'Written by the AI companion' : 'Told from the engine’s numbers'} · {aiData.disclaimer}</p>
+            </div>
+          ) : null
+        })()}
+        {open && !open.startsWith('ins:') && (
           <ChoicePopover id={open} st={st} startAge={startAge} H={H} onClose={() => setOpen(null)} />
         )}
       </div>
       <div className="tl-axis">
         {decades.map((a) => <span key={a} style={{ left: `${(((a - startAge) * 12) / H) * 100}%` }}>{a}</span>)}
       </div>
+      {ai?.error && <p className="tiny error">{ai.error}</p>}
+      {aiData && (
+        <div className={`tl-ai ${aiStale ? 'stale' : ''}`}>
+          <p className="tl-ai-head"><b>✨ {aiData.headline}</b>{aiStale && <span className="muted"> · from an earlier month: refresh to update</span>}</p>
+          <div className="tl-ai-cards">
+            {aiData.insights.map((x) => (
+              <button key={x.id} className={`tl-ai-card ${open === 'ins:' + x.id ? 'open' : ''}`} onClick={() => setOpen(open === 'ins:' + x.id ? null : 'ins:' + x.id)}>
+                <span className="tl-ai-age">Age {x.age}</span><b>{x.title}</b><span className="small">{x.text}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
     </div>
   )

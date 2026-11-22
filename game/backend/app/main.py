@@ -78,7 +78,8 @@ def branch_world(req: WorldRequest) -> dict:
 
 @app.post("/compare")
 def compare(req: CompareRequest) -> dict:
-    return _guard(service.compare_branches, req)
+    from .ai.outcome import with_compare_story
+    return _guard(lambda: with_compare_story(service.compare_branches(req), req))
 
 
 @app.post("/game/state")
@@ -99,6 +100,34 @@ def ai_ask(req: AskRequest) -> dict:
     return _guard(lambda: respond(req.message, req.request))
 
 
+@app.post("/ai/outcome")
+def ai_outcome(req: GameProjectionRequest) -> dict:
+    """One reality as a short plain-language story (LLM-written, guarded, rule fallback)."""
+    from .ai.outcome import outcome_story
+    return _guard(outcome_story, req)
+
+
+@app.post("/ai/compare")
+def ai_compare(req: CompareRequest) -> dict:
+    """Two realities side by side in plain language (same guard and fallback as /ai/outcome)."""
+    from .ai.outcome import compare_story
+    return _guard(compare_story, req)
+
+
+@app.post("/ai/timeline")
+def ai_timeline(req: GameProjectionRequest) -> dict:
+    """Insights pinned to moments on the life timeline: the code picks the moments, the AI explains them."""
+    from .ai.timeline import cached
+    return _guard(cached, req.model_dump_json())
+
+
+@app.post("/ai/twin")
+def ai_twin(req: GameProjectionRequest) -> dict:
+    """The learned twin in plain words, and why it can differ from your own timeline (AI-written, guarded, rule fallback)."""
+    from .ai.twin import cached
+    return _guard(cached, req.model_dump_json())
+
+
 @app.post("/twin/fan")
 def twin_fan(req: GameProjectionRequest) -> dict:
     """The learned twin from the player's state now: HMM life states x money behaviour learned from data."""
@@ -114,7 +143,8 @@ def twin_model() -> dict:
 @app.post("/game/projection")
 def game_projection(req: GameProjectionRequest) -> dict:
     """'No surprises' path from now, P10–P90 bands over the seeded worlds, stress-test ghosts, bridge."""
-    return _guard(service.game_projection, req)
+    from .ai.outcome import with_outcome_story
+    return _guard(lambda: with_outcome_story(service.game_projection(req), req))
 
 
 @app.post("/game/sensitivity")

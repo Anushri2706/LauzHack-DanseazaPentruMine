@@ -176,7 +176,33 @@ export interface FinalScores {
   experience: { degree: boolean; education: Education; months_abroad: number; months_studying: number }
   joy: { total: number }
 }
+export interface TimelineInsight {
+  id: string
+  kind: 'decision' | 'low' | 'retire' | 'stress' | 'uncertainty' | 'twin'
+  month: number
+  age: number
+  title: string
+  text: string
+  by: 'llm' | 'rules'
+  facts: string[]
+}
+export interface TimelineInsights {
+  headline: string
+  insights: TimelineInsight[]
+  mode: 'llm' | 'rules'
+  month: number
+  disclaimer: string
+}
+
+export interface Story {
+  headline: string
+  story: { text: string; facts: string[] }[]
+  mode: 'llm' | 'rules'
+  disclaimer: string
+}
+
 export interface Projection {
+  story?: Story | null
   month: number
   horizon: number
   n: number
@@ -209,6 +235,7 @@ export interface CompareResult {
   table: { key: string; label: string; a: number; b: number; diff: number }[]
   bridge: { key: string; a: number; b: number; diff: number }[]
   explanation: string[]
+  story?: Story | null
   note: string
   ranges: { a: { p10: number; p50: number; p90: number } | null; b: { p10: number; p50: number; p90: number } | null }
   scores: { a: FinalScores; b: FinalScores }

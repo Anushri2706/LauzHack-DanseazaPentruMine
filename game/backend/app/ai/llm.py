@@ -69,7 +69,7 @@ def chat(messages, json_mode=False, temperature=0.2, timeout=60):
     """Send a chat request. Returns the reply text. Raises LLMUnavailable on any failure.
 
     Safeguards: a hard cap on calls per run (LLM_MAX_CALLS, default 40), and no automatic
-    retry on rate-limit or quota errors (HTTP 429), so a loop can never run up usage.
+    retry on rate-limit or quota errors (HTTP 429): the next model in the list is tried once, never the same one.
     """
     p = config()
     models = [m.strip() for m in p["model"].split(",") if m.strip()]
@@ -104,8 +104,8 @@ def _request(p, model, messages, json_mode, temperature, timeout):
             data = json.load(r)
     except urllib.error.HTTPError as e:
         detail = e.read()[:300].decode(errors="replace")
-        if e.code == 429:
-            raise LLMUnavailable(f"{p['name']} rate limit or free-tier quota reached; not retrying") from None
+        if e.code == 429:  # this model's quota is used up: the next model in the list has its own (never the same one again)
+            raise _Overloaded(f"{model} rate limit or free-tier quota reached") from None
         if e.code in (503, 404):
             raise _Overloaded(f"{model} HTTP {e.code}") from None
         if e.code == 400 and json_mode:  # provider may not support response_format: retry without it

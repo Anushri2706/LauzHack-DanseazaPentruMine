@@ -2,7 +2,8 @@
 import { api } from '../../api/client'
 import type { GameState, ModelScore } from '../../api/types'
 import { useApi } from '../../api/useApi'
-import { useStore } from '../../store/game'
+import { requestFor, useStore } from '../../store/game'
+import { StoryBox } from '../StoryBox'
 import { chf, pct } from '../format'
 import { useTwin } from '../useGame'
 import { REGIME_META } from '../Timeline'
@@ -29,6 +30,9 @@ export function TwinApp({ st }: { st: GameState }) {
   const s = useStore((x) => x)
   const fan = useTwin(s)
   const card = useApi('twin-model', () => api.twinModel())
+  // The AI reads the twin's numbers (and your own timeline's) and explains them; it reloads when your life changes.
+  const req = requestFor(s, undefined, false)
+  const story = useApi('twin-story:' + JSON.stringify(req), () => api.twinStory(req))
   const f = fan.data?.summary
   const c = card.data
   const best = c ? Object.entries(c.test).sort((a, b) => a[1].mae_cash_end_chf - b[1].mae_cash_end_chf)[0][0] : ''
@@ -41,6 +45,8 @@ export function TwinApp({ st }: { st: GameState }) {
         behaviour <b>learned</b> from 958 synthetic people (GMM spending per life state, December bonus, holiday months,
         month-to-month noise) and from how {st.persona.name}'s own data differs from people like them.
       </p>
+      {story.loading && !story.data && <p className="tiny muted">✨ The AI is reading your twin's numbers…</p>}
+      <StoryBox story={story.data} style={{ margin: '8px 0' }} />
       {fan.loading && !f && <p className="muted">Simulating lives from {st.date.label}…</p>}
       {fan.error && <p className="note">⚠️ {fan.error}</p>}
       {f && fan.data && (
@@ -51,7 +57,7 @@ export function TwinApp({ st }: { st: GameState }) {
               {fan.data.offset_chf_per_month ? ` · your data adds ${chf(fan.data.offset_chf_per_month)}/month` : ''}</div></div>
           {f.wealth_at_65 && <div className="tile"><div className="t-title">Liquid savings at 65</div>
             <div className="t-main">{chf(f.wealth_at_65.p50)}</div>
-            <div className="t-sub">80% CI (P10–P90) {chf(f.wealth_at_65.p10)} – {chf(f.wealth_at_65.p90)}</div></div>}
+            <div className="t-sub">8 in 10 lives: {chf(f.wealth_at_65.p10)} to {chf(f.wealth_at_65.p90)}</div></div>}
           {f.share_lives_with_job_search_before_65 !== null && <div className="tile"><div className="t-title">A job search before 65</div>
             <div className="t-main">{pct(f.share_lives_with_job_search_before_65)}</div>
             <div className="t-sub">of lives · typically {f.months_in_job_search_before_65_p50} months in total</div></div>}
