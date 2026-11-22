@@ -55,10 +55,22 @@ const ageAt = (m: number) => {
 export async function travelTo(month: number) {
   const s = getStore()
   if (s.busy) return
-  const target = Math.max(0, Math.min(s.horizon, Math.round(month)))
+  let target = Math.max(0, Math.min(s.horizon, Math.round(month)))
   if (target === s.current) return
   const before = s.current
   const forward = target > before
+  if (forward) {
+    // Time stops at the date you expect to finish your master's: you'll be asked how it went.
+    try {
+      const now = await api.state(requestFor(s))
+      const end = now.pending_state.program ? now.pending_state.program_end : null
+      if (end !== null && end > before && end < target) {
+        target = end
+        toast({ icon: '🎓', title: 'Your planned end date', text: 'Time stops here: did you finish your master’s?', tone: 'info' })
+      }
+    } catch { /* the move below reports engine errors */ }
+    if (getStore().busy) return
+  }
   const patch = travel(s, target)
   setStore({ ...patch, busy: true, place: null })
   bus.emit('queue', [])

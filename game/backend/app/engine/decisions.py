@@ -151,13 +151,15 @@ def default_decision(state: State, t: int, p: dict) -> Decision:
     return Decision(month=t, choice=next(c["id"] for c in opts if c["default"]))
 
 
-def _tuition_schedule(t: int, duration_months: int, p: dict) -> tuple[OneOff, ...]:
-    """Same total tuition for full- and part-time; instalments spread over the duration."""
+def _tuition_schedule(t: int, duration_months: int, p: dict, total: float | None = None,
+                      label: str = "Tuition instalment") -> tuple[OneOff, ...]:
+    """Same total tuition for full- and part-time; instalments spread over the duration.
+    `total` overrides the programme's total (a planned length other than the default, or an extension)."""
     per_year = int(round(p["tuition_payments_per_year"]))
     interval = 12 // per_year
     count = max(1, round(duration_months / 12 * per_year))
-    amount = _tuition_total(p) / count
-    return tuple(OneOff(t + k * interval, amount, f"Tuition instalment {k + 1}/{count}", "tuition")
+    amount = (_tuition_total(p) if total is None else total) / count
+    return tuple(OneOff(t + k * interval, amount, f"{label} {k + 1}/{count}", "tuition")
                  for k in range(count))
 
 

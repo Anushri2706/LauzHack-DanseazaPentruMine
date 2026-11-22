@@ -69,6 +69,13 @@ export interface GameAction {
   current: boolean
   preview: Preview
   tags: string[]
+  /** Master's only: the player picks how many months they expect to study (sent as `value`). */
+  duration?: { default: number; min: number; max: number; tuition_per_month: number }
+}
+/** A master's reaches the end date the player planned: finished, keep studying or drop out? */
+export interface StudyCheckin {
+  program: 'master_ft' | 'master_pt'; started: number | null; planned_end: number; months_studied: number
+  answered: boolean; default_months: number; retiree: boolean
 }
 export interface Letter { month: number; kind: string; icon: string; title: string; text: string }
 
@@ -135,6 +142,7 @@ export interface GameState {
   pending_state: GameStateDict
   queued: ActionIn[]
   queued_letters: Letter[]
+  study_checkin: StudyCheckin | null
   scores: ScoresNow
   actions: Partial<Record<Place, GameAction[]>>
   letters: Letter[]

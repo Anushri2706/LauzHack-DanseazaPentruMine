@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ActionIn, GameAction, GameState, Place } from '../api/types'
 import { queueAction, sleep, sleepUntilBirthday, unqueue } from '../store/actions'
 import { setStore, useStore } from '../store/game'
@@ -23,7 +24,7 @@ function greeting(place: Place, st: GameState): string {
       return s.home_id ? `Your own home. Time passes only when you sleep: plans you made this month happen then.`
         : `Home. Time passes only when you sleep: plans you made this month happen then.`
     case 'university':
-      return s.program ? `Your master's runs until ${monthName(s.program_end ?? 0)}. Hang in there!`
+      return s.program ? `You plan to finish your master's in ${monthName(s.program_end ?? 0)}. Hang in there!`
         : s.has_master ? 'Congratulations again on your degree!' : 'Thinking about a master’s? Here is what it would mean, in numbers.'
     case 'office':
       return s.status === 'working' ? `You earn ${chf(s.salary)}/month${s.work_share < 1 ? ` at ${Math.round(s.work_share * 100)}%` : ''}.`
@@ -38,23 +39,57 @@ function greeting(place: Place, st: GameState): string {
 }
 const monthName = (m: number) => new Date(2025, m, 1).toLocaleString('en', { month: 'short', year: 'numeric' })
 
+// A master's is planned with the player's own length (value), so match it by type and id only.
 const isQueued = (q: ActionIn[], a: GameAction) =>
-  q.findIndex((x) => x.type === a.type && (x.id ?? null) === (a.id ?? null) && (x.value ?? null) === (a.value ?? null))
+  q.findIndex((x) => x.type === a.type && (x.id ?? null) === (a.id ?? null) && (a.duration || (x.value ?? null) === (a.value ?? null)))
+
+/** "When do you expect to finish?": pick a planned length before the master's is queued. */
+function StudyPlan({ a, month, onDone }: { a: GameAction; month: number; onDone: () => void }) {
+  const d = a.duration!
+  const [months, setMonths] = useState(d.default)
+  const steps = Array.from(new Set([d.min, ...Array.from({ length: 20 }, (_, i) => 6 * (i + 1)), d.default, d.max]))
+    .filter((m) => m >= d.min && m <= d.max).sort((x, y) => x - y)
+  return (
+    <div className="study-plan">
+      <label className="small"><b>When do you expect to finish?</b>{' '}
+        <select value={months} onChange={(e) => setMonths(Number(e.target.value))}>
+          {steps.map((m) => <option key={m} value={m}>in {m} months ({monthName(month + m)}){m === d.default ? ' · usual length' : ''}</option>)}
+        </select>
+      </label>
+      <p className="tiny muted">🟡 Tuition about {chf(d.tuition_per_month * months)} in total ({chf(d.tuition_per_month)} per month of study).
+        On {monthName(month + months)} time stops and you'll be asked: finished, keep studying, or drop out?</p>
+      <div className="row-end">
+        <button className="btn ghost" onClick={onDone}>Cancel</button>
+        <button className="btn" onClick={() => { void queueAction({ type: a.type, id: a.id, value: months }).then((ok) => ok && onDone()) }}>
+          🎓 Plan it: finish {monthName(month + months)}</button>
+      </div>
+    </div>
+  )
+}
 
 const DOT: Record<string, string> = { data: '🟢', assumption: '🟡', simulated: '🔵' }
 
-function ActionRow({ a, queue }: { a: GameAction; queue: ActionIn[] }) {
+function ActionRow({ a, queue, month }: { a: GameAction; queue: ActionIn[]; month: number }) {
   const qi = isQueued(queue, a)
   const queued = qi >= 0
   const disabled = !a.enabled && !queued
+  const [planning, setPlanning] = useState(false)
+  const plannedEnd = queued && a.duration ? queue[qi].value : null
+  const click = () => {
+    if (queued) unqueue(qi)
+    else if (a.duration) setPlanning(!planning)
+    else void queueAction({ type: a.type, id: a.id, value: a.value })
+  }
   return (
     <li className={`act ${disabled ? 'off' : ''} ${queued ? 'queued' : ''} ${a.current ? 'current' : ''}`}>
-      <button disabled={disabled} onClick={() => (queued ? unqueue(qi) : void queueAction({ type: a.type, id: a.id, value: a.value }))}
+      <button disabled={disabled} onClick={click}
         title={disabled ? a.reason ?? '' : queued ? 'Planned for this month: click to cancel' : 'Plan this for this month'}>
         <span className="act-label">{queued ? '✓ ' : ''}{a.label}{a.current && <em> · now</em>}</span>
         <span className="act-tags">{a.tags.map((t) => <span key={t} title={t}>{DOT[t] ?? ''}</span>)}</span>
       </button>
       <div className="act-preview">{a.preview.text}</div>
+      {plannedEnd != null && <div className="act-preview">📅 You expect to finish in {plannedEnd} months ({monthName(month + plannedEnd)}).</div>}
+      {planning && !queued && <StudyPlan a={a} month={month} onDone={() => setPlanning(false)} />}
       {a.preview.warning && <div className="act-warn">{a.preview.warning}</div>}
       {disabled && a.reason && !a.current && <div className="act-reason">🔒 {a.reason}</div>}
     </li>
@@ -62,12 +97,13 @@ function ActionRow({ a, queue }: { a: GameAction; queue: ActionIn[] }) {
 }
 
 function Group({ title, items, queue, note }: { title?: string; items: GameAction[]; queue: ActionIn[]; note?: string }) {
+  const month = useStore((s) => s.current)
   if (!items.length) return null
   return (
     <section className="act-group">
       {title && <h4>{title}</h4>}
       {note && <p className="tiny muted">{note}</p>}
-      <ul className="acts">{items.map((a, i) => <ActionRow key={`${a.type}-${a.id}-${a.value}-${i}`} a={a} queue={queue} />)}</ul>
+      <ul className="acts">{items.map((a, i) => <ActionRow key={`${a.type}-${a.id}-${a.value}-${i}`} a={a} queue={queue} month={month} />)}</ul>
     </section>
   )
 }

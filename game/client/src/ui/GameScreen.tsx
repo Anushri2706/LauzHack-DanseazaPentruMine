@@ -6,6 +6,7 @@ import { getStore, setStore, useStore } from '../store/game'
 import { HudBar, Toasts } from './HudBar'
 import { PlaceDialog } from './PlaceDialog'
 import { SeasonOverlay } from './SeasonOverlay'
+import { StudyCheckin } from './StudyCheckin'
 import { Timeline } from './Timeline'
 import { sfx } from './sound'
 import { useGameState } from './useGame'
@@ -26,8 +27,9 @@ export function GameScreen() {
   const game = useGameState()
   const st = game.data
   const near = useNear()
+  const checkin = !!st?.study_checkin && !st.study_checkin.answered && !st.ended
 
-  useEffect(() => { bus.emit('freeze', !!place || !!phone || (!!st?.ended && !endSeen)) }, [place, phone, st?.ended, endSeen])
+  useEffect(() => { bus.emit('freeze', !!place || !!phone || checkin || (!!st?.ended && !endSeen)) }, [place, phone, checkin, st?.ended, endSeen])
   useEffect(() => {
     const onDoor = ({ place }: { place: string }) => {
       if (getStore().place || getStore().phone) return
@@ -73,6 +75,7 @@ export function GameScreen() {
       )}
       {st && !phone && <Timeline st={st} />}
       {place && st && <PlaceDialog place={place} st={st} />}
+      {checkin && st && !place && !phone && <StudyCheckin st={st} />}
       <Suspense fallback={null}>
         {phone && st && <Phone st={st} />}
         {st?.ended && !endSeen && !phone && <EndScreen st={st} />}

@@ -10,7 +10,8 @@ from .engine.compare import compare
 from .engine.catalogue import (CANTON_PRICE_LEVEL, FLATS, HABITS, HOMES, ITEMS, RULES, flat_factor_key,
                                habit_cost_key, habit_joy_key, home_price_key, item_joy_key, item_price_key)
 from .engine.decisions import CHOICE_LABELS
-from .engine.game import Action, GameRun, InvalidAction, Turn, available_actions, run_turns
+from .engine.game import (Action, GameRun, InvalidAction, Turn, available_actions, checkin_due, run_turns,
+                          study_default_months)
 from .engine.metrics import cash_risk, check_goals, net_worth_bridge, scores, scores_now, summarize
 from .engine.montecarlo import make_worlds, run_montecarlo, sample_world, stress_world
 from .engine.narrative import chf, decision_narrative
@@ -221,6 +222,16 @@ def _statement(row: dict | None) -> dict | None:
             "cash_after": row["cash"], "net_worth_after": row["net_worth"]}
 
 
+def _study_checkin(now: State, pending: State, m: int, p: dict) -> dict | None:
+    """The master's reaches the end date the player planned: ask whether they finished, keep studying or
+    drop out. `answered` once this month's plans settle it (any big move also counts as finished)."""
+    if not checkin_due(now, m):
+        return None
+    return {"program": now.program, "started": now.program_start, "planned_end": m,
+            "months_studied": m - (m if now.program_start is None else now.program_start), "answered": not checkin_due(pending, m),
+            "default_months": study_default_months(now.program, p), "retiree": now.retiree}
+
+
 @lru_cache(maxsize=256)
 def _game_state(key: str) -> dict:
     req = GameRequest.model_validate_json(key)
@@ -255,6 +266,7 @@ def _game_state(key: str) -> dict:
         "queued_letters": queued_letters,
         "scores": scores_now(rows, goals, now, m),
         "actions": available_actions(pending, m, p, queued) if m < horizon else {},
+        "study_checkin": _study_checkin(now, pending, m, p),
         "letters": letters,
         "statement": _statement(rows[-1] if rows else None),
         "warnings": warnings,

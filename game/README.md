@@ -149,8 +149,21 @@ Everything works with the mouse alone.
 
   **School.** *Get your degree* and *Drop out without a degree* are only possible while you are enrolled
   (Alexia starts enrolled; a master's enrols you). Getting the degree ends school; you are between jobs until you
-  start one at the Office (graduate salary). During a master's
-  the degree comes by itself when the programme ends, so that button is greyed out. Dropping out cancels the
+  start one at the Office (graduate salary).
+
+  **Study plan and check-in.** When you choose a master's, the University asks *when do you expect to finish?*
+  (full-time 6–48 months, part-time 12–72; the usual length is the default). Tuition follows the planned length
+  (the programme's total over its usual length, per month of study). When that date comes, time stops, even
+  in the middle of a +1y or +10y jump, and the student advisor asks how it went:
+  - **I've finished:** you get the master's, and unless you make another move that month you start a job at the
+    master's salary.
+  - **Keep studying** 3, 6, 12 or any 1–24 more months: same student budget, extra tuition per month, and
+    you're asked again at the new date.
+  - **I'm dropping out:** no more tuition. You keep your bachelor's and look for a job.
+
+  If no answer is given (for example in other simulated worlds replaying your choices), the master's finishes
+  as planned. Any other big move in that month (a job, moving abroad) also counts as finished. Until the date,
+  *Get your degree* stays greyed out. Dropping out cancels the
   remaining tuition; you are between jobs until you start one at the Office. Out of your first degree you have **no degree**: jobs pay
   `no_degree_wage_factor` × the graduate salary (80%, our assumption) and a master's is closed. Out of a
   master's you keep your bachelor's. A retiree who drops out goes back to retirement.

@@ -32,6 +32,8 @@ try {
 
   await door('university')
   await page.getByRole('button', { name: /Full-time master's/ }).click()
+  await page.getByText('When do you expect to finish?').waitFor()
+  await page.getByRole('button', { name: /Plan it: finish/ }).click()
   await page.locator('.act.queued').first().waitFor()
   await shot('03-university')
   step('queued full-time master\'s (engine accepted)')

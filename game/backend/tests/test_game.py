@@ -224,7 +224,9 @@ def test_retiree_master_keeps_pension_and_returns_to_retirement():
     base = run_turns(p, [], start=s0)
     for t in range(dur):
         assert run.rows[t]["income"] == pytest.approx(base.rows[t]["income"])  # pension unchanged
-    end = state_at(p, [T(0, A("life_choice", "master_ft"))], dur, start=s0)
+    due = state_at(p, [T(0, A("life_choice", "master_ft"))], dur, start=s0)
+    assert due.status == "studying" and due.program_end == dur  # study check-in: waiting for the answer
+    end = state_at(p, [T(0, A("life_choice", "master_ft"))], dur + 1, start=s0)
     assert end.status == "retired" and end.has_master and not end.retiree
     assert any(l["kind"] == "degree" and "retirement" in l["text"] for l in run.letters)
     extra = sum(r["one_offs"] for r in run.rows) - sum(r["one_offs"] for r in base.rows)

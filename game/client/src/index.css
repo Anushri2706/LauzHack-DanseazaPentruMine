@@ -296,3 +296,10 @@ kbd { background: var(--cream); border: 2px solid var(--ink); padding: 0 4px; fo
 .ask-action { margin: 6px 0; padding: 6px 8px; background: #fff8ea; box-shadow: 0 0 0 2px var(--peach); display: flex; flex-direction: column; gap: 6px; }
 .ask-form { display: flex; gap: 8px; position: sticky; bottom: 0; background: var(--cream); padding-top: 6px; }
 .ask-form input { flex: 1; padding: 6px 8px; font: inherit; border: 0; box-shadow: 0 0 0 2px var(--ink); }
+
+/* Study plan: "when do you expect to finish?" and the check-in at that date */
+.study-plan { margin: 6px 0 2px; padding: 8px 10px; background: var(--cream); border: 2px dashed #e5d8c2; }
+.study-plan select { font: inherit; margin-left: 4px; max-width: 100%; }
+.study-plan .row-end { margin-top: 6px; }
+.act .study-plan button.btn { width: auto; display: inline-block; padding: 6px 12px; font-size: 14px; background: var(--lilac-2); }
+.act .study-plan button.btn.ghost { background: var(--cream); }

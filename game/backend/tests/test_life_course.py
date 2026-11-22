@@ -124,7 +124,7 @@ def test_degree_and_drop_out_only_while_enrolled():
     with pytest.raises(InvalidAction, match="bachelor"):
         run_turns(p, [T(0, (A("life_choice", "quit_school"),)), T(1, (A("life_choice", "master_ft"),))])
     # In a master's: the degree comes by itself; dropping out keeps the bachelor's, cancels tuition.
-    with pytest.raises(InvalidAction, match="finishes by itself"):
+    with pytest.raises(InvalidAction, match="asked then whether you're done"):
         run_turns(p, [T(0, (A("life_choice", "master_ft"),)), T(3, (A("life_choice", "graduate"),))])
     s = state_at(p, [T(0, (A("life_choice", "master_ft"),)), T(3, (A("life_choice", "quit_school"),))], 3)
     assert s.status == "unemployed" and not s.no_degree and not s.has_master

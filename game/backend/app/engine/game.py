@@ -4,8 +4,11 @@ A reality is (persona, assumptions, seed, world, turns). A turn is the list of a
 queued in one month; months without a turn mean "nothing changed". The engine replays from month 0,
 so rollback is exact. Order inside a month t:
 
-  1. a master's that ends at t is completed (and a letter is sent)
-  2. the player's actions for month t are validated and applied, in order
+  1. the player's actions for month t are validated and applied, in order. In the month a master's
+     reaches its planned end (the study check-in) the player answers first: finish_study, extend_study
+     (keep studying N more months) or quit_school (drop out, keep the bachelor's). Any other life
+     choice first completes the degree.
+  2. a master's still due at t is completed (no answer = finished) and a letter is sent
   3. a graduate who chose no big move this month starts a job at the post-master salary
      (the same default as the original decision-point engine)
   4. step_month(t) with the shocks of the player's seeded world
@@ -22,8 +25,8 @@ import numpy as np
 from .assumptions import validate_params
 from .catalogue import (FLATS, HABITS, HOMES, ITEMS, flat_factor_key, habit_cost_key, habit_joy_key,
                         home_price_key, item_joy_key, item_price_key)
-from .decisions import (InvalidDecision, _start_job, _work_terms, apply_decision, complete_programs, options,
-                        repay_all, take_loan)
+from .decisions import (InvalidDecision, _start_job, _tuition_schedule, _tuition_total, _work_terms, apply_decision,
+                        complete_programs, options, repay_all, take_loan)
 from .finance import annuity_payment, inflation_factor
 from .narrative import chf
 from .simulate import initial_state, run_branch, step_month
@@ -44,13 +47,40 @@ LIFE_LABELS = {
     "return_home": "Move back to Switzerland", "drop_out": "Leave the master's and start working",
     "quit_job": "Quit your job", "reduce_hours": "Reduce to 80%", "full_hours": "Back to full time",
     "graduate": "🎓 Get your degree", "quit_school": "🚪 Drop out without a degree",
+    "finish_study": "🎓 I've finished my master's", "extend_study": "📚 Keep studying longer",
 }
 LIFE_PLACE = {"start_work": "office", "quit_job": "office", "reduce_hours": "office", "full_hours": "office",
               "master_ft": "university", "master_pt": "university", "drop_out": "university",
               "graduate": "university", "quit_school": "university",
+              "finish_study": "university", "extend_study": "university",
               "move_abroad": "station", "return_home": "station"}
 PLACES = ("home", "university", "office", "cafe", "shop", "bank", "realestate", "station")
 SAVINGS_PRESETS = (0.0, 0.25, 0.5, 0.75, 1.0)
+
+# Study check-in: when a master's reaches its planned end, the player says how it went.
+CHECKIN_IDS = ("finish_study", "extend_study", "quit_school")
+STUDY_BOUNDS = {"master_ft": (6, 48), "master_pt": (12, 72)}   # planned length, months (our assumption)
+EXTEND_BOUNDS = (1, 24)                                          # one extension, months (our assumption)
+EXTEND_PRESETS = (3, 6, 12)
+
+
+def study_default_months(program: str, p: dict) -> int:
+    return int(p[f"{program}_months"])
+
+
+def tuition_per_month(program: str, p: dict) -> float:
+    """Tuition per month of study: the programme's total over its default length (so a longer plan or an
+    extension costs proportionally more, and the default plan costs exactly the original total)."""
+    return _tuition_total(p) / study_default_months(program, p)
+
+
+def checkin_due(s: State, t: int) -> bool:
+    """A master's reaches its planned end this month and the player hasn't answered yet."""
+    return s.program is not None and s.program_end == t
+
+
+def _months_ok(value: float | None, lo: int, hi: int) -> bool:
+    return value is not None and int(value) == value and lo <= int(value) <= hi
 
 
 @dataclass(frozen=True)
@@ -104,12 +134,16 @@ def life_reason(s: State, t: int, p: dict, cid: str) -> str | None:
         if s.status != "working":
             return "You need a job in Switzerland first."
         return None if s.work_share < 1 else "You already work full time."
+    if cid in ("finish_study", "extend_study"):
+        if not checkin_due(s, t):
+            return "Only when your master's reaches its planned end date."
+        return None
     if cid in ("graduate", "quit_school"):
         if s.status != "studying":
             return "You're not enrolled in school."
         if cid == "graduate" and s.program is not None:
-            return (f"Your master's finishes by itself in {max(0, (s.program_end or t) - t)} months: "
-                    "keep studying, or drop out.")
+            return (f"You planned to finish in {max(0, (s.program_end or t) - t)} months: you'll be asked "
+                    "then whether you're done. Until then keep studying, or drop out.")
         return None
     if cid in ("master_ft", "master_pt") and s.no_degree:
         return "You left school without a degree: a master's needs a bachelor's first."
@@ -179,8 +213,14 @@ def action_reason(s: State, a: Action, t: int, p: dict, strict: bool = True,
     if a.type not in ACTION_TYPES:
         return f"Unknown action type '{a.type}'."
     if a.type == "life_choice":
-        if life_done:
+        if life_done and a.id != "finish_study":
             return "You already made one big life move this month: sleep first."
+        if a.id in ("master_ft", "master_pt") and a.value is not None:
+            lo, hi = STUDY_BOUNDS[a.id]
+            if not _months_ok(a.value, lo, hi):
+                return f"Planned length must be {lo}-{hi} whole months."
+        if a.id == "extend_study" and not _months_ok(a.value, *EXTEND_BOUNDS):
+            return f"Extra time must be {EXTEND_BOUNDS[0]}-{EXTEND_BOUNDS[1]} whole months."
         return life_reason(s, t, p, a.id or "")
     if a.type == "set_habit":
         h = HABITS.get(a.id or "")
@@ -284,13 +324,25 @@ def _raise_draw(luck: tuple[int, int], t: int) -> float:
     return float(np.random.default_rng([int(luck[0]), int(luck[1]), t, 7919]).random())
 
 
-def _apply_life(s: State, t: int, p: dict, cid: str) -> State:
+def _apply_life(s: State, t: int, p: dict, cid: str, value: float | None = None) -> State:
     if cid in LEGACY_LIFE:
         s = apply_decision(s, Decision(t, cid), p)
         s = replace(s, work_share=1.0)
         if cid in ("move_abroad", "return_home"):
             s = replace(s, flat_factor=1.0)  # new country, new flat
+        if cid in ("master_ft", "master_pt") and value is not None and int(value) != study_default_months(cid, p):
+            # The player's own expected finish date: tuition follows the planned length.
+            dur = int(value)
+            kept = tuple(o for o in s.scheduled if not (o.kind == "tuition" and o.month >= t))
+            s = replace(s, program_end=t + dur, scheduled=kept + _tuition_schedule(
+                t, dur, p, total=tuition_per_month(cid, p) * dur))
         return s
+    if cid == "finish_study":
+        return complete_programs(s, t)
+    if cid == "extend_study":
+        n = int(value)
+        return replace(s, program_end=t + n, scheduled=s.scheduled + _tuition_schedule(
+            t, n, p, total=tuition_per_month(s.program, p) * n, label="Extra tuition"))
     if cid in ("graduate", "quit_school"):
         # Leave school: remaining tuition is cancelled. A retiree goes back to retirement; anyone else
         # starts looking for a job (the regime HMM decides when they find one).
@@ -321,8 +373,12 @@ def apply_action(s: State, a: Action, t: int, p: dict, luck: tuple[int, int] = (
     letters: list[dict] = []
     if a.type == "life_choice":
         was_master = s.program is not None
-        s = _apply_life(s, t, p, a.id)
-        if a.id == "graduate":
+        s = _apply_life(s, t, p, a.id, a.value)
+        if a.id == "extend_study":
+            letters.append(_letter(t, "study_extended", "📚", "You keep studying",
+                                   f"Your master's now runs {int(a.value)} more months, until month "
+                                   f"{s.program_end}. Extra tuition: {chf(tuition_per_month(s.program, p) * a.value)}."))
+        elif a.id == "graduate":
             letters.append(_letter(t, "degree", "🎓", "You got your degree!",
                                    "Congratulations. Visit the Office to start working: "
                                    f"jobs pay about {chf(_work_terms(s, p)[0])}/month."))
@@ -534,21 +590,25 @@ def run_turns(p: dict, turns: list[Turn], start: State | None = None, world: dic
     for t in range(t0, horizon if until is None else until + 1):
         if keep_states:
             opening[t] = s
-        graduated = s.program is not None and s.program_end == t
+        due = checkin_due(s, t)
+        life_done = False
+        for a in (by_month[t].actions if t in by_month else ()):
+            if checkin_due(s, t) and a.type == "life_choice" and a.id not in CHECKIN_IDS:
+                s = complete_programs(s, t)  # another big move: the degree is done first
+            s, ls = apply_action(s, a, t, p, luck, strict and t >= strict_from, life_done)
+            letters.extend(ls)
+            life_done = life_done or (a.type == "life_choice" and a.id != "finish_study")
+        if t == until:
+            break
+        if checkin_due(s, t):
+            s = complete_programs(s, t)  # no answer: the master's finished as planned
+        graduated = due and s.program is None and s.has_master
         if graduated:
-            s = complete_programs(s, t)
             letters.append(_letter(t, "degree", "🎓", "Degree finished!",
                                    "Your master's is done. You're back in retirement, pension unchanged."
                                    if s.status == "retired" else
                                    "Your master's is done. Unless you choose another move this month, "
                                    f"you start a job at {chf(p['salary_master'])}/month."))
-        life_done = False
-        for a in (by_month[t].actions if t in by_month else ()):
-            s, ls = apply_action(s, a, t, p, luck, strict and t >= strict_from, life_done)
-            letters.extend(ls)
-            life_done = life_done or a.type == "life_choice"
-        if t == until:
-            break
         if graduated and not life_done and s.status == "studying" and s.program is None:
             s = _apply_life(s, t, p, "start_work")
         if keep_states:
@@ -624,6 +684,9 @@ def available_actions(s: State, t: int, p: dict, queued: tuple[Action, ...] = ()
     """Every action per place with enabled, reason_if_disabled and an engine-computed preview.
 
     `s` must be the opening state of month t after the actions already queued (`queued`)."""
+    enrolled = s  # before the study check-in is answered (still enrolled in the master's)
+    if checkin_due(s, t):
+        s = complete_programs(s, t)  # what other life choices see: the engine completes the degree first
     infl = inflation_factor(p["inflation_annual"], t)
     life_done = any(a.type == "life_choice" for a in queued)
     out: dict[str, list[dict]] = {k: [] for k in PLACES}
@@ -642,12 +705,33 @@ def available_actions(s: State, t: int, p: dict, queued: tuple[Action, ...] = ()
                         f"{chf(p['salary_work'] * p['no_degree_wage_factor'])}/month "
                         f"({p['no_degree_wage_factor']:.0%}) and a master's is closed to you."),
     }
+    due = checkin_due(enrolled, t)
+    if due:  # study check-in: these use the state before the degree is completed
+        rate = tuition_per_month(enrolled.program, p)
+        gen_preview["quit_school"] = ("Leave now without the master's. You keep your bachelor's and look for a job "
+                                      f"(about {chf(p['salary_work'])}/month); no more tuition.")
+        out["university"].append(_entry(enrolled, t, p, "university", Action("life_choice", "finish_study"),
+                                        LIFE_LABELS["finish_study"], _preview(
+                                            "You get your degree. Unless you choose another move this month, you start "
+                                            f"a job at {chf(p['salary_master'])}/month."), ["assumption"], life_done))
+        for n in EXTEND_PRESETS:
+            out["university"].append(_entry(enrolled, t, p, "university", Action("life_choice", "extend_study", float(n)),
+                                            f"📚 Keep studying {n} more months", _preview(
+                                                f"Same student budget for {n} more months, extra tuition "
+                                                f"{chf(rate * n)}. You'll be asked again in {n} months.",
+                                                one_off=rate * n), ["assumption"], life_done))
     for cid in ("master_ft", "master_pt", "graduate", "quit_school", "start_work", "reduce_hours", "full_hours", "quit_job",
                 "move_abroad", "return_home"):
         text = legacy.get(cid) or gen_preview.get(cid) or ""
         tags = ["assumption", "simulated"]
-        out[LIFE_PLACE[cid]].append(_entry(s, t, p, LIFE_PLACE[cid], Action("life_choice", cid),
-                                           LIFE_LABELS[cid], _preview(text), tags, life_done))
+        st = enrolled if (due and cid == "quit_school") else s
+        entry = _entry(st, t, p, LIFE_PLACE[cid], Action("life_choice", cid), LIFE_LABELS[cid], _preview(text), tags,
+                       life_done)
+        if cid in STUDY_BOUNDS:  # the player says when they expect to finish (value = planned months)
+            lo, hi = STUDY_BOUNDS[cid]
+            entry["duration"] = {"default": study_default_months(cid, p), "min": lo, "max": hi,
+                                 "tuition_per_month": tuition_per_month(cid, p)}
+        out[LIFE_PLACE[cid]].append(entry)
     # Office: ask for a raise
     out["office"].insert(len(out["office"]) - 1, _entry(
         s, t, p, "office", Action("ask_raise"), "Ask for a raise",
