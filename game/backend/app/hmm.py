@@ -1,4 +1,4 @@
-"""Bridge to the teammate's regime-switching HMM twin (repo-root `backend/twin`, branch feature/hmm-decisions).
+"""Bridge to the combined regime-switching HMM engine (`app/regime`, migrated from feature/combined-engine).
 
 The town game simulates the player's own month-by-month choices. This module answers a different question
 with the HMM engine: "if I took one big life decision, how would my cash fan out over many simulated lives?"
@@ -8,28 +8,22 @@ the decision, not from luck.
 """
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass, field
 from datetime import date
 from functools import lru_cache
-from pathlib import Path
 
 import numpy as np
 
-_TWIN_ROOT = Path(__file__).resolve().parents[3] / "backend"
-if str(_TWIN_ROOT) not in sys.path:
-    sys.path.insert(0, str(_TWIN_ROOT))
-
-from twin import Intervention, RegimeEngine, fit_emissions, load_transition_priors  # noqa: E402
-from twin.cash_engine import OneOff, apply_fractional_drop, run as run_cash  # noqa: E402
-from twin.data import load_profile  # noqa: E402
-from twin.metrics import goal_hit_rate  # noqa: E402
-from twin.types import STATES  # noqa: E402
+from .regime.accounting import OneOff, run as run_cash  # noqa: E402
+from .regime.compat import apply_fractional_drop, goal_hit_rate, load_profile  # noqa: E402
+from .regime.regime import RegimeEngine, fit_emissions  # noqa: E402
+from .regime.transitions import load_transition_priors  # noqa: E402
+from .regime.types import STATES, Intervention  # noqa: E402
 
 START = date(2025, 1, 1)
 OVERRIDES = {"scaled_spending": 1}   # the expense-priors spending recipe, as in all teammate scripts
 DISCLAIMER = ("Simulated under the stated assumptions (regime HMM, transition hazards and income table in "
-              "backend/assumptions/*.csv). Not a prediction or financial advice. Synthetic data only.")
+              "app/regime/assumptions/*.csv). Not a prediction or financial advice. Synthetic data only.")
 WORKING = {"employed", "part_time", "job_search"}
 
 

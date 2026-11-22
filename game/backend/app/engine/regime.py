@@ -1,6 +1,6 @@
 """The regime HMM as the backbone of a life, stepped one month at a time inside the game.
 
-Each month of a life is one regime of the teammate's chain (repo-root `backend/twin`):
+Each month of a life is one regime of the combined engine's chain (`app/regime`):
 `employed`, `part_time`, `job_search`, `student` or `retired`. The monthly transition matrix comes
 from `backend/assumptions/transitions.csv` (sourced, age-banded hazards: Eurostat lfsi_long_q, BFS
 SAKE, SECO), with Dirichlet parameter uncertainty: every world carries its own draw of the matrix.
@@ -30,7 +30,7 @@ LABOUR = (E, PT, J)
 
 @lru_cache(maxsize=1)
 def _model():
-    from .. import hmm  # lazy: puts backend/ on sys.path and fits the engine once
+    from .. import hmm  # lazy: fits the engine once
     eng = hmm.engine()
     params = eng.income_table.params
     return eng.priors, {

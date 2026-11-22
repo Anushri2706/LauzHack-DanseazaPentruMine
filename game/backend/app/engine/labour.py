@@ -1,4 +1,4 @@
-"""Labour-market luck from the regime HMM (repo-root `backend/twin`).
+"""Labour-market luck from the regime HMM (`app/regime`).
 
 The Monte Carlo worlds need one thing from the labour market: in which months would a working
 person be out of a job? The flat model draws that from `job_loss_prob_annual`. This module
@@ -33,15 +33,15 @@ JOB_SEARCH = "job_search"
 
 @lru_cache(maxsize=1)
 def _engine():
-    from .. import hmm  # lazy: puts backend/ on sys.path and fits the engine once
+    from .. import hmm  # lazy: fits the engine once
     return hmm.engine()
 
 
 @lru_cache(maxsize=256)
 def _block(start_age: int, horizon: int, seed: int, block: int) -> np.ndarray:
     """[BLOCK, horizon] bool: True where the chain is in job search."""
-    engine = _engine()  # first: this import puts backend/ on sys.path
-    from twin.types import STATE_INDEX, Profile
+    engine = _engine()  # first: fits the engine once
+    from ..regime.types import STATE_INDEX, Profile
     profile = Profile(age=start_age, employment="employed", ref_income=0.0, rent=0.0)
     sub_seed = int(np.random.SeedSequence([seed, block, 0x1AB0]).generate_state(1)[0])
     paths = engine.simulate(profile, horizon_months=horizon, n_paths=BLOCK, seed=sub_seed)

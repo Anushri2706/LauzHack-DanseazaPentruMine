@@ -109,7 +109,7 @@ def validation() -> list[dict]:
     return run_checks()
 
 
-# ============================================================== regime HMM twin (teammate's backend/twin)
+# ============================================================== regime HMM twin (combined engine, app/regime)
 class HmmFanRequest(BaseModel):
     persona_id: str
     decisions: list[str] = Field(default_factory=lambda: ["stay"])
