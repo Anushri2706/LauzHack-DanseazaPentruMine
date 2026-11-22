@@ -72,7 +72,10 @@ def _q(a: np.ndarray, step: int) -> dict:
 
 def fan(persona_id: str, *, month: int, age: float, status: str, work_share: float, income: float, rent: float,
         liquid: float, has_master: bool, abroad: bool, program_months_left: int | None, horizon_months: int,
-        inflation: float = 0.01, months_to_degree: int = 12, n_paths: int = 300, seed: int = 0) -> dict:
+        inflation: float = 0.01, months_to_degree: int = 12, n_paths: int = 300, seed: int = 0,
+        history: bool = True) -> dict:
+    """`history=False`: `persona_id` is only a lookalike from the data (a persona the player built), so its
+    own past cash flows are not used."""
     L = ledger()
     row = L.people.loc[persona_id]
     state = GAME_TO_STATE[status]
@@ -101,7 +104,7 @@ def fan(persona_id: str, *, month: int, age: float, status: str, work_share: flo
     home = STATE_INDEX[state]
     data_state = {"self_employed": "employed", "unemployed": "job_search"}.get(row.status, row.status)
     offset = 0.0
-    if data_state == state:
+    if history and data_state == state:
         offset, _ = beh.history_offset(row.status, float(row.income), float(row.rent), L.flows[L.people.index.get_loc(persona_id)],
                                        L.month_of_year)
     # Spending follows rent in the data; rent rises with inflation (the HMM's wages are nominal too).
@@ -132,6 +135,8 @@ def fan(persona_id: str, *, month: int, age: float, status: str, work_share: flo
         },
         "basis": "liquid savings (cash + investments now, then learned monthly cash flows; no investment returns)",
         "note": ("HMM life states and incomes (sourced Swiss hazards, retirement at 65) x money behaviour learned from "
-                 "958 training people (GMM spending per state, seasons, noise) and this persona's own history. "
+                 "958 training people (GMM spending per state, seasons, noise)"
+                 + (" and this persona's own history. " if history else
+                    ". Your own persona has no history in the data, so none is used. ") +
                  "Ranges over simulated lives, not probabilities about you."),
     }

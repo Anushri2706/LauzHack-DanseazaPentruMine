@@ -12,6 +12,7 @@ export const monthLabel = (m: number) => `${MONTHS[m % 12]} ${2025 + Math.floor(
 export const TAGS: Record<string, { dot: string; label: string }> = {
   profile: { dot: '🟢', label: 'from the synthetic profile' },
   data: { dot: '🟢', label: 'from the synthetic profile data' },
+  user: { dot: '🟢', label: 'entered by you' },
   starter_kit: { dot: '🟡', label: 'assumption (starter kit)' },
   scenario_csv: { dot: '🟡', label: 'assumption (scenario CSV)' },
   ours: { dot: '🟡', label: 'our assumption' },

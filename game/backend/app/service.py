@@ -4,7 +4,7 @@ from functools import lru_cache
 
 import numpy as np
 
-from .data.loader import Persona, build_persona
+from .data.loader import CUSTOM_PREFIX, Persona, build_persona, load_dataset
 from .engine.assumptions import META, validate_params
 from .engine.finance import inflation_factor
 from .engine.compare import compare
@@ -574,6 +574,19 @@ def catalogue(pid: str) -> dict:
 
 
 # ============================================================================ learned twin (HMM x learned engine)
+def _lookalike(persona: Persona) -> str:
+    """Data person closest to a player-built persona: same employment status, then nearest age and income."""
+    from learned.twin import ledger
+    people = load_dataset().snapshot
+    known = set(ledger().people.index)
+    q = people[people.profile_id.isin(known)]
+    same = q[q.employment_status == persona.employment_status]
+    q = same if len(same) else q
+    score = (q.age_at_start - persona.age).abs() / 10 + \
+        (q.reference_monthly_net_income_chf - persona.reference_income).abs() / 1000
+    return str(q.loc[score.idxmin(), "profile_id"])
+
+
 def twin_inputs(req: GameRequest) -> dict:
     """The player's situation now, as the learned twin needs it (from the town engine's replay)."""
     from .engine.game import monthly_income
@@ -583,7 +596,10 @@ def twin_inputs(req: GameRequest) -> dict:
     s = run.final_state
     infl = (1 + p["inflation_annual"]) ** (m / 12)
     rent = 0.0 if s.owner else s.rent * s.flat_factor * infl
-    return {"persona_id": req.persona_id, "month": m, "age": c.start.start_age + m / 12, "status": s.status,
+    pid, history = req.persona_id, True
+    if pid.startswith(CUSTOM_PREFIX):  # the learned twin needs a person from the data: the closest lookalike
+        pid, history = _lookalike(c.persona), False
+    return {"persona_id": pid, "history": history, "month": m, "age": c.start.start_age + m / 12, "status": s.status,
             "work_share": s.work_share, "income": monthly_income(s, p), "rent": rent,
             "liquid": s.cash + s.investments, "has_master": s.has_master, "abroad": s.status == "abroad",
             "program_months_left": (s.program_end - m) if s.program and s.program_end else None,

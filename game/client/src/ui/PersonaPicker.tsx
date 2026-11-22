@@ -3,6 +3,7 @@ import { api } from '../api/client'
 import type { PersonaCard } from '../api/types'
 import { useApi } from '../api/useApi'
 import { chf, STATUS_LABEL } from './format'
+import { PersonaBuilder } from './PersonaBuilder'
 
 const FILTERS = ['', 'student', 'employed', 'part_time', 'self_employed', 'unemployed', 'retired']
 
@@ -27,6 +28,7 @@ function Card({ p, onPick, featured }: { p: PersonaCard; onPick: (p: PersonaCard
 export function PersonaPicker({ onPick }: { onPick: (p: PersonaCard) => void }) {
   const [status, setStatus] = useState('')
   const [seed, setSeed] = useState(0)
+  const [building, setBuilding] = useState(false)
   const alexia = useApi('alexia', () => api.persona('P00001'))
   const list = useApi(`list-${status}-${seed}`, () => api.personas({ status, random: true, seed, limit: 9 }))
   const randomOne = async () => {
@@ -40,7 +42,13 @@ export function PersonaPicker({ onPick }: { onPick: (p: PersonaCard) => void }) 
         <p className="lead">A lakeside town where you live someone's whole life, to age 120, on a timeline you can move back and forth. The timeline fans out the futures your choices open up. Go back to any choice, undo it or choose differently, and compare the realities you create.</p>
         <p className="badge-line"><span className="badge">Simulation · not a prediction or advice</span> All 1,200 people are fictional (synthetic data).</p>
       </header>
+      {building ? <PersonaBuilder onPick={onPick} onCancel={() => setBuilding(false)} /> : <>
       {alexia.data && <Card p={alexia.data} onPick={onPick} featured />}
+      <button className="persona-card px-box build-card" onClick={() => setBuilding(true)}>
+        <div className="persona-name">✏️ Build your own person</div>
+        <div className="muted small">Enter a name, age, city, situation, household, cash, investments, debt, income, rent and goals:
+          the same facts every person here starts with. Then live that life.</div>
+      </button>
       <div className="filter-row">
         {FILTERS.map((f) => (
           <button key={f || 'all'} className={`chip ${status === f ? 'on' : ''}`} onClick={() => setStatus(f)}>
@@ -54,6 +62,7 @@ export function PersonaPicker({ onPick }: { onPick: (p: PersonaCard) => void }) 
       <div className="persona-grid">
         {list.data?.filter((p) => p.profile_id !== 'P00001').map((p) => <Card key={p.profile_id} p={p} onPick={onPick} />)}
       </div>
+      </>}
     </div>
   )
 }

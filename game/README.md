@@ -34,7 +34,7 @@ clears the saved game.
 ### Checks
 
 ```bash
-cd game/backend && .venv/bin/pytest -q           # 151 tests
+cd game/backend && .venv/bin/pytest -q           # 162 tests
 cd game/client && npx tsc -b                     # type-check
 cd game/client && npm run smoke                  # headless walk through the whole demo (needs both servers
                                                  # and Google Chrome; BASE=http://localhost:5173 by default)
@@ -55,7 +55,7 @@ the engine allows it, compares the two realities, and fast-forwards to the 10-ye
 | Are long-run numbers meaningful? | 💱 toggle (timeline, Money, Matters), Money tile, timeline | **Today's CHF**: values divided by the engine's own price index (`price_level` in `/game/state`). The headline range is **at 65**; 120 is a second line ("no mortality model"). A dotted **✝︎ ≈84** line marks Swiss life expectancy (BFS 2023). |
 | Is retirement funded? | Safety tile, `/game/projection` → `retirement_runs_out` | Share of worlds where cash goes below zero after the retirement age, and the median age it happens. |
 | Comparison over what horizon? | Multiverse → Compare | `POST /compare` takes `at_age`: both realities are cut at the same age (rows, goals, bridge, ranges). Default 30, the challenge's 10-year horizon. |
-| How did you verify it? | ✅ Checks app (13 live checks), 151 + 46 pytest tests, `npm run smoke` | — |
+| How did you verify it? | ✅ Checks app (13 live checks), 162 + 46 pytest tests, `npm run smoke` | — |
 
 ## The life timeline (bottom of the screen)
 
@@ -129,6 +129,18 @@ fills in the numbers. A proposed action appears only if the engine allows it now
 with `LLM_PROVIDER=groq`) in the repo's git-ignored `.env` to switch on the LLM (calls capped by `LLM_MAX_CALLS`).
 
 ## How to play
+
+**Pick a person, or build your own.** The first page offers Alexia, the other synthetic people, or
+*✏️ Build your own person*. That form asks for exactly what each synthetic person starts with on
+1 January 2025: name, age, city and canton, situation (student, employed, part-time, self-employed,
+between jobs, retired), household, cash, investments, debt and its interest rate, monthly net income
+(or pension), monthly rent, and up to five goals. Everything else starts from the same labelled
+assumptions as for a data person with those facts, and can be edited in Settings, where the facts you
+entered are tagged 🟢 *entered by you*. The backend stays stateless: the person travels inside its id
+(`custom-` + base64url JSON), which the backend validates on every call (`app/data/loader.py`), so the
+game, Settings, compare and the companion all work unchanged. The learned twin needs a person from the
+data, so it uses the closest lookalike (same situation, nearest age and income) without that person's
+own history. Tests: `tests/test_custom_persona.py`.
 
 | | |
 |---|---|
@@ -227,7 +239,7 @@ game/
       compare.py           "why they differ" (now with habits, housing and joy)
     app/data/public/       dated public-data snapshots + sources.json (scripts/fetch_public_data.py)
     app/service.py         glue: persona + overrides → engine; /game/* responses
-    tests/                 151 pytest tests
+    tests/                 162 pytest tests
   client/                  Vite + React 19 + TypeScript + Phaser 3.90
     public/assets/         Kenney CC0 packs (each with its License.txt) + OFL fonts
     src/api/               typed API client (from the old frontend, extended)

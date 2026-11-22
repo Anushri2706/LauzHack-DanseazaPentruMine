@@ -37,6 +37,7 @@ export interface PersonaCard {
   household_type: string
   opening_cash: number
   opening_investments: number
+  custom?: boolean   // built by the player (id = "custom-" + base64url JSON); not one of the synthetic people
   opening_debt: number
   reference_income: number
   reference_rent: number
