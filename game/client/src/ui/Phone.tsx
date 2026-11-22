@@ -3,6 +3,7 @@ import { setStore, useStore, type AppId } from '../store/game'
 import { AskApp } from './apps/AskApp'
 import { ChecksApp } from './apps/ChecksApp'
 import { GoalsApp } from './apps/GoalsApp'
+import { LearnApp } from './apps/LearnApp'
 import { MailApp } from './apps/MailApp'
 import { MoneyApp } from './apps/MoneyApp'
 import { MultiverseApp } from './apps/MultiverseApp'
@@ -16,6 +17,7 @@ const APPS: { id: AppId; icon: string; label: string }[] = [
   { id: 'twin', icon: '🧠', label: 'Twin' }, { id: 'ask', icon: '💬', label: 'Ask' },
   { id: 'goals', icon: '🎯', label: 'Goals' }, { id: 'settings', icon: '⚙️', label: 'Settings' },
   { id: 'checks', icon: '✅', label: 'Checks' }, { id: 'mail', icon: '📬', label: 'Mail' },
+  { id: 'learn', icon: '📚', label: 'Learn' },
 ]
 
 export function Phone({ st }: { st: GameState }) {
@@ -40,6 +42,7 @@ export function Phone({ st }: { st: GameState }) {
           {app === 'settings' && <SettingsApp personaId={st.persona.profile_id} />}
           {app === 'checks' && <ChecksApp />}
           {app === 'mail' && <MailApp st={st} />}
+          {app === 'learn' && <LearnApp />}
         </div>
         <nav className="phone-nav">
           {APPS.map((a) => (

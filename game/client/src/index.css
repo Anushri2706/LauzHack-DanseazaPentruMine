@@ -303,3 +303,15 @@ kbd { background: var(--cream); border: 2px solid var(--ink); padding: 0 4px; fo
 .study-plan .row-end { margin-top: 6px; }
 .act .study-plan button.btn { width: auto; display: inline-block; padding: 6px 12px; font-size: 14px; background: var(--lilac-2); }
 .act .study-plan button.btn.ghost { background: var(--cream); }
+
+/* Learn app: short money courses */
+.courses { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }
+.course-card { width: 100%; display: flex; gap: 12px; align-items: flex-start; text-align: left; background: #fff; border: 3px solid var(--ink); padding: 10px 12px; color: var(--ink); font: inherit; cursor: pointer; }
+.course-card:hover { background: var(--lilac-2); }
+.course-ico { font-size: 28px; line-height: 1; }
+.course { max-width: 640px; }
+.course h4 { margin: 14px 0 4px; }
+.course p { margin: 0 0 8px; line-height: 1.45; }
+.course-intro { font-size: 16px; }
+.course-box { background: var(--lilac-2); border: 2px dashed var(--lilac); padding: 6px 12px; margin: 14px 0 10px; }
+.course-box ul { margin: 4px 0; padding-left: 18px; }

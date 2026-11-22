@@ -8,7 +8,7 @@ export interface Look { skin: number; hair: number; hairColor: number; top: numb
 export const DEFAULT_LOOK: Look = { skin: 0, hair: 2, hairColor: 0, top: 2, legs: 0 }
 
 export type Dim = 'money' | 'safety' | 'goals' | 'freedom' | 'experience' | 'joy'
-export type AppId = 'money' | 'multiverse' | 'twin' | 'ask' | 'goals' | 'settings' | 'checks' | 'mail'
+export type AppId = 'money' | 'multiverse' | 'twin' | 'ask' | 'goals' | 'settings' | 'checks' | 'mail' | 'learn'
 
 export interface TNode {
   id: string
