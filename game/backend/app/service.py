@@ -281,6 +281,17 @@ def _future_rows(c: GameCtx, prefix_state: State, world: dict) -> GameRun:
     return run_turns(c.params, c.turns, world=world, luck=c.luck, strict=False, resume=(prefix_state, c.current))
 
 
+def _lived_money(s: State) -> dict:
+    """Balances and choices the HMM roll continues from. Equity is carried. No new mortgage."""
+    return {
+        "cash": s.cash, "debt": s.debt, "investments": s.investments,
+        "status": s.status, "program": s.program, "program_end": s.program_end,
+        "has_master": s.has_master, "work_share": s.work_share,
+        "home_value": s.home_value, "mortgage": s.mortgage, "home_id": s.home_id,
+        "retiree": s.retiree,
+    }
+
+
 @lru_cache(maxsize=64)
 def _game_projection(key: str) -> dict:
     req = GameProjectionRequest.model_validate_json(key)
@@ -307,17 +318,19 @@ def _game_projection(key: str) -> dict:
                                "joy_total": sum(r["joy"] for r in full_calm)}
     s0 = lived.opening[m]
     c = GameCtx(c.persona, c.params, c.start, c.turns, c.goals, c.world, c.luck, m)
-    worlds = make_worlds(p, N_WORLDS, req.seed)[:req.n]
-    nw = np.empty((req.n, horizon - m))
-    cash = np.empty((req.n, horizon - m))
-    short = np.zeros(req.n, dtype=bool)
+    # Future luck is an HMM draw. The lived months stay on the town world above.
+    from .engine.hmm_adapter import sample_future
+    drawn = sample_future(c.persona.profile_id, month=m, horizon=horizon, lived=_lived_money(s0),
+                          seed=req.seed, n_paths=req.n)
+    nw = np.asarray(drawn["net_worth"], dtype=float)
+    cash = np.asarray(drawn["cash"], dtype=float)
+    invested = np.asarray(drawn["investments"], dtype=float)
     past_short = any(r["cash"] < 0 for r in past)
+    short = np.array([past_short or bool((cash[k] < 0).any()) for k in range(req.n)])
     goal_hits = {g["goal_id"]: 0 for g in c.goals}
-    for k, w in enumerate(worlds):
-        rows = _future_rows(c, s0, _splice(c.world, w, m, horizon)).rows
-        nw[k] = pick(rows, "net_worth")
-        cash[k] = pick(rows, "cash")
-        short[k] = past_short or bool((cash[k] < 0).any())
+    for k in range(req.n):
+        rows = [{"cash": float(cash[k, t]), "investments": float(invested[k, t])}
+                for t in range(horizon - m)]
         for g in check_goals(c.goals, past + rows):
             if g["status"] == "met":
                 goal_hits[g["goal_id"]] += 1
@@ -343,10 +356,10 @@ def _game_projection(key: str) -> dict:
     out["goals"] = check_goals(c.goals, full_calm)
     out["final_scores"] = scores(full_calm, out["goals"], [])
     out["ended"] = ended
-    out["note"] = (f"Ranges: P10–P90 of the same choices replayed in {req.n} seeded worlds from the start (other luck)."
+    out["note"] = (f"Ranges: P10–P90 of {req.n} HMM paths of the same choices from the start."
                    if ended else
-                   f"Bands: P10–P90 over {req.n} seeded worlds from {_date(m)['label']} on, given what you "
-                   "have lived so far. Ranges under our assumptions, not probabilities.")
+                   f"Bands: P10–P90 of {req.n} HMM paths from {_date(m)['label']} on, given what you "
+                   "have lived so far. Each path draws a regime and a spend ratio, not a market coin.")
     return out
 
 
@@ -355,17 +368,20 @@ def game_projection(req: GameProjectionRequest) -> dict:
 
 
 def game_roll(req: GameRollRequest) -> dict:
-    """'🎲 Roll another world': the same choices, different luck from now on."""
+    """'🎲 Roll another world': the same choices, one new HMM path from this month."""
     c = game_context(req)
     m, horizon = c.current, int(c.params["horizon_months"])
     lived = run_turns(c.params, c.turns, start=c.start, world=c.world, luck=c.luck, keep_states=True,
                       strict_from=m)
     if m >= horizon:
-        return {"world": req.roll, "net_worth": [], "cash": [], "events": []}
-    w = _splice(c.world, make_worlds(c.params, N_WORLDS, req.seed)[req.roll], m, horizon)
-    rows = _future_rows(c, lived.opening[m], w).rows
-    return {"world": req.roll, "from_month": m, "net_worth": [r["net_worth"] for r in rows],
-            "cash": [r["cash"] for r in rows], "events": [e for e in w["events"] if e["month"] >= m]}
+        return {"world": req.roll, "from_month": m, "net_worth": [], "cash": [], "events": []}
+    from .engine.hmm_adapter import sample_future
+    drawn = sample_future(c.persona.profile_id, month=m, horizon=horizon,
+                          lived=_lived_money(lived.opening[m]), seed=int(req.roll), n_paths=1)
+    return {"world": req.roll, "from_month": m,
+            "net_worth": [float(x) for x in drawn["net_worth"][0]],
+            "cash": [float(x) for x in drawn["cash"][0]],
+            "events": drawn["events"]}
 
 
 def game_rows(req: GameRequest) -> tuple[list[dict], GameCtx]:

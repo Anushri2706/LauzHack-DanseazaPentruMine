@@ -71,7 +71,12 @@ def test_projection_bands_ghosts_and_no_surprises():
     # Fan opens from the lived present: the first future month is narrow compared with the last.
     assert nw["p90"][0] - nw["p10"][0] < nw["p90"][-1] - nw["p10"][-1]
     roll = client.post("/game/roll", json={**req, "roll": 3}).json()
-    assert len(roll["net_worth"]) == 108
+    other = client.post("/game/roll", json={**req, "roll": 9}).json()
+    assert len(roll["net_worth"]) == 108 and len(roll["cash"]) == 108
+    assert roll["events"] and roll["events"][0]["kind"] == "hmm"
+    assert "HMM draw" in roll["events"][0]["text"]
+    assert roll["net_worth"] != other["net_worth"]
+    assert "HMM paths" in p["note"]
 
 
 def test_compare_realities_with_turns():

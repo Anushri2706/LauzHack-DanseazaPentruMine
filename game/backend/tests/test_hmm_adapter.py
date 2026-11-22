@@ -8,8 +8,8 @@ from fastapi.testclient import TestClient
 
 from app.engine.game import Action
 from app.engine.hmm_adapter import (
-    advance_year, branch_view, commit, commit_net_flows, life_distribution, start_snapshot,
-    town_action_interventions,
+    advance_year, branch_view, commit, commit_net_flows, life_distribution, sample_future,
+    start_snapshot, town_action_interventions,
 )
 from app.main import app
 
@@ -156,3 +156,30 @@ def test_commit_injected_flows_then_distribution_and_jump():
     assert len(direct["p50"]) == 8
     kept = commit(root, [employed_net] * 6, decision="start_working")
     assert kept["belief"]["employed"] > before
+
+
+def test_sample_future_continues_lived_totals_without_town_coins():
+    from twin.regime_engine import RegimeEngine
+
+    lived = {
+        "cash": 12345.0, "debt": 800.0, "investments": 500.0,
+        "status": "working", "program": None, "program_end": None,
+        "has_master": False, "work_share": 1.0,
+        "home_value": 450_000.0, "mortgage": 300_000.0, "home_id": "studio",
+        "retiree": False,
+    }
+    drawn = sample_future("P00001", month=12, horizon=18, lived=lived, seed=3, n_paths=2,
+                          engine=RegimeEngine.stub())
+    assert drawn["cash"].shape == (2, 6)
+    assert drawn["events"][0]["kind"] == "hmm"
+    assert "seed 3" in drawn["events"][0]["text"]
+    text = drawn["events"][0]["text"].lower()
+    assert "market" not in text and "rent rise" not in text
+    # Opening cash is the lived balance, and the house is equity, not a new mortgage.
+    assert drawn["debt"][0, 0] == pytest.approx(800.0)
+    assert drawn["investments"][0, 0] >= 500.0
+    equity = 450_000.0 - 300_000.0
+    assert drawn["net_worth"][0, 0] == pytest.approx(
+        drawn["cash"][0, 0] + drawn["investments"][0, 0] - drawn["debt"][0, 0] + equity
+    )
+    assert "make_worlds(" not in inspect.getsource(sample_future)

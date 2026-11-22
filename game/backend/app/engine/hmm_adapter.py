@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sys
 import uuid
+from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
 
@@ -341,4 +342,119 @@ def life_distribution(raw_snapshot: dict, *, horizon_months: int = 60, n_paths: 
         "occupancy": paths.occupancy.tolist(),
         "disclaimer": metrics.DISCLAIMER,
         "horizon_months": horizon,
+    }
+
+
+_TOWN_REGIME = {
+    "studying": "student",
+    "working": "employed",
+    "abroad": "employed",
+    "unemployed": "job_search",
+    "retired": "retired",
+}
+
+
+def _regime_name(lived: dict) -> str:
+    status = str(lived.get("status") or "working")
+    if status == "working" and float(lived.get("work_share") or 1.0) < 0.99:
+        return "part_time"
+    return _TOWN_REGIME.get(status, "employed")
+
+
+def _future_controls(lived: dict, block: int) -> tuple[list[Intervention], list[OneOff]]:
+    """Choices still in force, in block months. Housing locks the bill. It does not add a mortgage."""
+    ivs: list[Intervention] = []
+    offs: list[OneOff] = []
+    status = str(lived.get("status") or "")
+    end = lived.get("program_end")
+    remaining = int(end) if end is not None else 0
+    if status == "studying" and lived.get("program") == "master_ft" and remaining > 0:
+        extra, tuition = decision_interventions(
+            "masters", 0, {"duration": remaining}, horizon_months=block,
+        )
+        ivs.extend(extra)
+        offs.extend(tuition)
+    elif status == "studying" and remaining > 0:
+        ivs.append(Intervention("force_state", 0, remaining, state="student"))
+    elif status == "retired" or (lived.get("retiree") and status != "studying"):
+        ivs.append(Intervention("force_state", 0, block, state="retired"))
+    if status == "abroad":
+        ivs.append(Intervention("set_attribute", 0, attribute=("abroad", True)))
+    if lived.get("has_master"):
+        ivs.append(Intervention("set_attribute", 0, attribute=("has_masters", True)))
+    if lived.get("home_id"):
+        ivs.append(Intervention("set_attribute", 0, attribute=("owns_home", True)))
+    return ivs, offs
+
+
+def _regime_summary(states_row: np.ndarray, seed: int) -> str:
+    counts: dict[str, int] = {}
+    order: list[str] = []
+    for idx in states_row:
+        name = STATES[int(idx)]
+        if name not in counts:
+            order.append(name)
+            counts[name] = 0
+        counts[name] += 1
+    parts = [f"{counts[name]} months {name.replace('_', ' ')}" for name in order]
+    return (
+        f"HMM draw, seed {int(seed)}: " + ", ".join(parts)
+        + ". Cash, debt, and investments are the path totals."
+    )
+
+
+def sample_future(persona_id: str, *, month: int, horizon: int, lived: dict, seed: int,
+                  n_paths: int = 1, engine: RegimeEngine | None = None) -> dict:
+    """HMM paths for ``[month, horizon)`` from the lived cash, debt, and investments.
+
+    Luck is a new regime sequence and a spend draw. This does not call ``make_worlds``
+    and does not flip the town's market, job-loss, or rent coins. A home already
+    bought stays as lived equity. ``owns_home`` only locks the housing bill.
+    """
+    origin = int(month)
+    end = int(horizon)
+    block = end - origin
+    n = int(n_paths)
+    if block <= 0 or n <= 0:
+        return {"cash": np.zeros((max(n, 0), 0)), "investments": np.zeros((max(n, 0), 0)),
+                "debt": np.zeros((max(n, 0), 0)), "net_worth": np.zeros((max(n, 0), 0)),
+                "states": np.zeros((max(n, 0), 0), dtype=int), "events": []}
+    profile = load_profile(persona_id)
+    aged = replace(
+        profile,
+        age=float(profile.age) + origin / 12.0,
+        start_month_of_year=(int(profile.start_month_of_year) - 1 + origin) % 12 + 1,
+    )
+    ivs, offs = _future_controls({**lived, "program_end": (
+        None if lived.get("program_end") is None else int(lived["program_end"]) - origin
+    )}, block)
+    regime = _regime_name(lived)
+    belief = {name: (1.0 if name == regime else 0.0) for name in STATES}
+    paths = _engine(engine).simulate(
+        aged,
+        horizon_months=block,
+        n_paths=n,
+        interventions=ivs,
+        assumption_overrides={},
+        initial_belief=belief,
+        seed=int(seed),
+    )
+    cash = cash_engine.run(aged, paths, offs, opening_cash=float(lived.get("cash", profile.opening_cash)))
+    base_investments = float(lived.get("investments") or 0.0)
+    investments = np.asarray(paths.investments_chf, dtype=float) + base_investments
+    debt = np.asarray(paths.debt_chf, dtype=float) + float(lived.get("debt") or 0.0)
+    equity = float(lived.get("home_value") or 0.0) - float(lived.get("mortgage") or 0.0)
+    net_worth = cash.cash + investments - debt + equity
+    events = [{
+        "month": origin,
+        "kind": "hmm",
+        "text": _regime_summary(paths.states[0], int(seed)),
+    }]
+    return {
+        "cash": cash.cash,
+        "investments": investments,
+        "debt": debt,
+        "net_worth": net_worth,
+        "states": paths.states,
+        "events": events,
     }

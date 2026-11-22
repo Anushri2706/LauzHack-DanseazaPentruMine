@@ -46,15 +46,15 @@ export function ScoreTiles({ st, proj }: { st: GameState; proj?: Projection }) {
       <Tile dim="money" title={`💰 Money at ${endAge}`}
         main={f ? <>≈ {k(f.p10)} – {k(f.p90)}</> : k(s.money.net_worth)}
         sub={proj?.ended
-          ? <>🔵 lived: {k(s.money.net_worth)} · range = same choices in {proj.n} worlds (other luck)</>
+          ? <>🔵 lived: {k(s.money.net_worth)} · range = same choices in {proj.n} HMM paths</>
           : <>🔵 net worth · middle {f ? k(f.p50) : '…'} · now {k(s.money.net_worth)}</>}>
         {f && <RangeBar lo={f.p10} mid={f.p50} hi={f.p90} />}
       </Tile>
       <Tile dim="safety" title="🛡️ Safety" tone={tone} main={{ steady: 'Steady', tight: 'Tight', shortfall: 'Shortfall' }[s.safety.level]}
         sub={<>{s.safety.months_negative_cash ? `${s.safety.months_negative_cash} months cash < 0 so far` : `${s.safety.months_below_buffer} months below buffer so far`}
-          {proj && <> · short of cash in {pct(proj.share_worlds_shortfall)} of worlds</>}</>} />
+          {proj && <> · short of cash in {pct(proj.share_worlds_shortfall)} of HMM paths</>}</>} />
       <Tile dim="goals" title="🎯 Goals" main={fs ? `${fs.goals.met} / ${fs.goals.total}` : `${s.goals.met} / ${s.goals.total}`}
-        sub={shares.length ? <>{proj?.ended ? 'met on the path you lived' : 'met if nothing surprising happens'} · in {shares.map(pct).join(', ')} of worlds</>
+        sub={shares.length ? <>{proj?.ended ? 'met on the path you lived' : 'met if nothing surprising happens'} · in {shares.map(pct).join(', ')} of HMM paths</>
           : proj && fs?.goals.total === 0 ? 'no goals chosen' : '…'} />
       <Tile dim="freedom" title="🕊️ Freedom"
         main={s.freedom.runway_months == null ? '—' : `${Math.max(0, Math.round(s.freedom.runway_months))} months`}
@@ -93,7 +93,7 @@ export function MoneyApp({ st }: { st: GameState }) {
   return (
     <div>
       <h3>Money & life scores</h3>
-      <p className="tiny muted">Ranges are where 80% of 500 simulated worlds land under our assumptions: not probabilities, not a prediction. Tap ❤️ on what matters to you.</p>
+      <p className="tiny muted">The band is where 80% of the HMM paths land: a regime each month and a spend draw, not a prediction. Tap ❤️ on what matters to you.</p>
       <ScoreTiles st={st} proj={p} />
       <div className="chart-tools">
         <button className={`chip ${metric === 'net_worth' ? 'on' : ''}`} onClick={() => setMetric('net_worth')}>Net worth</button>
@@ -101,18 +101,18 @@ export function MoneyApp({ st }: { st: GameState }) {
         <label><input type="checkbox" checked={band} onChange={(e) => setBand(e.target.checked)} /> Range (P10–P90)</label>
         <label><input type="checkbox" checked={ghosts} onChange={(e) => setGhosts(e.target.checked)} /> Stress tests</label>
         <button className="btn" onClick={() => void doRoll()} disabled={!p || st.ended}>🎲 Roll another world</button>
-        {proj.loading && <span className="tiny muted">computing 500 worlds…</span>}
+        {proj.loading && <span className="tiny muted">computing HMM paths…</span>}
       </div>
       <div className="chart-box">
         {p ? <MoneyChart proj={p} startAge={st.persona.age} opening={{ net_worth: st.persona.net_worth, cash: st.persona.opening_cash }}
           metric={metric} color={color} showBand={band} showGhosts={ghosts} roll={roll} goals={p.goals} marks={marks} />
           : <p className="muted small" style={{ padding: 20 }}>{proj.error ?? 'Simulating…'}</p>}
       </div>
-      <p className="tiny muted">Solid: lived so far in world #{st.world}. Dotted: if nothing surprising happens from now on. Band: other worlds from now on, same choices.
+      <p className="tiny muted">Solid: lived so far in world #{st.world}. Dotted: if nothing surprising happens from now on. Band: P10–P90 of HMM paths from now on, same choices.
         {ghosts && p && <> Ghosts: {p.ghosts.map((g) => g.text).join('; ')}.</>}</p>
       {roll && (
-        <div className="note small">🎲 World #{roll.world}: same choices, different luck from now on.
-          {roll.events.length ? <ul className="events">{roll.events.map((e, i) => <li key={i}>{e.text}</li>)}</ul> : ' Nothing unusual happens in it.'}
+        <div className="note small">🎲 World #{roll.world}: one HMM path, same choices, different luck from now on.
+          {roll.events.length ? <ul className="events">{roll.events.map((e, i) => <li key={i}>{e.text}</li>)}</ul> : ' No regime sequence came back.'}
           <button className="link" onClick={() => setRoll(undefined)}>hide</button></div>
       )}
       {p && (
