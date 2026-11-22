@@ -1,4 +1,6 @@
 """Pydantic request/response schemas for the API."""
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -17,6 +19,10 @@ class GoalIn(BaseModel):
     month: int  # row index of the target date (month 0 = first simulated month)
     priority: str = "high"
     custom: bool = False
+    # "savings": cash + investments reach `target` at `month`.
+    # "retire_early": stop working at `month` (the target age) and keep money lasting to `until_age`.
+    kind: Literal["savings", "retire_early"] = "savings"
+    until_age: float | None = Field(default=None, ge=40, le=120)
 
 
 class BranchRequest(BaseModel):

@@ -70,7 +70,8 @@ def check_goals(goals: list[dict], rows: list[dict]) -> list[dict]:
     horizon = len(rows)
     earmarked = 0.0
     out = []
-    for g in sorted(goals, key=lambda g: (PRIORITY_ORDER.get(g["priority"], 9), g["month"])):
+    savings = [g for g in goals if g.get("kind", "savings") != RETIRE_KIND]
+    for g in sorted(savings, key=lambda g: (PRIORITY_ORDER.get(g["priority"], 9), g["month"])):
         if g["month"] >= horizon or g["month"] < 0:
             out.append({**g, "status": "beyond_horizon", "available": None})
             continue
@@ -80,7 +81,45 @@ def check_goals(goals: list[dict], rows: list[dict]) -> list[dict]:
         if met:
             earmarked += g["target"]
         out.append({**g, "status": "met" if met else "not_met", "available": available})
-    return out
+    return out + [retire_goal_on_path(g, rows) for g in goals if g.get("kind") == RETIRE_KIND]
+
+
+RETIRE_KIND = "retire_early"
+# Money should last to this age by default. BFS 2023: at 65, Swiss men live on average to about 85 and
+# women to about 88; 90 leaves a margin. The player can change it per goal.
+RETIRE_UNTIL_AGE = 90.0
+
+
+def retire_goal_on_path(g: dict, rows: list[dict]) -> dict:
+    """Early-retirement goal on one path: retired by month g['month'] (the target age) and cash never
+    below zero from then until `until_age`. Investments are sold automatically to cover cash, so
+    'cash below zero' means savings and investments have run out (a home is not counted: sell it first).
+
+    On a path where the player keeps working this is simply 'not met'; the service replays the path
+    with "retire early" added at the target age to answer "what if I stopped then?"."""
+    x = g["month"]
+    until = float(g.get("until_age") or RETIRE_UNTIL_AGE)
+    out = {**g, "kind": RETIRE_KIND, "until_age": until, "available": None, "runs_out_age": None,
+           "reason": None}
+    if x < 0 or x >= len(rows):
+        return {**out, "status": "beyond_horizon"}
+    end = retire_goal_end(g, rows[x]["age"])
+    out["available"] = rows[x]["cash"] + rows[x]["investments"]
+    if rows[x]["status"] != "retired":
+        return {**out, "status": "not_met", "reason": f"Still {rows[x]['status']} at {int(rows[x]['age'])}."}
+    window = rows[x:end]
+    if not window:
+        return {**out, "status": "beyond_horizon"}
+    gone = next((r["age"] for r in window if r["cash"] < -0.005), None)
+    if gone is None and end > len(rows):
+        return {**out, "status": "beyond_horizon"}   # money lasts as far as the path goes, but not to until_age
+    return {**out, "status": "met" if gone is None else "not_met", "runs_out_age": gone,
+            "reason": None if gone is None else f"Savings run out at {int(gone)}."}
+
+
+def retire_goal_end(g: dict, age_at_target: float) -> int:
+    """Row index (exclusive) up to which the money must last: the month the player turns `until_age`."""
+    return g["month"] + int(round((float(g.get("until_age") or RETIRE_UNTIL_AGE) - age_at_target) * 12))
 
 
 def monthly_costs(row: dict) -> float:

@@ -79,7 +79,7 @@ export function MoneyChart({ proj, startAge, opening, metric, color, showBand, s
           <ReferenceDot key={i} x={startAge + x.month / 12} y={livedAt(x.month)} r={4} fill={color} stroke="#4a4063" strokeWidth={2}
             label={{ value: x.label, position: i % 2 ? 'bottom' : 'top', fill: '#4a4063', fontSize: 11 }} />
         ))}
-        {metric === 'net_worth' && goals.filter((g) => g.status !== 'beyond_horizon').map((g) => (
+        {metric === 'net_worth' && goals.filter((g) => g.status !== 'beyond_horizon' && g.kind !== 'retire_early').map((g) => (
           <ReferenceDot key={g.goal_id} x={startAge + (g.month + 1) / 12} y={D(g.target, g.month + 1)} r={5}
             fill={g.status === 'met' ? '#6cc6a0' : '#ff8a8a'} stroke="#4a4063" strokeWidth={1.5}
             label={{ value: `🎯 ${g.name}`, position: 'right', fill: '#4a4063', fontSize: 11 }} />

@@ -13,7 +13,9 @@ from .engine.catalogue import (CANTON_PRICE_LEVEL, FLATS, HABITS, HOMES, ITEMS, 
 from .engine.decisions import CHOICE_LABELS
 from .engine.game import (Action, GameRun, InvalidAction, Turn, available_actions, checkin_due, run_turns,
                           study_default_months)
-from .engine.metrics import cash_risk, check_goals, net_worth_bridge, scores, scores_now, summarize
+from .engine.metrics import (RETIRE_KIND, cash_risk, check_goals, net_worth_bridge, retire_goal_end,
+                             retire_goal_on_path, scores,
+                             scores_now, summarize)
 from .engine.montecarlo import make_worlds, run_montecarlo, sample_world, stress_world
 from .engine.narrative import chf, decision_narrative
 from .engine.simulate import initial_state, run_branch
@@ -317,8 +319,74 @@ def _expected_world(p: dict) -> dict:
             "rent_mult": np.ones(h), "events": []}
 
 
-def _future_rows(c: GameCtx, prefix_state: State, world: dict) -> GameRun:
-    return run_turns(c.params, c.turns, world=world, luck=c.luck, strict=False, resume=(prefix_state, c.current))
+def _future_rows(c: GameCtx, prefix_state: State, world: dict, keep_states: bool = False) -> GameRun:
+    return run_turns(c.params, c.turns, world=world, luck=c.luck, strict=False, resume=(prefix_state, c.current),
+                     keep_states=keep_states)
+
+
+# ----------------------------------------------------------------------------- early-retirement goals
+def _with_retire_turn(turns: list[Turn], x: int) -> list[Turn]:
+    same = next((t.actions for t in turns if t.month == x), ())
+    return sorted([t for t in turns if t.month != x] + [Turn(x, same + (Action("life_choice", "retire_early"),))],
+                  key=lambda t: t.month)
+
+
+def _retire_what_if(c: GameCtx, g: dict, rows: list[dict], opening: dict, world: dict) -> dict:
+    """The same path, replayed with "retire early" added at the goal's month (same world, same luck)."""
+    x = g["month"]
+    end = retire_goal_end(g, opening[x].age)
+    try:
+        run = run_turns(c.params, _with_retire_turn(c.turns, x), world=world, luck=c.luck, strict=False,
+                        resume=(opening[x], x), until=min(end, int(c.params["horizon_months"])),
+                        stop_when_broke=True)
+    except InvalidAction as e:
+        return {**g, "status": "not_possible", "reason": str(e).split(": ", 1)[-1], "what_if": True}
+    return {**retire_goal_on_path(g, rows[:x] + run.rows), "what_if": True}
+
+
+def _needs_what_if(g: dict, rows: list[dict], opening: dict, cf_from: int) -> bool:
+    """A retirement goal the path itself doesn't answer: still working at the target age, which is not lived yet."""
+    x = g["month"]
+    return (g.get("kind") == RETIRE_KIND and g["status"] == "not_met" and x >= cf_from and x in opening
+            and rows[x]["status"] != "retired")
+
+
+def _retire_goals(c: GameCtx, checked: list[dict], rows: list[dict], opening: dict, world: dict,
+                  cf_from: int, earliest: bool = False) -> list[dict]:
+    out = [_retire_what_if(c, g, rows, opening, world) if _needs_what_if(g, rows, opening, cf_from) else g
+           for g in checked]
+    if earliest:
+        out = [{**g, "earliest_age": _earliest_retire_age(c, g, rows, opening, world, cf_from)}
+               if g.get("kind") == RETIRE_KIND else g for g in out]
+    return out
+
+
+def _earliest_retire_age(c: GameCtx, g: dict, rows: list[dict], opening: dict, world: dict,
+                         cf_from: int) -> int | None:
+    """Earliest whole age (not yet lived, before retirement_age) at which stopping work keeps the money
+    lasting to `until_age` on this path. Binary search: retiring later never leaves less money here."""
+    a0 = c.start.start_age
+    month = lambda a: int(round((a - a0) * 12))  # noqa: E731
+
+    def ok(a: int) -> bool:
+        x = month(a)
+        if x not in opening:
+            return False
+        if rows[x]["status"] == "retired":
+            return retire_goal_on_path({**g, "month": x}, rows)["status"] == "met"
+        return _retire_what_if(c, {**g, "month": x}, rows, opening, world)["status"] == "met"
+
+    lo = max(int(np.ceil(a0 + cf_from / 12)), int(np.ceil(a0)))
+    hi = int(np.ceil(c.params["retirement_age"])) - 1
+    if lo > hi or not ok(hi):
+        return None
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if ok(mid):
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo
 
 
 @lru_cache(maxsize=64)
@@ -341,12 +409,16 @@ def _game_projection(key: str) -> dict:
         m = 0
         past = []
     else:
-        calm = _future_rows(c, lived.opening[m], _splice(c.world, _expected_world(p), m, horizon)).rows
+        calm_world = _splice(c.world, _expected_world(p), m, horizon)
+        calm_run = _future_rows(c, lived.opening[m], calm_world, keep_states=True)
+        calm = calm_run.rows
         full_calm = past + calm
         out["no_surprises"] = {"net_worth": pick(calm, "net_worth"), "cash": pick(calm, "cash"),
                                "regime": pick(calm, "regime"),
                                "joy_total": sum(r["joy"] for r in full_calm)}
     s0 = lived.opening[m]
+    cf_from = horizon if ended else m   # what-if retirement only for ages not lived yet
+    retire = any(g.get("kind") == RETIRE_KIND for g in c.goals)
     c = GameCtx(c.persona, c.params, c.start, c.turns, c.goals, c.world, c.luck, m)
     worlds = make_worlds(p, N_WORLDS, req.seed)[:req.n]
     nw = np.empty((req.n, horizon - m))
@@ -357,7 +429,9 @@ def _game_projection(key: str) -> dict:
     runs_out = []      # per world: first age, at or after retirement, with cash below zero (None = never)
     beyond = 0         # worlds that ever go beyond the credit line
     for k, w in enumerate(worlds):
-        rows = _future_rows(c, s0, _splice(c.world, w, m, horizon)).rows
+        wk = _splice(c.world, w, m, horizon)
+        run_k = _future_rows(c, s0, wk, keep_states=retire)
+        rows = run_k.rows
         runs_out.append(next((r["age"] for r in rows if r["cash"] < 0 and r["age"] >= p["retirement_age"]), None))
         beyond += any("beyond_credit" in r["flags"] for r in rows)
         for i, r in enumerate(rows):
@@ -365,7 +439,10 @@ def _game_projection(key: str) -> dict:
         nw[k] = pick(rows, "net_worth")
         cash[k] = pick(rows, "cash")
         below_buf[k] = ["below_buffer" in r["flags"] for r in rows]
-        for g in check_goals(c.goals, past + rows):
+        checked = check_goals(c.goals, past + rows)
+        if retire:
+            checked = _retire_goals(c, checked, past + rows, run_k.opening, wk, cf_from)
+        for g in checked:
             if g["status"] == "met":
                 goal_hits[g["goal_id"]] += 1
     q = lambda a: np.percentile(a, [10, 50, 90], axis=0)  # noqa: E731
@@ -398,6 +475,9 @@ def _game_projection(key: str) -> dict:
     out["ghosts"] = ghosts
     out["bridge"] = net_worth_bridge(full_calm, c.start.cash + c.start.investments - c.start.debt)
     out["goals"] = check_goals(c.goals, full_calm)
+    if retire:
+        out["goals"] = (_retire_goals(c, out["goals"], full_calm, calm_run.opening, calm_world, cf_from, earliest=True)
+                        if not ended else out["goals"])
     out["final_scores"] = scores(full_calm, out["goals"], [])
     out["ended"] = ended
     out["note"] = (f"Ranges: 80% CI (P10–P90) of the same choices replayed in {req.n} seeded worlds from the start (other luck)."
@@ -442,17 +522,22 @@ def compare_games(a: GameRequest, b: GameRequest, name_a: str, name_b: str, at_a
         months = max(12, a.current_month, b.current_month, min(life, int(round((at_age - start_age) * 12))))
         a = a.model_copy(update={"assumptions": {**a.assumptions, "horizon_months": months}})
         b = b.model_copy(update={"assumptions": {**b.assumptions, "horizon_months": months}})
-    ra, ca = game_rows(a)
-    rb, cb = game_rows(b)
+    goals = {}
+    for key, r in (("a", a), ("b", b)):
+        cx = game_context(r)
+        run = run_turns(cx.params, cx.turns, start=cx.start, world=cx.world, luck=cx.luck, strict_from=cx.current,
+                        keep_states=any(g.get("kind") == RETIRE_KIND for g in cx.goals))
+        goals[key] = (run.rows, cx, _retire_goals(cx, check_goals(cx.goals, run.rows), run.rows, run.opening,
+                                                  cx.world, cx.current))
+    (ra, ca, ga), (rb, cb, gb) = goals["a"], goals["b"]
     opening = ca.start.cash + ca.start.investments - ca.start.debt
-    out = compare(ra, rb, name_a, name_b, opening, ca.start.start_age,
-                  check_goals(ca.goals, ra), check_goals(cb.goals, rb))
+    out = compare(ra, rb, name_a, name_b, opening, ca.start.start_age, ga, gb)
     ranges = {}
     for key, r in (("a", a), ("b", b)):
         proj = game_projection(GameProjectionRequest(**r.model_dump(), n=40))
         ranges[key] = proj["final_net_worth"]
     out["ranges"] = ranges
-    out["scores"] = {"a": scores(ra, check_goals(ca.goals, ra), []), "b": scores(rb, check_goals(cb.goals, rb), [])}
+    out["scores"] = {"a": scores(ra, ga, []), "b": scores(rb, gb, [])}
     out["net_worth"] = {"a": [r["net_worth"] for r in ra], "b": [r["net_worth"] for r in rb]}
     out["at_age"] = round(ca.start.start_age + len(ra) / 12, 2)
     out["note"] = (f"Both realities live in the same world (#{a.world}) with the same assumptions; "

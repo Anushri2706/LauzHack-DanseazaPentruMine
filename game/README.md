@@ -34,7 +34,7 @@ clears the saved game.
 ### Checks
 
 ```bash
-cd game/backend && .venv/bin/pytest -q           # 141 tests
+cd game/backend && .venv/bin/pytest -q           # 151 tests
 cd game/client && npx tsc -b                     # type-check
 cd game/client && npm run smoke                  # headless walk through the whole demo (needs both servers
                                                  # and Google Chrome; BASE=http://localhost:5173 by default)
@@ -55,7 +55,7 @@ the engine allows it, compares the two realities, and fast-forwards to the 10-ye
 | Are long-run numbers meaningful? | 💱 toggle (timeline, Money, Matters), Money tile, timeline | **Today's CHF**: values divided by the engine's own price index (`price_level` in `/game/state`). The headline range is **at 65**; 120 is a second line ("no mortality model"). A dotted **✝︎ ≈84** line marks Swiss life expectancy (BFS 2023). |
 | Is retirement funded? | Safety tile, `/game/projection` → `retirement_runs_out` | Share of worlds where cash goes below zero after the retirement age, and the median age it happens. |
 | Comparison over what horizon? | Multiverse → Compare | `POST /compare` takes `at_age`: both realities are cut at the same age (rows, goals, bridge, ranges). Default 30, the challenge's 10-year horizon. |
-| How did you verify it? | ✅ Checks app (13 live checks), 141 + 46 pytest tests, `npm run smoke` | — |
+| How did you verify it? | ✅ Checks app (13 live checks), 151 + 46 pytest tests, `npm run smoke` | — |
 
 ## The life timeline (bottom of the screen)
 
@@ -227,7 +227,7 @@ game/
       compare.py           "why they differ" (now with habits, housing and joy)
     app/data/public/       dated public-data snapshots + sources.json (scripts/fetch_public_data.py)
     app/service.py         glue: persona + overrides → engine; /game/* responses
-    tests/                 141 pytest tests
+    tests/                 151 pytest tests
   client/                  Vite + React 19 + TypeScript + Phaser 3.90
     public/assets/         Kenney CC0 packs (each with its License.txt) + OFL fonts
     src/api/               typed API client (from the old frontend, extended)
@@ -385,6 +385,17 @@ retrieved 2026-11-22 — fred.stlouisfed.org.
   - Not covered: how long you have been in a job and your type of job or sector. The game has neither, and the
     open Swiss flow data has no such split. After graduating, dropping out or quitting you start a job
     yourself at the Office.
+- **Retiring early (choice and goal).** At the 💼 Office, *Retire early* stops work for good: no income
+  until `retirement_age`, living costs fall as at retirement, and the pension then starts from the last full
+  salary, cut by `early_pension_cut_per_year` (3%/year, 🟡: BVG savings credits stop; AHV gaps only if no
+  contributions are paid as a non-employed person, which is not modelled as a cost). In 🎯 Goals,
+  *Retire early: stop working at X, money lasts to Y* (Y = 90 by default; at 65 Swiss men live to about
+  85, women to about 88, BFS) is a **check, not a choice**. The engine replays the current reality with
+  *retire early* added at X, in the same world, and requires cash never to go below zero from X to Y
+  (investments are sold automatically; a home is not counted). It reports the age the money runs out, the
+  **earliest whole age that works** on the no-surprises path (binary search) and the share of worlds where
+  it works. Each replay stops at Y or as soon as the money runs out, so a goal adds about 2 s to a
+  500-world projection. Tests: `tests/test_retire_early.py`.
 - **Retirement and pensions:** at `retirement_age` (65, AHV 21) everyone in the labour market retires on
   `pension_replacement_rate` (47.5% of the last full salary, OECD net replacement rate). The pension is split
   into **AHV** (up to the maximum AHV pension, 2,520 CHF/month in 2025) and **BVG** (the rest). The AHV part

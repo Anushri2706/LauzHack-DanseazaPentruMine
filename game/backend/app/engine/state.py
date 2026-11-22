@@ -48,6 +48,8 @@ class State:
     # Swiss pension (retired): AHV part follows the mixed index every 2 years; BVG part is not indexed.
     pension_ahv: float = 0.0
     pension_bvg: float = 0.0
+    # Retired early: the full salary the pension will be based on (paid from retirement_age; 0 = none pending).
+    pension_base: float = 0.0
 
     @property
     def owner(self) -> bool:

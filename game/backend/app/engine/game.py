@@ -48,8 +48,9 @@ LIFE_LABELS = {
     "quit_job": "Quit your job", "reduce_hours": "Reduce to 80%", "full_hours": "Back to full time",
     "graduate": "🎓 Get your degree", "quit_school": "🚪 Drop out without a degree",
     "finish_study": "🎓 I've finished my master's", "extend_study": "📚 Keep studying longer",
+    "retire_early": "🌅 Retire early (stop working for good)",
 }
-LIFE_PLACE = {"start_work": "office", "quit_job": "office", "reduce_hours": "office", "full_hours": "office",
+LIFE_PLACE = {"start_work": "office", "quit_job": "office", "retire_early": "office", "reduce_hours": "office", "full_hours": "office",
               "master_ft": "university", "master_pt": "university", "drop_out": "university",
               "graduate": "university", "quit_school": "university",
               "finish_study": "university", "extend_study": "university",
@@ -124,6 +125,12 @@ def _cooldown_text(s: State, t: int, p: dict) -> str:
 
 def life_reason(s: State, t: int, p: dict, cid: str) -> str | None:
     """None if life choice `cid` is allowed now, otherwise the reason (shown greyed out in the UI)."""
+    if cid == "retire_early":
+        if s.status == "retired":
+            return "You're already retired."
+        if s.status == "studying":
+            return "Finish or leave school first (University)."
+        return None
     if cid == "quit_job":
         return None if s.status == "working" else "You don't have a job here to quit."
     if cid == "reduce_hours":
@@ -353,6 +360,12 @@ def _apply_life(s: State, t: int, p: dict, cid: str, value: float | None = None)
             return replace(s, status="retired", retiree=False)
         return replace(s, status="unemployed", salary=0.0, salary_start=t, living=p["living_studying"],
                        work_share=1.0)
+    if cid == "retire_early":
+        # Stop working for good. No income until retirement_age; then the pension, based on today's full
+        # salary and cut for each year retired early (life_month). Living costs fall as at retirement.
+        return replace(s, status="retired", salary=0.0, salary_start=t, work_share=1.0,
+                       pension_base=_pension_base(s, p),
+                       living=s.living * p["retirement_spending_factor"], last_switch=t)
     if cid == "quit_job":
         return replace(s, status="unemployed", salary=s.salary * p["quit_benefit_rate"], salary_start=t,
                        living=p["living_studying"], work_share=1.0, last_switch=t)
@@ -382,6 +395,12 @@ def apply_action(s: State, a: Action, t: int, p: dict, luck: tuple[int, int] = (
             letters.append(_letter(t, "degree", "🎓", "You got your degree!",
                                    "Congratulations. Visit the Office to start working: "
                                    f"jobs pay about {chf(_work_terms(s, p)[0])}/month."))
+        elif a.id == "retire_early":
+            pension, cut, years = early_pension(s.pension_base, s.start_age + t / 12.0, p)
+            letters.append(_letter(t, "retired_early", "🌅", "You retired early",
+                                   f"You stop working at {int(s.start_age + t / 12)}. From now on you live on your "
+                                   f"savings and investments until your pension starts at {int(p['retirement_age'])}: "
+                                   f"about {chf(pension)}/month ({cut:.0%} lower for {years:.0f} years retired early)."))
         elif a.id == "quit_school":
             kept = "You keep your bachelor's. " if was_master else "You have no degree: a master's is closed to you. "
             letters.append(_letter(t, "dropped_out", "🚪", "You left school",
@@ -539,6 +558,26 @@ def life_status(s: State, mult: float) -> str:
     return "part_time" if s.work_share < 1 else "employed"
 
 
+def _pension_base(s: State, p: dict) -> float:
+    """Full salary a pension is based on: the current job at 100%, or what a job would pay now."""
+    return s.salary / s.work_share if s.status in ("working", "abroad") else _work_terms(s, p)[0]
+
+
+def _retire_preview(s: State, t: int, p: dict) -> str:
+    pension, cut, years = early_pension(_pension_base(s, p), s.start_age + t / 12, p)
+    return (f"Stop working for good. No income until {int(p['retirement_age'])}; then a pension of about "
+            f"{chf(pension)}/month, {cut:.0%} lower for {years:.0f} years retired early "
+            f"({p['early_pension_cut_per_year']:.0%} a year). Living costs fall to "
+            f"{p['retirement_spending_factor']:.0%}. This can't be undone in the game.")
+
+
+def early_pension(base: float, stop_age: float, p: dict) -> tuple[float, float, float]:
+    """(monthly pension from retirement_age, cut, years early) for someone who stops working at stop_age."""
+    years = max(0.0, p["retirement_age"] - stop_age)
+    cut = min(1.0, years * p["early_pension_cut_per_year"])
+    return max(p["pension_income"], base * p["pension_replacement_rate"] * (1 - cut)), cut, years
+
+
 def life_month(s: State, t: int, p: dict, world: dict | None) -> tuple[State, float, list[dict]]:
     """Age rules for month t (retirement, Swiss pension). Returns (state, extra income, letters).
 
@@ -560,6 +599,15 @@ def life_month(s: State, t: int, p: dict, world: dict | None) -> tuple[State, fl
         s = fast_replace(s, status="retired", salary=pension, salary_start=t, work_share=1.0,
                          pension_ahv=ahv, pension_bvg=pension - ahv,
                          living=s.living * p["retirement_spending_factor"])
+    if s.status == "retired" and s.pension_base > 0 and age >= p["retirement_age"]:
+        # Retired early: the pension starts now, cut for each year without work before retirement_age.
+        pension, cut, years = early_pension(s.pension_base, s.start_age + s.salary_start / 12.0, p)
+        ahv = min(pension, ahv_max_at(t, p))
+        letters.append(_letter(t, "pension_starts", "🌅", "Your pension starts",
+                               f"At {int(age)} your pension starts: {chf(pension)}/month, "
+                               f"{p['pension_replacement_rate']:.1%} of your last full salary, {cut:.0%} lower for "
+                               f"{years:.0f} years retired early. AHV {chf(ahv)} and BVG {chf(pension - ahv)}."))
+        s = fast_replace(s, salary=pension, pension_ahv=ahv, pension_bvg=pension - ahv, pension_base=0.0)
     extra = 0.0
     if s.status == "retired" or s.retiree:  # a retiree studying keeps the pension (and its rules)
         s, extra, ls = pension_month(s, t, p)
@@ -570,13 +618,15 @@ def life_month(s: State, t: int, p: dict, world: dict | None) -> tuple[State, fl
 def run_turns(p: dict, turns: list[Turn], start: State | None = None, world: dict | None = None,
               luck: tuple[int, int] = (42, 0), strict: bool = True, until: int | None = None,
               resume: tuple[State, int] | None = None, keep_states: bool = False,
-              strict_from: int = 0) -> GameRun:
+              strict_from: int = 0, stop_when_broke: bool = False) -> GameRun:
     """Replay a reality from month 0 (or from `resume`=(opening state, month)).
 
     `until`=m stops at month m after applying that month's actions (without simulating it); the
     resulting state is GameRun.final_state. That is the "pending" view the player sees in town.
     Affordability is checked from month `strict_from` on (so editing an assumption later never
     "un-lives" an earlier purchase: it shows up as negative cash instead).
+    `stop_when_broke` ends the run after the first month with cash below zero (what-if replays that only
+    need to know whether, and when, the money runs out).
     """
     validate_params(p)
     horizon = int(p["horizon_months"])
@@ -633,6 +683,8 @@ def run_turns(p: dict, turns: list[Turn], start: State | None = None, world: dic
             letters.append(_letter(t, "loan_paid", "✅", "Loan paid off", "Your debt is fully repaid."))
         if pre.mortgage > 0 and row["mortgage"] == 0:
             letters.append(_letter(t, "mortgage_paid", "🏡", "Mortgage paid off", "Your home is fully yours."))
+        if stop_when_broke and row["cash"] < -0.005:
+            break
     return GameRun(rows=rows, letters=letters, world_events=events, final_state=s,
                    opening=opening, applied=applied)
 
@@ -692,6 +744,7 @@ def available_actions(s: State, t: int, p: dict, queued: tuple[Action, ...] = ()
     out: dict[str, list[dict]] = {k: [] for k in PLACES}
     legacy = {c["id"]: c["preview"] for c in options(s, t, p)["choices"]}
     gen_preview = {
+        "retire_early": _retire_preview(s, t, p),
         "quit_job": f"Income drops to {chf(s.salary * p['quit_benefit_rate'])}/month until you find work again.",
         "reduce_hours": f"Salary {chf(s.salary * p['reduced_hours_share'])}/month instead of {chf(s.salary)}; "
                         f"+{p['joy_reduced_hours']:g} joy/month.",
@@ -721,7 +774,7 @@ def available_actions(s: State, t: int, p: dict, queued: tuple[Action, ...] = ()
                                                 f"{chf(rate * n)}. You'll be asked again in {n} months.",
                                                 one_off=rate * n), ["assumption"], life_done))
     for cid in ("master_ft", "master_pt", "graduate", "quit_school", "start_work", "reduce_hours", "full_hours", "quit_job",
-                "move_abroad", "return_home"):
+                "retire_early", "move_abroad", "return_home"):
         text = legacy.get(cid) or gen_preview.get(cid) or ""
         tags = ["assumption", "simulated"]
         st = enrolled if (due and cid == "quit_school") else s

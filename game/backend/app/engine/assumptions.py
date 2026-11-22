@@ -121,6 +121,13 @@ META: dict[str, AssumptionMeta] = {
     "wage_index_annual": AssumptionMeta("Swiss nominal wage growth", "%/year", "Life course", -0.05, 0.1,
                                         note="BFS Swiss Wage Index, long-run nominal growth of about 1%/year. Half of "
                                              "the AHV mixed index."),
+    "early_pension_cut_per_year": AssumptionMeta(
+        "Pension cut per year you stop working early", "% of pension per year", "Life course", 0, 0.2,
+        note="Our rough assumption. Retiring early stops BVG savings credits (7-18% of the insured salary a "
+             "year, the highest in the last working decade) and the pension fund interest on them. The AHV "
+             "pension keeps no gap only if you pay AHV contributions as a non-employed person "
+             "(CHF 530+/year by wealth; not modelled as a cost). The pension itself still starts at "
+             "retirement_age."),
     "ahv_13th_pension": AssumptionMeta("13th AHV pension (from Dec 2026)", "1 = on, 0 = off", "Life course", 0, 1,
                                        note="Accepted by vote in March 2024: one extra monthly AHV pension each "
                                             "December, first paid in December 2026."),
@@ -205,6 +212,7 @@ ALEXIA_DEFAULTS: dict[str, tuple[float, str]] = {
     "ahv_max_pension": (2520, "ours"),
     "wage_index_annual": (0.01, "ours"),
     "ahv_13th_pension": (1, "ours"),
+    "early_pension_cut_per_year": (0.03, "ours"),
     "rent_shock_prob_annual": (0.1, "ours"),
     "rent_shock_size": (0.1, "ours"),
 }

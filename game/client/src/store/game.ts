@@ -109,7 +109,7 @@ export function colorOf(s: Pick<Store, 'nodes'>, id: string): string {
 
 const LABELS: Record<string, string> = {
   start_work: 'Work', master_ft: "Master's", master_pt: "PT master's", move_abroad: 'Abroad', return_home: 'Back home',
-  drop_out: 'Drop out', graduate: 'Degree', finish_study: 'Finished', extend_study: 'Keep studying', quit_school: 'Drop out (no degree)', quit_job: 'Quit', reduce_hours: '80%', full_hours: '100%',
+  drop_out: 'Drop out', graduate: 'Degree', finish_study: 'Finished', extend_study: 'Keep studying', quit_school: 'Drop out (no degree)', quit_job: 'Quit', retire_early: 'Retire early', reduce_hours: '80%', full_hours: '100%',
   buy_home: 'Buy home', sell_home: 'Sell home', change_flat: 'Move flat', take_loan: 'Loan', repay_debt: 'Repay', sell_investments: 'Sell investments',
   set_savings_rate: 'Savings', ask_raise: 'Raise?', set_habit: 'Habit', buy_item: 'Buy',
 }
@@ -117,7 +117,7 @@ export const ICONS: Record<string, string> = {
   life_choice: '⭐', set_habit: '☕', buy_item: '🛍️', change_flat: '📦', buy_home: '🏠', sell_home: '🔑',
   take_loan: '🏦', repay_debt: '✅', sell_investments: '📤', set_savings_rate: '🐷', ask_raise: '📈',
   start_work: '💼', master_ft: '🎓', master_pt: '🎓', move_abroad: '✈️', return_home: '🚆', drop_out: '🚪', graduate: '🎓', quit_school: '🚪', finish_study: '🎓', extend_study: '📚',
-  quit_job: '🚪', reduce_hours: '🌿', full_hours: '⏱️', weekend_trip: '🧳', flight_home: '✈️',
+  quit_job: '🚪', retire_early: '🌅', reduce_hours: '🌿', full_hours: '⏱️', weekend_trip: '🧳', flight_home: '✈️',
 }
 export function actionIcon(a: ActionIn): string { return ICONS[a.id ?? ''] ?? ICONS[a.type] ?? '•' }
 export function actionLabel(a: ActionIn): string {

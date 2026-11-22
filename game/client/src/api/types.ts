@@ -11,10 +11,19 @@ export interface Goal {
   priority: string
   target_date?: string
   custom?: boolean
+  /** 'savings' (default): cash + investments reach `target` at `month`.
+   *  'retire_early': stop working at `month` (the target age); money lasts to `until_age`. */
+  kind?: 'savings' | 'retire_early'
+  until_age?: number | null
 }
 export interface CheckedGoal extends Goal {
-  status: 'met' | 'not_met' | 'beyond_horizon'
+  status: 'met' | 'not_met' | 'beyond_horizon' | 'not_possible'
   available: number | null
+  // retire_early only
+  runs_out_age?: number | null
+  earliest_age?: number | null   // earliest whole age that works on the no-surprises path (null = not before retirement age)
+  reason?: string | null
+  what_if?: boolean              // answered by replaying the path with "retire early" added at the target age
 }
 
 export interface PersonaCard {
