@@ -316,3 +316,64 @@ def test_freedom_runway_same_definition_in_hud_and_final_scores(params):
     final = scores(run.rows, [], [])["freedom"]["runway_months"]
     now = scores_now(run.rows, [], run.final_state, 120)["freedom"]["runway_months"]
     assert final == pytest.approx(now)
+
+
+# ----------------------------------------------------------------------------- sell investments
+def _invested(plain, **kw):
+    return {**plain, "opening_cash": 20_000, "opening_investments": 30_000, "savings_rate": 0.0, **kw}
+
+
+def test_sell_investments_to_cash_is_a_transfer(plain):
+    p = _invested(plain)
+    before = state_at(p, [T(0, WORK)], 0)
+    after = state_at(p, [T(0, WORK, A("sell_investments", "cash", 12_000))], 0)
+    assert after.cash - before.cash == pytest.approx(12_000)
+    assert before.investments - after.investments == pytest.approx(12_000)
+    assert nw_of(after) == pytest.approx(nw_of(before))
+
+
+def test_sell_investments_to_debt_cuts_debt_and_keeps_net_worth(plain):
+    p = _invested(plain, opening_debt=10_000, opening_debt_rate=0.05)
+    before = state_at(p, [T(0, WORK)], 0)
+    part = state_at(p, [T(0, WORK, A("sell_investments", "debt", 4_000))], 0)
+    assert before.debt - part.debt == pytest.approx(4_000) and part.cash == before.cash
+    assert part.debt_payment == before.debt_payment          # same payment, loan ends sooner
+    assert nw_of(part) == pytest.approx(nw_of(before))
+    full = state_at(p, [T(0, WORK, A("sell_investments", "debt", 10_000))], 0)
+    assert full.debt == 0 and full.debt_payment == 0 and full.investments == pytest.approx(20_000)
+    # Less debt ⇒ less interest paid over the horizon
+    base = run_turns(p, [T(0, WORK)]).rows
+    paid = run_turns(p, [T(0, WORK, A("sell_investments", "debt", 4_000))]).rows
+    assert sum(r["interest"] for r in paid) < sum(r["interest"] for r in base)
+
+
+def test_sell_investments_validation(plain):
+    p = _invested(plain)
+    with pytest.raises(InvalidAction, match="at most"):
+        run_turns(p, [T(0, WORK, A("sell_investments", "cash", 30_001))])
+    with pytest.raises(InvalidAction, match="no debt"):
+        run_turns(p, [T(0, WORK, A("sell_investments", "debt", 1_000))])
+    with pytest.raises(InvalidAction, match="no investments"):
+        run_turns({**p, "opening_investments": 0}, [T(0, WORK, A("sell_investments", "cash", 1))])
+    with pytest.raises(InvalidAction, match="'cash' or 'debt'"):
+        run_turns(p, [T(0, WORK, A("sell_investments", "house", 1))])
+    debt = {**p, "opening_debt": 5_000, "opening_debt_rate": 0.05}
+    with pytest.raises(InvalidAction, match="smaller of investments and debt"):
+        run_turns(debt, [T(0, WORK, A("sell_investments", "debt", 6_000))])
+
+
+def test_sell_investments_capped_in_other_worlds(plain):
+    p = _invested(plain)
+    s = state_at(p, [T(0, WORK)], 0)
+    run = run_turns(p, [T(0, WORK, A("sell_investments", "cash", 99_999))], strict=False, until=0)
+    assert run.final_state.investments == 0 and run.final_state.cash == pytest.approx(s.cash + s.investments)
+
+
+def test_bank_offers_sell_investments(plain):
+    p = _invested(plain, opening_debt=8_000, opening_debt_rate=0.05)
+    s = state_at(p, [T(0, WORK)], 0)
+    bank = available_actions(s, 0, p)["bank"]
+    cash = [a for a in bank if a["type"] == "sell_investments" and a["id"] == "cash"]
+    debt = [a for a in bank if a["type"] == "sell_investments" and a["id"] == "debt"]
+    assert [a["value"] for a in cash] == pytest.approx([7_500, 15_000, 30_000]) and all(a["enabled"] for a in cash)
+    assert [a["value"] for a in debt] == pytest.approx([4_000, 8_000]) and all(a["enabled"] for a in debt)

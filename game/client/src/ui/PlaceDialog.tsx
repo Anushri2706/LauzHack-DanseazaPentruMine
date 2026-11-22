@@ -137,6 +137,10 @@ export function PlaceDialog({ place, st }: { place: Place; st: GameState }) {
             <Group title="🏦 Borrow" items={by((a) => a.type === 'take_loan')} queue={queue}
               note="A loan raises cash and debt equally (net worth unchanged); interest is a cost." />
             <Group title="Repay" items={by((a) => a.type === 'repay_debt')} queue={queue} />
+            <Group title="📤 Take money out of investments" items={by((a) => a.type === 'sell_investments' && a.id === 'cash')} queue={queue}
+              note="Moves money from investments to cash: net worth unchanged, but it stops earning the assumed return." />
+            {st.state.debt > 0 && <Group title="📤 Pay the loan from investments" items={by((a) => a.type === 'sell_investments' && a.id === 'debt')} queue={queue}
+              note="Sells investments and uses the money to cut your debt. Less debt means less interest from next month." />}
           </>}
           {place === 'realestate' && <Group items={acts} queue={queue}
             note="🟡 Prices, mortgage rate (2%), amortization, maintenance and home growth are our assumptions, editable in Settings." />}

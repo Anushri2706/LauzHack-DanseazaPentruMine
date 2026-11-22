@@ -35,7 +35,8 @@ class InvalidAction(InvalidDecision):
 
 
 ACTION_TYPES = ("life_choice", "set_habit", "buy_item", "change_flat", "buy_home", "sell_home",
-                "take_loan", "repay_debt", "set_savings_rate", "ask_raise")
+                "take_loan", "repay_debt", "sell_investments", "set_savings_rate", "ask_raise")
+SELL_TO = ("cash", "debt")  # sell_investments destinations
 LEGACY_LIFE = ("start_work", "master_ft", "master_pt", "move_abroad", "return_home", "drop_out")
 LIFE_LABELS = {
     "start_work": "Start working in Switzerland", "master_ft": "Full-time master's",
@@ -233,6 +234,20 @@ def action_reason(s: State, a: Action, t: int, p: dict, strict: bool = True,
         if strict and s.cash < s.debt:
             return f"Not enough cash to repay {chf(s.debt)} in full."
         return None
+    if a.type == "sell_investments":
+        if a.id not in SELL_TO:
+            return f"Sell investments to 'cash' or 'debt', not '{a.id}'."
+        if s.investments <= 0:
+            return "You have no investments."
+        if a.id == "debt" and s.debt <= 0:
+            return "You have no debt."
+        if a.value is None or a.value <= 0:
+            return "Amount must be above zero."
+        cap = min(s.investments, s.debt) if a.id == "debt" else s.investments
+        if strict and a.value > cap + 0.005:
+            return (f"You can move at most {chf(cap)}."
+                    if a.id == "cash" else f"At most {chf(cap)} (the smaller of investments and debt).")
+        return None
     if a.type == "set_savings_rate":
         if a.value is None or not 0 <= a.value <= 1:
             return "Savings rate must be between 0% and 100%."
@@ -251,6 +266,20 @@ def action_reason(s: State, a: Action, t: int, p: dict, strict: bool = True,
 
 
 # ----------------------------------------------------------------------------- effects
+def sell_investments(s: State, amount: float, to: str) -> State:
+    """Sell investments into cash, or straight into paying the loan. Both are transfers: net worth
+    is unchanged. In other Monte Carlo worlds (no affordability check) the amount is capped at what
+    that world holds. A partial repayment keeps the monthly payment, so the loan ends sooner."""
+    if to == "debt":
+        amt = max(0.0, min(amount, s.investments, s.debt))
+        debt = s.debt - amt
+        if debt < 0.005:
+            return replace(s, investments=s.investments - amt, debt=0.0, debt_payment=0.0)
+        return replace(s, investments=s.investments - amt, debt=debt)
+    amt = max(0.0, min(amount, s.investments))
+    return replace(s, investments=s.investments - amt, cash=s.cash + amt)
+
+
 def _raise_draw(luck: tuple[int, int], t: int) -> float:
     return float(np.random.default_rng([int(luck[0]), int(luck[1]), t, 7919]).random())
 
@@ -340,6 +369,8 @@ def apply_action(s: State, a: Action, t: int, p: dict, luck: tuple[int, int] = (
         s = take_loan(s, float(a.value), p)
     elif a.type == "repay_debt":
         s = repay_all(s)
+    elif a.type == "sell_investments":
+        s = sell_investments(s, float(a.value), a.id)
     elif a.type == "set_savings_rate":
         s = replace(s, savings_rate=float(a.value))
     elif a.type == "ask_raise":
@@ -670,6 +701,27 @@ def available_actions(s: State, t: int, p: dict, queued: tuple[Action, ...] = ()
     out["bank"].append(_entry(s, t, p, "bank", Action("repay_debt"), "Repay all debt",
                               _preview(f"Pay {chf(s.debt)} from cash. A transfer: net worth unchanged.",
                                        one_off=s.debt or None), ["simulated"]))
+    # Bank: pull money out of investments (to cash, or straight to the loan)
+    sweep = (f"Your {s.savings_rate:.0%} savings rule moves that share of cash above your "
+             f"{p['buffer_months']:g}-month buffer back into investments each month: set it to 0% to keep "
+             "the money in cash." if s.savings_rate > 0 else None)
+    for frac, label in ((0.25, "a quarter"), (0.5, "half"), (1.0, "all")):
+        amt = round(s.investments * frac, 2)
+        out["bank"].append(_entry(s, t, p, "bank", Action("sell_investments", "cash", amt),
+                                  f"Sell {label} of investments to cash ({chf(amt)})",
+                                  _preview(f"Investments −{chf(amt)}, cash +{chf(amt)}. A transfer: net worth "
+                                           "unchanged, but that money no longer earns the assumed return.",
+                                           one_off=None, warning=sweep), ["simulated"]))
+    cap = round(min(s.investments, s.debt), 2)
+    for frac, label in ((0.5, "Pay half of that"), (1.0, "Pay as much as possible")):
+        amt = round(cap * frac, 2)
+        rest = s.debt - amt
+        text = (f"Sell {chf(amt)} of investments and pay it off the loan. Debt {chf(s.debt)} → {chf(rest)}. "
+                + ("The loan is fully paid: no more monthly payments. " if rest < 0.005 else
+                   f"Same {chf(s.debt_payment)}/month payment, so the loan ends sooner and costs less interest. ")
+                + "A transfer: net worth unchanged.")
+        out["bank"].append(_entry(s, t, p, "bank", Action("sell_investments", "debt", amt),
+                                  f"{label}: repay {chf(amt)} from investments", _preview(text), ["simulated"]))
     # Real estate
     income = monthly_income(s, p)
     for hid, home in HOMES.items():
