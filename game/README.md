@@ -67,6 +67,48 @@ the engine allows it, compares the two realities, and fast-forwards to the 10-ye
     depends on it (for example, a home bought with that job's savings), the engine says why and nothing
     changes.
 
+## 🧠 The learned twin and 💬 the companion
+
+Four pieces from four branches, combined (`exploring-ideas`):
+
+| Piece | From | What it does |
+|---|---|---|
+| **Regime HMM** | `feature/hmm-and-frontend` (repo-root `backend/twin`) | Life states month by month (working, job search, studying, retired) with sourced Swiss hazards, the income in each (wages by age, unemployment insurance, master's premium, pension at 65) |
+| **GMM** | this branch (`peers/`, `learned/gmmreg.py`) | How much people in each state spend, given rent and income, learned from the data |
+| **Learned engine** | this branch (`learned/behaviour.py`) | December bonus, holiday months (February, August), month-to-month noise, and how a person's own history differs from people like them (shrunk) |
+| **Agent** | `feature/combined-engine` (`app/ai/llm.py`, the claim-guard idea) | The 💬 Ask app: answers with cited engine numbers only, proposes one allowed action you confirm |
+
+**Learned twin** (`learned/twin.py`, `POST /twin/fan`): from your situation now (state, age, income, rent, savings,
+degree, country) to age 120, the HMM draws life events and incomes and the learned engine turns them into monthly
+cash flows. It shows **liquid savings** (no investment returns: the data's cash flows have none). The timeline's
+**🧠 Learned twin / 📐 Rules** switch picks which engine draws the future; the 🧠 Twin phone app shows your numbers
+and the model card.
+
+**Accuracy** (`python -m learned.backtest`, `learned/artifacts/backtest.json`): same locked split as the
+people-like-you models (958 train / 121 validation / 121 test, by person, stratified). Known: a person's 12 months of
+2025; predicted: their cash over 2026. Everything learned on train, settings chosen on validation, test opened once.
+
+| Model (locked test, 121 people) | Avg error in cash after a year | True value inside P10–P90 (aim 80%) |
+|---|---|---|
+| Keep your past average | CHF 3,029 | 64% |
+| HMM alone (teammates' own spending model) | CHF 4,018 | 55% |
+| HMM + GMM | CHF 2,714 | 74% |
+| **Learned twin (HMM + GMM + history)** | **CHF 2,654** | **77%** |
+
+Honest notes: the synthetic people never change state in two years, so the fair test holds each person in their
+state (with the HMM's life events on, the error is CHF 4,790: events the data cannot reward). In this synthetic data
+spending follows rent, not income (rent barely rises with income: elasticity 0.02), so long-run savings are very
+high. An enrolled student is assumed to finish the degree and start working after 12 months (in the HMM, studying
+ends only by a decision).
+
+**Companion** (`app/ai/companion.py`, `POST /ai/ask`): builds facts with ids from the town engine (state, last
+statement, projection), the learned twin and the model card. For "what if I …" it runs both engines with that
+decision added this month (same seed and world) and cites before / after. An LLM may only write sentences with
+`{fact_id}` placeholders; the guard rejects digits of its own, unknown ids, certainty and causal language, and code
+fills in the numbers. A proposed action appears only if the engine allows it now and happens only when you press
+*Plan it*. **No AI key is set**, so it runs on deterministic templates; put `GEMINI_API_KEY=…` (or `GROQ_API_KEY`
+with `LLM_PROVIDER=groq`) in the repo's git-ignored `.env` to switch on the LLM (calls capped by `LLM_MAX_CALLS`).
+
 ## How to play
 
 | | |

@@ -202,3 +202,32 @@ export interface Catalogue {
   rules: { key: string; value: number; label: string; unit: string; group: string }[]
   note: string
 }
+
+// ---- learned twin (HMM life states x learned engine) and the companion
+export interface Q3 { p10: number[]; p50: number[]; p90: number[] }
+export interface ModelScore {
+  mae_cash_end_chf: number; median_abs_error_chf: number; r2_cash_end: number
+  range_hit_rate_p10_p90: number; monthly_range_coverage: number; mean_range_width_chf: number; n: number
+}
+export interface TwinFan {
+  from_month: number; step: number; n_paths: number; start_state: Regime; offset_chf_per_month: number
+  assumed_degree_after_months: number | null
+  wealth: Q3; states: Record<Regime, number[]>
+  summary: {
+    flow_now_p50: number; share_lives_with_job_search_before_65: number | null
+    months_in_job_search_before_65_p50: number | null; retirement_age_p50: number | null
+    wealth_at_65: { p10: number; p50: number; p90: number } | null
+    wealth_at_end: { p10: number; p50: number; p90: number }; share_lives_ever_below_zero: number
+  }
+  basis: string; note: string; inputs: Record<string, number | string | boolean | null>; model: ModelScore
+}
+export interface TwinModel {
+  task: string; sizes: Record<string, number>; chosen_on_validation: Record<string, number>
+  test: Record<string, ModelScore>; test_life_events_on: Record<string, ModelScore>
+  learned: Record<string, Record<string, number | number[]>>
+}
+export interface AskAction { type: string; id: string | null; value: number | null; label: string; enabled: boolean; reason: string | null; preview: string }
+export interface AskReply {
+  answer: { text: string; facts: string[] }[]; action: AskAction | null; mode: 'llm' | 'rules'; llm: string
+  facts_used: Record<string, { label: string; text: string; source: string }>; rejected_sentences: number; disclaimer: string
+}

@@ -279,3 +279,20 @@ kbd { background: var(--cream); border: 2px solid var(--ink); padding: 0 4px; fo
 @media (max-width: 900px) { .tl-legend { display: none; } .timeline { margin: 0 4px 4px; } }
 
 .hint-close { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); }
+
+/* ---------- learned twin + companion ---------- */
+.tl-view { display: inline-flex; gap: 4px; margin-left: 6px; }
+.tl-view .chip.on { background: var(--lilac-2); box-shadow: 0 0 0 2px var(--ink); }
+.twin-app .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 10px 0; }
+.twin-app tr.best td { background: #eefbe9; font-weight: 600; }
+.twin-app h4 { margin: 16px 0 6px; }
+.ask-app { display: flex; flex-direction: column; gap: 8px; min-height: 100%; }
+.ask-app .chat { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.ask-app .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.bubble { max-width: 88%; padding: 8px 12px; box-shadow: 0 0 0 2px #e2d6c3; background: #fff; }
+.bubble p { margin: 0 0 6px; }
+.bubble.me { align-self: flex-end; background: var(--lilac-2); }
+.bubble.twin { align-self: flex-start; }
+.ask-action { margin: 6px 0; padding: 6px 8px; background: #fff8ea; box-shadow: 0 0 0 2px var(--peach); display: flex; flex-direction: column; gap: 6px; }
+.ask-form { display: flex; gap: 8px; position: sticky; bottom: 0; background: var(--cream); padding-top: 6px; }
+.ask-form input { flex: 1; padding: 6px 8px; font: inherit; border: 0; box-shadow: 0 0 0 2px var(--ink); }

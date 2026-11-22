@@ -9,9 +9,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { GameState, Regime } from '../api/types'
 import { travelTo, undoChoice, unqueue } from '../store/actions'
-import { actionIcon, actionLabel, colorOf, pathIds, tipOf, useStore } from '../store/game'
+import { actionIcon, actionLabel, colorOf, pathIds, setStore, tipOf, useStore } from '../store/game'
 import { chf, k, monthLabel, pct } from './format'
-import { useProjection } from './useGame'
+import { useProjection, useTwin } from './useGame'
 
 export const REGIME_META: Record<Regime, { label: string; color: string }> = {
   employed: { label: 'Working', color: '#4fb38a' },
@@ -57,33 +57,50 @@ export function Timeline({ st }: { st: GameState }) {
   const area = useRef<HTMLDivElement>(null)
 
   const p = proj.data && proj.data.month === m && !proj.data.ended ? proj.data : null
+  // The future right of 📍 comes from one of two engines:
+  //   twin  = the learned twin: HMM life states x money behaviour learned from data (liquid savings)
+  //   rules = the town engine's seeded worlds (net worth, with investment returns)
+  const view = s.futureView ?? 'twin'
+  const twinQ = useTwin(s, view === 'twin' && m < H)
+  const tw = twinQ.data && twinQ.data.from_month === m ? twinQ.data : null
+  const fut = view === 'twin'
+    ? (tw ? { band: tw.wealth, step: tw.step, shares: tw.states, n: tw.n_paths } : null)
+    : (p?.bands && p.regimes ? { band: p.bands.net_worth, step: 1, shares: p.regimes.share, n: p.n } : null)
+  const loading = view === 'twin' ? twinQ.loading : proj.loading
+  const valueOf = (r: { net_worth: number; cash: number; investments: number }) =>
+    view === 'twin' ? r.cash + r.investments : r.net_worth
+  const metricName = view === 'twin' ? 'Liquid savings' : 'Net worth'
 
   // --------------------------------------------------------------- net worth (lived + fan)
   const nw = useMemo(() => {
-    const lived = st.rows.map((r) => r.net_worth)
-    const band = p?.bands?.net_worth
-    const vals = [...lived, ...(band ? [...band.p10, ...band.p90] : []), 0, st.state.net_worth]
+    const lived = st.rows.map(valueOf)
+    const band = fut?.band
+    const fstep = fut?.step ?? 1
+    const nowV = valueOf(st.state)
+    const vals = [...lived, ...(band ? [...band.p10, ...band.p90] : []), 0, nowV]
     let lo = Math.min(...vals.map(f)), hi = Math.max(...vals.map(f))
     if (hi - lo < 1) hi = lo + 1
     const Y = (v: number) => NW_BOT - ((f(v) - lo) / (hi - lo)) * (NW_BOT - NW_TOP)
     const step = Math.max(1, Math.ceil(H / 500))
-    const line = (arr: number[], off: number) => arr
-      .map((v, i) => (i % step === 0 || i === arr.length - 1 ? `${X(off + i + 1).toFixed(1)},${Y(v).toFixed(1)}` : ''))
+    const line = (arr: number[], off: number, k = 1) => arr
+      .map((v, i) => (i % Math.max(1, Math.round(step / k)) === 0 || i === arr.length - 1
+        ? `${X(Math.min(H, off + (i + 1) * k)).toFixed(1)},${Y(v).toFixed(1)}` : ''))
       .filter(Boolean)
-    const livedPts = [`0,${Y(st.persona.net_worth).toFixed(1)}`, ...line(lived, 0)]
+    const open0 = view === 'twin' ? st.persona.opening_cash + st.persona.opening_investments : st.persona.net_worth
+    const livedPts = [`0,${Y(open0).toFixed(1)}`, ...line(lived, 0)]
     let bandPath = '', midPath = ''
     if (band) {
-      const top = line(band.p90, m)
-      const bot = line(band.p10, m).reverse()
-      const now = `${X(m).toFixed(1)},${Y(st.state.net_worth).toFixed(1)}`
+      const top = line(band.p90, m, fstep)
+      const bot = line(band.p10, m, fstep).reverse()
+      const now = `${X(m).toFixed(1)},${Y(nowV).toFixed(1)}`
       bandPath = `M${now} L${top.join(' L')} L${bot.join(' L')} Z`
-      midPath = `M${now} L${line(band.p50, m).join(' L')}`
+      midPath = `M${now} L${line(band.p50, m, fstep).join(' L')}`
     }
     const zero = Y(0)
     const ticks = [-1e5, 0, 1e4, 1e5, 1e6, 1e7].filter((v) => f(v) >= lo && f(v) <= hi).map((v) => ({ v, y: Y(v) }))
       .filter((t, _i, arr) => t.v === 0 || arr.every((o) => o === t || o.v === 0 || Math.abs(o.y - t.y) > 14 || Math.abs(o.v) < Math.abs(t.v)))
     return { lived: lived.length ? `M${livedPts.join(' L')}` : '', bandPath, midPath, zero, ticks }
-  }, [st.rows, st.state.net_worth, p, H, m]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [st.rows, st.state, fut, view, H, m]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --------------------------------------------------------------- regime strip
   const strip = useMemo(() => {
@@ -96,10 +113,11 @@ export function Timeline({ st }: { st: GameState }) {
       out.push({ x: X(i), w: X(j) - X(i), y: STRIP_TOP, h: STRIP_BOT - STRIP_TOP, c: REGIME_META[r].color })
       i = j
     }
-    const share = p?.regimes?.share
+    const share = fut?.shares
     if (share) {
       const n = share.employed.length
-      const B = Math.max(1, Math.ceil(H / 200))
+      const k = fut!.step
+      const B = Math.max(1, Math.ceil(H / 200 / k))
       for (let b = 0; b < n; b += B) {
         let y = STRIP_TOP
         for (const r of ORDER) {
@@ -107,13 +125,13 @@ export function Timeline({ st }: { st: GameState }) {
           let sum = 0, c = 0
           for (let t = b; t < Math.min(n, b + B); t++) { sum += arr[t]; c++ }
           const h = (sum / c) * (STRIP_BOT - STRIP_TOP)
-          if (h > 0.05) out.push({ x: X(m + b), w: X(m + Math.min(n, b + B)) - X(m + b) + 0.3, y, h, c: REGIME_META[r].color })
+          if (h > 0.05) out.push({ x: X(m + b * k), w: X(m + Math.min(n, b + B) * k) - X(m + b * k) + 0.3, y, h, c: REGIME_META[r].color })
           y += h
         }
       }
     }
     return out
-  }, [st.rows, p, H, m]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [st.rows, fut, H, m]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --------------------------------------------------------------- choices on the viewed reality
   const tip = tipOf(s)
@@ -141,16 +159,16 @@ export function Timeline({ st }: { st: GameState }) {
     const head = `Age ${Math.floor(ageAt(t))} · ${monthLabel(t)}`
     if (t < m && st.rows[t]) {
       const r = st.rows[t]
-      return { head, lines: [`Lived: ${REGIME_META[r.regime]?.label ?? r.regime}`, `Net worth ${chf(r.net_worth)}`] }
+      return { head, lines: [`Lived: ${REGIME_META[r.regime]?.label ?? r.regime}`, `${metricName} ${chf(valueOf(r))}`] }
     }
-    if (t === m) return { head, lines: ['You are here', `Net worth ${chf(st.state.net_worth)}`] }
-    if (!p?.bands || !p.regimes) return { head, lines: [proj.loading ? 'Fanning out possible lives…' : 'Future'] }
-    const i = Math.min(t - m - 1, p.bands.net_worth.p50.length - 1)
-    const b = p.bands.net_worth
-    const regs = ORDER.map((r) => [r, p.regimes!.share[r][Math.max(0, i)]] as const).filter(([, v]) => v >= 0.01)
+    if (t === m) return { head, lines: ['You are here', `${metricName} ${chf(valueOf(st.state))}`] }
+    if (!fut) return { head, lines: [loading ? 'Fanning out possible lives…' : 'Future'] }
+    const b = fut.band
+    const i = Math.max(0, Math.min(Math.floor((t - m - 1) / fut.step), b.p50.length - 1))
+    const regs = ORDER.map((r) => [r, fut.shares[r][i]] as const).filter(([, v]) => v >= 0.01)
       .sort((a, c) => c[1] - a[1]).map(([r, v]) => `${REGIME_META[r].label} ${pct(v)}`)
-    return { head, lines: [`Median net worth ${k(b.p50[i])} (P10–P90 ${k(b.p10[i])} to ${k(b.p90[i])})`,
-      `Of ${p.n} simulated lives: ${regs.join(' · ')}`] }
+    return { head, lines: [`Median ${metricName.toLowerCase()} ${k(b.p50[i])} (P10–P90 ${k(b.p10[i])} to ${k(b.p90[i])})`,
+      `Of ${fut.n} simulated lives (${view === 'twin' ? 'learned twin' : 'town engine'}): ${regs.join(' · ')}`] }
   }
 
   const retireMonth = Math.round((65 - startAge) * 12)
@@ -185,7 +203,13 @@ export function Timeline({ st }: { st: GameState }) {
         {s.queue.length > 0 && <span className="tl-plans">🗓️ {s.queue.length} plan{s.queue.length > 1 ? 's' : ''} this month · they happen as you move forward</span>}
         <span className="tl-legend">
           {ORDER.map((r) => <span key={r}><i style={{ background: REGIME_META[r].color }} />{REGIME_META[r].label}</span>)}
-          <span className="muted">· right of 📍: {p ? `${p.n} simulated lives` : proj.loading ? 'simulating…' : ''}</span>
+          <span className="tl-view" role="group" aria-label="Which engine draws the future">
+            <button className={`chip tiny ${view === 'twin' ? 'on' : ''}`} onClick={() => setStore({ futureView: 'twin' })}
+              title="HMM life states (sourced Swiss hazards) × money behaviour learned from 958 people, backtested on a locked test set. Shows liquid savings.">🧠 Learned twin</button>
+            <button className={`chip tiny ${view === 'rules' ? 'on' : ''}`} onClick={() => setStore({ futureView: 'rules' })}
+              title="The town engine's seeded worlds: stated assumptions, investment returns. Shows net worth.">📐 Rules</button>
+          </span>
+          <span className="muted">{fut ? `${fut.n} lives · ${metricName.toLowerCase()}` : loading ? 'simulating…' : ''}</span>
         </span>
       </div>
       <div className="tl-area" ref={area} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp}

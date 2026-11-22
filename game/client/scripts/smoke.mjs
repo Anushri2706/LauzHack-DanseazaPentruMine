@@ -77,6 +77,16 @@ try {
   await page.locator('.note', { hasText: 'same choices, different luck' }).waitFor()
   step('rolled another world')
   if (await page.locator('.phone-nav button', { hasText: 'Life odds' }).count()) throw new Error('Life odds should be gone')
+  // Learned twin (HMM x learned engine) and the companion
+  await page.locator('.phone-nav button', { hasText: 'Twin' }).click()
+  await page.locator('.twin-app .cmp-table tbody tr').nth(3).waitFor({ timeout: 60000 })
+  await shot('07-twin')
+  step(`twin: ${(await page.locator('.twin-app tr.best td').first().innerText())} has the lowest backtest error`)
+  await page.locator('.phone-nav button', { hasText: 'Ask' }).click()
+  await page.getByRole('button', { name: /How accurate is your model/ }).click()
+  await page.waitForFunction(() => document.querySelector('.bubble.twin')?.textContent?.includes('locked test people'), null, { timeout: 60000 })
+  await shot('07-ask')
+  step('companion answered with cited engine facts')
   for (const app of ['Goals', 'Settings', 'Mail', 'Checks']) {
     await page.locator('.phone-nav button', { hasText: app }).click()
     await page.waitForTimeout(400)

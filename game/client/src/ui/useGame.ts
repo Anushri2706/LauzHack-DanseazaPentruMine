@@ -14,3 +14,9 @@ export function useProjection(s: Store, n = 60) {
   const req = requestFor(s, undefined, false)
   return useApi(JSON.stringify(req) + n, () => api.projection(req, n))
 }
+
+/** The learned twin from the player's state now (HMM life states x learned engine); null key = off. */
+export function useTwin(s: Store, on = true) {
+  const req = requestFor(s, undefined, false)
+  return useApi(on && !s.busy ? JSON.stringify(req) + 'twin' : null, () => api.twinFan(req))
+}
