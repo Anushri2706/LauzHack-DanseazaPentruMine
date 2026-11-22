@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -437,12 +438,46 @@ def load_profile(profile_id: str = "P00001", data_dir: Path = DATA_DIR) -> Profi
         name=str(r["display_name"]),
         opening_cash=float(r["opening_cash_chf"]),
         mean_savings_rate=mean_rate,
+        use_existing_loan_rate=False,
     )
 
 
 def observed_net_flows(profile_id: str, data_dir: Path = DATA_DIR) -> list[float]:
     cb = load_cash_balances(data_dir)
     return cb.loc[cb["profile_id"] == profile_id, "net_transactions_chf"].astype(float).tolist()
+
+
+@lru_cache(maxsize=4)
+def _read_csv(path: str) -> pd.DataFrame:
+    return pd.read_csv(path)
+
+
+def scenario_annual_tuition(profile_id: str | None, data_dir: Path = DATA_DIR) -> float | None:
+    """S001 ``annual_tuition_chf`` for this profile, or None when the row is absent."""
+    if not profile_id:
+        return None
+    df = _read_csv(str(Path(data_dir) / "scenario-assumptions.csv"))
+    hit = df[(df["profile_id"] == profile_id) & (df["scenario_id"] == "S001")
+             & (df["parameter"] == "annual_tuition_chf")]
+    if hit.empty:
+        return None
+    return float(hit["value"].iloc[0])
+
+
+def liability_annual_rate(profile_id: str | None, data_dir: Path = DATA_DIR) -> float | None:
+    """Principal-weighted ``annual_interest_rate`` for this profile, or None if they have no loan."""
+    if not profile_id:
+        return None
+    df = _read_csv(str(Path(data_dir) / "synthetic-liabilities.csv"))
+    rows = df[df["profile_id"] == profile_id]
+    if rows.empty:
+        return None
+    principal = rows["opening_principal_chf"].to_numpy(dtype=float)
+    rates = rows["annual_interest_rate"].to_numpy(dtype=float)
+    total = float(principal.sum())
+    if total > 0:
+        return float(np.dot(principal, rates) / total)
+    return float(np.mean(rates))
 
 
 if __name__ == "__main__":

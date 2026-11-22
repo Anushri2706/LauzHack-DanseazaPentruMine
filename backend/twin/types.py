@@ -47,6 +47,8 @@ class Profile:
     opening_cash: float = 0.0
     mean_savings_rate: float | None = None   # per-profile mean net_flow / ref_income from the ledger
     start_month_of_year: int = 1             # 1 = January; used for the December (13th salary) offset
+    # New tuition debt. False uses the ETH student-loan rate (0). True uses this profile's personal loan.
+    use_existing_loan_rate: bool = False
 
     @property
     def initial_state(self) -> str:
@@ -77,6 +79,11 @@ class RegimePaths:
     occupancy: np.ndarray        # [T, K] simulated P(state_t = k); equals pi0 A^t when A is fixed and nothing is pinned
     transition_draws: np.ndarray # [n_paths, K, K] sampled A (parameter uncertainty)
     lump_chf: np.ndarray | None = None  # [n_paths, T] holiday + emergency, one draw per year; None if off
+    # Extension. Tuition debt is a running total, not a regime. None on paths built outside simulate.
+    debt_chf: np.ndarray | None = None            # [n_paths, T] end-of-month tuition-debt total
+    tuition_accrual_chf: np.ndarray | None = None  # [n_paths, T] loan principal booked that month
+    # Extension. Investments are a running total of positive net flow, not a regime and not a mortgage.
+    investments_chf: np.ndarray | None = None     # [n_paths, T] end-of-month investments total
 
     @property
     def n_paths(self) -> int:
@@ -85,3 +92,25 @@ class RegimePaths:
     @property
     def horizon(self) -> int:
         return self.states.shape[1]
+
+
+@dataclass
+class DecisionSnapshot:
+    """Frozen record the caller stores. ``RegimeEngine`` does not hold it.
+
+    Restore replays ``filter`` on ``observed_net_flows``, then the next ``simulate``
+    uses ``initial_belief=belief`` and these interventions. There is no balance-sheet
+    field: opening cash lives only on ``profile``. ``snapshot_id`` and ``parent_id``
+    are the branch tree the phone draws. ``one_offs`` are ``cash_engine.OneOff``.
+    """
+
+    month: int
+    profile: Profile
+    belief: dict[str, float]
+    observed_net_flows: list[float]
+    interventions: list[Intervention]
+    one_offs: list
+    assumption_overrides: dict
+    seed: int
+    parent_id: str | None
+    snapshot_id: str

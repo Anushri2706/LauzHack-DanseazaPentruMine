@@ -1,6 +1,6 @@
 """Cash engine: vectorised starter-kit accounting over sampled regime paths.
 
-Semantics follow starter-kit/financial_twin.py: C_{t+1} = C_t + net_flow_t - one_offs_t,
+Semantics follow starter-kit/financial_twin.py: C_{t+1} = C_t + net_flow_t + tuition_accrual_t - one_offs_t,
 balances are end-of-month, minimum includes the opening balance, the first negative month is
 reported and negative cash is never clamped (it must be explained as financing need).
 
@@ -55,15 +55,26 @@ def run(profile: Profile, paths: RegimePaths, one_offs: list[OneOff] | None = No
             raise ValueError("One-off costs cannot be negative")
         costs[item.month] += item.amount_chf
     opening = profile.opening_cash if opening_cash is None else float(opening_cash)
-    total = paths.net_flow_chf - costs[None, :]
+    accrual = paths.tuition_accrual_chf
+    if accrual is None:
+        accrual = np.zeros_like(paths.net_flow_chf, dtype=float)
+    else:
+        accrual = np.asarray(accrual, dtype=float)
+    # The accrual is loan proceeds added to cash and to debt; living costs stay in the net flow.
+    total = paths.net_flow_chf + accrual - costs[None, :]
     cash = opening + np.cumsum(total, axis=1)
-    flows = {"net_flow_chf": paths.net_flow_chf, "one_off_costs_chf": np.broadcast_to(costs, total.shape)}
+    flows = {
+        "net_flow_chf": paths.net_flow_chf,
+        "one_off_costs_chf": np.broadcast_to(costs, total.shape).copy(),
+        "tuition_accrual_chf": accrual,
+    }
     return CashPaths(opening, cash, flows)
 
 
 def reconciles(cp: CashPaths, tol: float = 1e-6) -> bool:
     """Opening + sum of named flows == closing on every path."""
-    total = cp.flows["net_flow_chf"] - cp.flows["one_off_costs_chf"]
+    accrual = cp.flows.get("tuition_accrual_chf", 0.0)
+    total = cp.flows["net_flow_chf"] - cp.flows["one_off_costs_chf"] + accrual
     return bool(np.allclose(cp.opening_cash_chf + total.sum(axis=1), cp.closing, atol=tol))
 
 

@@ -2,7 +2,9 @@
 
 Answers one question: given who this person is, what they decide and our assumptions, what
 life regime are they likely in each month, and what monthly net cash flow does that produce?
-It does no cash accounting, tax, investments, goals, UI or narration (see cash_engine, metrics).
+It does no tax, goals, UI or narration (see cash_engine, metrics). A pinned master's
+keeps a tuition-debt total on the path, and positive net flow keeps an investments
+total. Neither is a regime. There is no mortgage.
 
 Two modes, same ``simulate`` / ``filter`` signature:
 - ``RegimeEngine.stub()``: deterministic regimes, constant per-state savings rate.
@@ -22,9 +24,10 @@ import pandas as pd
 from scipy import stats
 from scipy.special import logsumexp
 
+from .data import liability_annual_rate, scenario_annual_tuition
 from .income import IncomeTable, attributes_at, parental_leave_duration, parental_leave_mask
 from .transitions import TransitionPriors, load_transition_priors
-from .types import K, STATE_INDEX, STATES, Intervention, Profile, RegimePaths
+from .types import K, STATE_INDEX, STATES, DecisionSnapshot, Intervention, Profile, RegimePaths
 
 # Where a scheduled (force_state with duration) phase exits to.
 EXIT_STATE: dict[str, str] = {"student": "employed", "job_search": "employed"}
@@ -585,6 +588,153 @@ def sample_regime_paths(rng: np.random.Generator, pi0: np.ndarray, A_draws: np.n
     return states
 
 
+def _masters_tuition_mask(interventions: list[Intervention], horizon: int) -> np.ndarray:
+    """Months inside a master's pin: ``force_state`` student whose exit sets ``has_masters``.
+
+    The exit month is ``start_month + duration``, which is when the existing decision
+    turns ``has_masters`` on. Accrual covers ``[start, exit)``. A student pin that does
+    not end on that attribute, including a later return to study, is outside the window.
+    """
+    mask = np.zeros(horizon, dtype=bool)
+    exits: set[int] = set()
+    for iv in interventions:
+        if iv.kind != "set_attribute" or iv.attribute is None:
+            continue
+        name, value = iv.attribute
+        if name == "has_masters" and value is True:
+            exits.add(int(iv.start_month))
+    if not exits:
+        return mask
+    for iv in interventions:
+        if iv.kind != "force_state" or iv.state != "student" or iv.duration is None:
+            continue
+        start = int(iv.start_month)
+        end = start + int(iv.duration)
+        if end not in exits:
+            continue
+        lo = max(0, start)
+        hi = min(horizon, end)
+        if lo < hi:
+            mask[lo:hi] = True
+    return mask
+
+
+def _annual_tuition(profile: Profile, params: dict, overrides: dict) -> float:
+    """Scenario S001 tuition, then the assumptions-CSV fallback. An override wins."""
+    if "annual_tuition_chf" in overrides:
+        return float(overrides["annual_tuition_chf"])
+    looked = scenario_annual_tuition(profile.profile_id)
+    if looked is not None:
+        return looked
+    return float(params["annual_tuition_chf"])
+
+
+def _as_flag(value: object) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y"}
+    return bool(value)
+
+
+def _use_existing_loan_rate(profile: Profile, interventions: list[Intervention], pin_start: int | None) -> bool:
+    """The flag in force when the master's pin starts.
+
+    ``Profile.use_existing_loan_rate`` is the default. A ``set_attribute`` of the same
+    name already in force at ``pin_start`` replaces it. A later write does not.
+    """
+    if pin_start is None:
+        return _as_flag(profile.use_existing_loan_rate)
+    attrs = attributes_at(profile, interventions, pin_start)
+    if "use_existing_loan_rate" in attrs:
+        return _as_flag(attrs["use_existing_loan_rate"])
+    return _as_flag(profile.use_existing_loan_rate)
+
+
+def _annual_loan_rate(profile: Profile, params: dict, overrides: dict,
+                      interventions: list[Intervention], pin_start: int | None) -> float:
+    """ETH rate (0) unless the profile flag asks for their personal-loan rate.
+
+    An explicit ``tuition_loan_annual_rate`` override wins over both. The flag is read
+    at ``pin_start``. A true flag with no liability row falls back to the ETH rate.
+    The monthly rate used below is this annual rate / 12.
+    """
+    if "tuition_loan_annual_rate" in overrides:
+        return float(overrides["tuition_loan_annual_rate"])
+    if _use_existing_loan_rate(profile, interventions, pin_start):
+        looked = liability_annual_rate(profile.profile_id)
+        if looked is not None:
+            return looked
+    return float(params["tuition_loan_annual_rate"])
+
+
+def _tuition_debt_paths(profile: Profile, horizon: int, n_paths: int, interventions: list[Intervention],
+                        params: dict, overrides: dict) -> tuple[np.ndarray, np.ndarray]:
+    """``[n_paths, T]`` tuition-debt total and the principal booked each month.
+
+    Debt is a running total on the path. It is not a state and it is not bucketed.
+    Outside the master's window the total is carried forward with no further growth.
+    Opening tuition debt is 0. The same numbers are copied onto every path: the chain
+    does not infer them. The loan rate is chosen once, at the first month of the window.
+    """
+    mask = _masters_tuition_mask(interventions, horizon)
+    accrual_t = np.zeros(horizon)
+    accrual_t[mask] = _annual_tuition(profile, params, overrides) / 12.0
+    on = np.flatnonzero(mask)
+    pin_start = int(on[0]) if len(on) else None
+    monthly = _annual_loan_rate(profile, params, overrides, interventions, pin_start) / 12.0
+    debt_t = np.empty(horizon)
+    prev = 0.0
+    # The accrual is loan proceeds added to cash and to debt; living costs stay in the net flow.
+    for t in range(horizon):
+        if mask[t]:
+            prev = prev * (1.0 + monthly) + accrual_t[t]
+        debt_t[t] = prev
+    debt = np.broadcast_to(debt_t, (n_paths, horizon)).copy()
+    accrual = np.broadcast_to(accrual_t, (n_paths, horizon)).copy()
+    return debt, accrual
+
+
+def _investment_rate(overrides: dict) -> float:
+    """Annual rate on the investments total. Default 0. An override wins.
+
+    There is no sourced investment return on the assumptions CSV. 0 means the
+    total is the cumulative positive net flow, with no growth. No mortgage.
+    """
+    if "investment_annual_rate" in overrides:
+        return float(overrides["investment_annual_rate"])
+    return 0.0
+
+
+def _investment_total(net: np.ndarray, annual_rate: float) -> np.ndarray:
+    """``[n_paths, T]`` investments. A path total, not a hidden state.
+
+    ``I_t = I_{t-1} * (1 + m) + max(net_flow_t, 0)`` with ``I`` before month 0
+    equal to 0 and ``m`` the annual rate divided by 12. A negative net flow does
+    not withdraw. There is no fee and no mortgage. The same rule runs on every path.
+    """
+    n_paths, horizon = net.shape
+    monthly = float(annual_rate) / 12.0
+    saved = np.maximum(np.asarray(net, dtype=float), 0.0)
+    total = np.empty((n_paths, horizon), dtype=float)
+    prev = np.zeros(n_paths, dtype=float)
+    for t in range(horizon):
+        prev = prev * (1.0 + monthly) + saved[:, t]
+        total[:, t] = prev
+    return total
+
+
+def _shift_intervention(iv: Intervention, origin: int) -> Intervention:
+    """Life month ``start_month`` as an index into a block that begins at ``origin``."""
+    return Intervention(
+        iv.kind,
+        int(iv.start_month) - int(origin),
+        iv.duration,
+        state=iv.state,
+        transition=iv.transition,
+        factor=iv.factor,
+        attribute=iv.attribute,
+    )
+
+
 def analytic_occupancy(pi0: np.ndarray, A: np.ndarray, horizon: int) -> np.ndarray:
     """P(s_t = k) = pi0 A^t for t = 0..T-1. ``A`` is [K, K] or [T, K, K]. Returns [T, K]."""
     occ = np.empty((horizon, len(pi0)))
@@ -703,6 +853,60 @@ class RegimeEngine:
         return self._simulate_hmm(profile, horizon_months, n_paths, interventions, overrides,
                                   initial_belief, seed, income_table)
 
+    def simulate_until_next_decision(
+        self,
+        profile: Profile,
+        decision: str,
+        *,
+        from_month: int,
+        until_month: int,
+        n_paths: int = 5000,
+        interventions: list[Intervention] | None = None,
+        assumption_overrides: dict | None = None,
+        initial_belief: dict | None = None,
+        seed: int = 0,
+    ) -> RegimePaths:
+        """One ``simulate`` of the block ``[from_month, until_month)``.
+
+        ``decision`` must be a ``DECISIONS`` key, or ``rent_step`` / ``owns_home``.
+        The block is ``until_month - from_month`` months. Intervention months are
+        life months; they are shifted by ``from_month`` so a decision at the start
+        of the block lands on month 0. At ``from_month == 0`` that shift is a no-op,
+        and the call matches ``simulate`` with the decision's own interventions.
+        This method does not store a snapshot and does not sample on its own.
+        """
+        from .twin_session import DECISIONS, decision_interventions
+
+        origin = int(from_month)
+        end = int(until_month)
+        if end <= origin:
+            raise ValueError("until_month must be greater than from_month")
+        if decision not in DECISIONS and decision not in ("rent_step", "owns_home"):
+            raise ValueError(f"Unknown decision kind {decision!r}; choose from {sorted(DECISIONS)}")
+        extra, _offs = decision_interventions(decision, origin, {})
+        combined = list(interventions or []) + extra
+        shifted = [_shift_intervention(iv, origin) for iv in combined]
+        return self.simulate(
+            profile,
+            horizon_months=end - origin,
+            n_paths=n_paths,
+            interventions=shifted,
+            assumption_overrides=assumption_overrides,
+            initial_belief=initial_belief,
+            seed=seed,
+        )
+
+    def branch_decisions(
+        self,
+        snapshot: DecisionSnapshot,
+        decisions: list[str],
+        *,
+        until_month: int,
+        n_paths: int = 5000,
+    ) -> dict[str, RegimePaths]:
+        """Side-by-side ``simulate_until_next_decision`` from one snapshot. Writes nothing."""
+        return branch_decisions(self, snapshot, decisions, until_month=until_month, n_paths=n_paths)
+
     def savings_rate_for(self, state: str, profile: Profile, overrides: dict) -> float:
         key = f"savings_rate_{state}"
         if key in overrides:
@@ -734,13 +938,19 @@ class RegimeEngine:
         occupancy = np.zeros((T, K))
         occupancy[np.arange(T), seq] = 1.0
         A = self.priors.matrix(overrides)
+        net = savings_rate * income
+        debt, accrual = _tuition_debt_paths(profile, T, n, interventions, income_table.params, overrides)
+        investments = _investment_total(net, _investment_rate(overrides))
         return RegimePaths(
             states=states,
             income_chf=income,
             savings_rate=savings_rate,
-            net_flow_chf=savings_rate * income,
+            net_flow_chf=net,
             occupancy=occupancy,
             transition_draws=np.broadcast_to(A, (n, K, K)).copy(),
+            debt_chf=debt,
+            tuition_accrual_chf=accrual,
+            investments_chf=investments,
         )
 
     def _simulate_hmm(self, profile, T, n, interventions, overrides, initial_belief, seed, income_table) -> RegimePaths:
@@ -790,4 +1000,36 @@ class RegimeEngine:
         ok = np.abs(income) > 1.0
         savings[ok] = net[ok] / income[ok]
         occupancy = np.stack([(states == k).mean(axis=0) for k in range(K)], axis=1)
-        return RegimePaths(states, income, savings, net, occupancy, A_draws, lump)
+        debt, accrual = _tuition_debt_paths(profile, T, n, interventions, income_table.params, overrides)
+        investments = _investment_total(net, _investment_rate(overrides))
+        return RegimePaths(states, income, savings, net, occupancy, A_draws, lump, debt, accrual, investments)
+
+
+def branch_decisions(
+    engine: RegimeEngine,
+    snapshot: DecisionSnapshot,
+    decisions: list[str],
+    *,
+    until_month: int,
+    n_paths: int = 5000,
+) -> dict[str, RegimePaths]:
+    """One ``simulate_until_next_decision`` per name, from the same snapshot.
+
+    Same profile, belief, seed, overrides, and already-committed interventions.
+    The only difference is the extra interventions of that option. Does not write
+    a snapshot, does not append observations, and does not call ``filter``.
+    """
+    out: dict[str, RegimePaths] = {}
+    for name in decisions:
+        out[name] = engine.simulate_until_next_decision(
+            snapshot.profile,
+            name,
+            from_month=snapshot.month,
+            until_month=until_month,
+            n_paths=n_paths,
+            interventions=list(snapshot.interventions),
+            assumption_overrides=dict(snapshot.assumption_overrides),
+            initial_belief=dict(snapshot.belief) if snapshot.belief else None,
+            seed=snapshot.seed,
+        )
+    return out

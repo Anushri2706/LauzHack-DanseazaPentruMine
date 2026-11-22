@@ -7,7 +7,10 @@ import pytest
 
 from twin import RegimeEngine, cash_engine, load_profile, load_transition_priors
 from twin.cash_engine import CashPaths
-from twin.data import ASSUMPTIONS_DIR, load_cash_balances, load_goals, load_profiles
+from twin.data import (
+    ASSUMPTIONS_DIR, DATA_DIR, liability_annual_rate, load_cash_balances, load_goals,
+    load_profiles, scenario_annual_tuition,
+)
 from twin.income import IncomeTable
 from twin.metrics import goal_hit_rate
 from twin.regime_engine import _schedule, emission_loglik, fit_emissions, forward_filter, sample_yearly_lump
@@ -796,3 +799,300 @@ def test_goal_hit_rate_on_a_known_fan_and_the_csv_row():
     assert from_tuple["goal_month"] == from_row["goal_month"]
     with pytest.raises(TypeError):
         goal_hit_rate(wide, "2025-01", alexia)
+
+
+def _rolled_debt(months: int, accrual: float, monthly_rate: float) -> list[float]:
+    debt = 0.0
+    out = []
+    for _ in range(months):
+        debt = debt * (1.0 + monthly_rate) + accrual
+        out.append(debt)
+    return out
+
+
+def test_masters_pin_accrues_tuition_debt_and_other_paths_do_not(engine):
+    """A 24-month master's increases the debt total. A path without that pin does not.
+
+    The window is force_state student for 24 months with has_masters set at month 24.
+    Debt is last month's total grown by the monthly loan rate, plus that month's
+    tuition/12. Living costs stay in net_flow_chf.
+    """
+    assert STATES == ["employed", "part_time", "job_search", "student", "retired"]
+    alexia = load_profile("P00001")
+    tuition = scenario_annual_tuition("P00001")
+    assert tuition == pytest.approx(8000)
+    assert liability_annual_rate("P00001") is None
+    assert alexia.use_existing_loan_rate is False
+    annual_rate = float(engine.income_table.params["tuition_loan_annual_rate"])
+    assert annual_rate == pytest.approx(0.0)
+    notes = (ASSUMPTIONS_DIR / "income_assumptions.csv").read_text()
+    rate_line = next(line for line in notes.splitlines() if line.startswith("tuition_loan_annual_rate,"))
+    assert "https://www.fedlex.admin.ch/eli/cc/2023/473/de" in rate_line
+    assert "ETH Zurich's own student-loan rate, not a national SBFI rate" in rate_line
+    assert "21 Nov 2026" in rate_line
+
+    pin = [
+        Intervention("force_state", 0, 24, state="student"),
+        Intervention("set_attribute", 24, attribute=("has_masters", True)),
+    ]
+    paths = engine.simulate(
+        alexia, horizon_months=36, n_paths=4, seed=0, interventions=pin,
+        assumption_overrides={"dirichlet": 0},
+    )
+    accrual = tuition / 12.0
+    monthly = annual_rate / 12.0
+    rolled = _rolled_debt(24, accrual, monthly)
+    assert paths.debt_chf.shape == paths.net_flow_chf.shape == (4, 36)
+    assert paths.states.shape == paths.income_chf.shape == paths.savings_rate.shape
+    assert np.allclose(paths.debt_chf, paths.debt_chf[0])
+    assert paths.debt_chf[0, :24] == pytest.approx(rolled)
+    assert paths.debt_chf[0, 23] == pytest.approx(16000)
+    assert paths.debt_chf[0, 24:] == pytest.approx(rolled[-1])
+    assert paths.tuition_accrual_chf[0, :24] == pytest.approx(accrual)
+    assert paths.tuition_accrual_chf[0, 24:] == pytest.approx(0)
+    assert (paths.states[:, :24] == S).all()
+    assert (paths.states[:, 24] == E).all()
+    ok = np.abs(paths.income_chf) > 1
+    assert np.allclose(paths.net_flow_chf[ok], paths.savings_rate[ok] * paths.income_chf[ok])
+    cash = cash_engine.run(alexia, paths)
+    assert cash_engine.reconciles(cash)
+    expected_cash = alexia.opening_cash + np.cumsum(paths.net_flow_chf + paths.tuition_accrual_chf, axis=1)
+    assert cash.cash == pytest.approx(expected_cash)
+
+    stub = RegimeEngine.stub().simulate(alexia, horizon_months=36, n_paths=2, interventions=pin)
+    assert stub.debt_chf[0] == pytest.approx(paths.debt_chf[0])
+
+    no_masters = engine.simulate(
+        alexia, horizon_months=36, n_paths=4, seed=0, assumption_overrides={"dirichlet": 0},
+    )
+    assert np.all(no_masters.debt_chf == 0)
+    assert np.all(no_masters.tuition_accrual_chf == 0)
+    working = engine.simulate(
+        _worker(), horizon_months=36, n_paths=4, seed=1,
+        interventions=[Intervention("force_state", 0, None, state="employed")],
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert np.all(working.debt_chf == 0)
+    student_only = engine.simulate(
+        alexia, horizon_months=36, n_paths=2, seed=0,
+        interventions=[Intervention("force_state", 0, 24, state="student")],
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert np.all(student_only.debt_chf == 0)
+
+    later = pin + [Intervention("force_state", 30, 6, state="student")]
+    again = engine.simulate(
+        alexia, horizon_months=40, n_paths=2, seed=0, interventions=later,
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert again.debt_chf[0, 23] == pytest.approx(rolled[-1])
+    assert again.debt_chf[0, 24:] == pytest.approx(rolled[-1])
+    assert again.tuition_accrual_chf[0, 30:36] == pytest.approx(0)
+
+    priced = engine.simulate(
+        alexia, horizon_months=24, n_paths=1, seed=0, interventions=pin,
+        assumption_overrides={"dirichlet": 0, "tuition_loan_annual_rate": 0.12},
+    )
+    assert priced.debt_chf[0, -1] == pytest.approx(_rolled_debt(24, accrual, 0.12 / 12.0)[-1])
+    assert float(priced.debt_chf[0, -1]) > 16000
+
+    other_tuition = scenario_annual_tuition("P00002")
+    assert other_tuition == pytest.approx(1200)
+    other = engine.simulate(
+        load_profile("P00002"), horizon_months=1, n_paths=1, seed=0, interventions=pin,
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert other.debt_chf[0, 0] == pytest.approx(other_tuition / 12.0)
+
+    own_rate = liability_annual_rate("P00013")
+    assert own_rate == pytest.approx(0.0593)
+    borrower = load_profile("P00013")
+    assert borrower.use_existing_loan_rate is False
+    ignored = engine.simulate(
+        borrower, horizon_months=2, n_paths=1, seed=0, interventions=pin,
+        assumption_overrides={"dirichlet": 0},
+    )
+    own_accrual = scenario_annual_tuition("P00013") / 12.0
+    # False ignores the personal-loan rate, so two months are principal only.
+    assert ignored.debt_chf[0, 1] == pytest.approx(own_accrual * 2.0)
+    personal = own_accrual * (2.0 + own_rate / 12.0)
+    assert abs(float(ignored.debt_chf[0, 1]) - personal) > 0.01
+
+
+def test_use_existing_loan_rate_is_read_when_the_masters_pin_starts(engine):
+    """True uses the profile loan rate. False ignores it. An override still wins.
+
+    The flag is the profile field, unless a set_attribute of the same name is already
+    in force at the first month of the master's window.
+    """
+    pin = [
+        Intervention("force_state", 0, 24, state="student"),
+        Intervention("set_attribute", 24, attribute=("has_masters", True)),
+    ]
+    own_rate = liability_annual_rate("P00013")
+    accrual = scenario_annual_tuition("P00013") / 12.0
+    personal = accrual * (2.0 + own_rate / 12.0)
+
+    opted_in = load_profile("P00013")
+    opted_in.use_existing_loan_rate = True
+    borrowed = engine.simulate(
+        opted_in, horizon_months=2, n_paths=1, seed=0, interventions=pin,
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert borrowed.debt_chf[0, 1] == pytest.approx(personal)
+
+    no_loan = load_profile("P00001")
+    no_loan.use_existing_loan_rate = True
+    assert liability_annual_rate("P00001") is None
+    still_zero = engine.simulate(
+        no_loan, horizon_months=2, n_paths=1, seed=0, interventions=pin,
+        assumption_overrides={"dirichlet": 0},
+    )
+    alexia_accrual = scenario_annual_tuition("P00001") / 12.0
+    assert still_zero.debt_chf[0, 1] == pytest.approx(alexia_accrual * 2.0)
+
+    overridden = engine.simulate(
+        opted_in, horizon_months=2, n_paths=1, seed=0, interventions=pin,
+        assumption_overrides={"dirichlet": 0, "tuition_loan_annual_rate": 0.12},
+    )
+    assert overridden.debt_chf[0, 1] == pytest.approx(accrual * (2.0 + 0.12 / 12.0))
+
+    # The pin starts at month 2. A flag set before that month is the one that counts.
+    delayed = [
+        Intervention("set_attribute", 0, attribute=("use_existing_loan_rate", True)),
+        Intervention("force_state", 2, 2, state="student"),
+        Intervention("set_attribute", 4, attribute=("has_masters", True)),
+    ]
+    held = load_profile("P00013")
+    assert held.use_existing_loan_rate is False
+    from_attribute = engine.simulate(
+        held, horizon_months=4, n_paths=1, seed=0, interventions=delayed,
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert from_attribute.debt_chf[0, :2] == pytest.approx(0)
+    assert from_attribute.debt_chf[0, 3] == pytest.approx(personal)
+
+    # Written after the pin has started: the choice was already false.
+    late = pin + [Intervention("set_attribute", 1, attribute=("use_existing_loan_rate", True))]
+    missed = engine.simulate(
+        held, horizon_months=2, n_paths=1, seed=0, interventions=late,
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert missed.debt_chf[0, 1] == pytest.approx(accrual * 2.0)
+
+
+def test_investments_total_tracks_positive_net_flow_and_is_not_a_mortgage(engine):
+    """Investments sit beside cash and debt: a path total, not a regime and not a mortgage."""
+    alexia = load_profile("P00001")
+    paths = engine.simulate(
+        alexia, horizon_months=6, n_paths=3, seed=0, assumption_overrides={"dirichlet": 0},
+    )
+    assert paths.investments_chf.shape == paths.net_flow_chf.shape == paths.debt_chf.shape
+    assert np.allclose(paths.investments_chf, np.cumsum(np.maximum(paths.net_flow_chf, 0.0), axis=1))
+    assert "mortgage" not in paths.__dict__
+    priced = engine.simulate(
+        alexia, horizon_months=2, n_paths=2, seed=0,
+        assumption_overrides={"dirichlet": 0, "investment_annual_rate": 0.12},
+    )
+    net = priced.net_flow_chf
+    monthly = 0.12 / 12.0
+    first = np.maximum(net[:, 0], 0.0)
+    second = first * (1.0 + monthly) + np.maximum(net[:, 1], 0.0)
+    assert priced.investments_chf[:, 0] == pytest.approx(first)
+    assert priced.investments_chf[:, 1] == pytest.approx(second)
+
+
+def test_simulate_until_next_decision_matches_simulate_and_rejects_unknowns(engine):
+    import inspect
+
+    from twin import branch_decisions
+    from twin.data import observed_net_flows
+    from twin.twin_session import decision_interventions
+    from twin.types import DecisionSnapshot
+
+    sim = inspect.signature(RegimeEngine.simulate)
+    filt = inspect.signature(RegimeEngine.filter)
+    assert list(sim.parameters) == [
+        "self", "profile", "horizon_months", "n_paths", "interventions",
+        "assumption_overrides", "initial_belief", "seed",
+    ]
+    assert list(filt.parameters) == ["self", "profile", "observed_net_flows", "assumption_overrides"]
+    assert sim.parameters["horizon_months"].default == 60
+    assert sim.parameters["n_paths"].default == 5000
+    assert sim.parameters["interventions"].default is None
+    assert sim.parameters["initial_belief"].default is None
+    assert sim.parameters["seed"].default == 0
+    assert filt.parameters["assumption_overrides"].default is None
+
+    alexia = load_profile("P00001")
+    wrapped = engine.simulate_until_next_decision(
+        alexia, "masters", from_month=0, until_month=24, n_paths=6, seed=0,
+        assumption_overrides={"dirichlet": 0},
+    )
+    ivs, _offs = decision_interventions("masters", 0, {})
+    direct = engine.simulate(
+        alexia, horizon_months=24, n_paths=6, seed=0, interventions=ivs,
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert np.array_equal(wrapped.states, direct.states)
+    assert np.allclose(wrapped.income_chf, direct.income_chf)
+    assert np.allclose(wrapped.net_flow_chf, direct.net_flow_chf)
+    assert (wrapped.states[:, :24] == S).all()
+    assert wrapped.horizon == 24
+
+    with pytest.raises(ValueError):
+        engine.simulate_until_next_decision(alexia, "university", from_month=0, until_month=12)
+    with pytest.raises(ValueError):
+        engine.simulate_until_next_decision(alexia, "buy_home", from_month=0, until_month=12)
+    with pytest.raises(ValueError):
+        engine.simulate_until_next_decision(alexia, "masters", from_month=5, until_month=5)
+
+    home = engine.simulate_until_next_decision(
+        alexia, "owns_home", from_month=0, until_month=2, n_paths=2, seed=0,
+        assumption_overrides={"dirichlet": 0},
+    )
+    home_iv, home_off = decision_interventions("owns_home", 0, {})
+    assert len(home_iv) == 1 and home_iv[0].kind == "set_attribute"
+    assert home_iv[0].attribute == ("owns_home", True) and home_off == []
+    assert "mortgage" not in home.__dict__
+
+    later = engine.simulate_until_next_decision(
+        alexia, "masters", from_month=12, until_month=24, n_paths=3, seed=0,
+        assumption_overrides={"dirichlet": 0},
+    )
+    assert later.horizon == 12 and (later.states == S).all()
+
+    flows = observed_net_flows("P00001")
+    overrides = {"dirichlet": 0}
+    belief = engine.filter(alexia, flows, overrides)
+    assert belief["student"] > 0.9
+    attrs = set(engine.__dict__)
+    snap = DecisionSnapshot(
+        month=0, profile=alexia, belief=belief, observed_net_flows=list(flows),
+        interventions=[], one_offs=[], assumption_overrides=overrides,
+        seed=1, parent_id=None, snapshot_id="root",
+    )
+    assert engine.filter(snap.profile, snap.observed_net_flows, snap.assumption_overrides) == snap.belief
+    assert set(engine.__dict__) == attrs
+    before = list(snap.observed_net_flows)
+    calls = {"n": 0}
+    original = engine.filter
+
+    def _counting(*args, **kwargs):
+        calls["n"] += 1
+        return original(*args, **kwargs)
+
+    engine.filter = _counting
+    try:
+        first = branch_decisions(engine, snap, ["masters", "start_working"], until_month=12, n_paths=4)
+        second = branch_decisions(engine, snap, ["masters", "start_working"], until_month=12, n_paths=4)
+    finally:
+        del engine.filter
+    assert calls["n"] == 0
+    assert snap.observed_net_flows == before
+    assert set(engine.__dict__) == attrs
+    assert first["masters"].n_paths == first["start_working"].n_paths == 4
+    assert np.array_equal(first["masters"].states, second["masters"].states)
+    assert np.array_equal(first["masters"].income_chf, second["masters"].income_chf)
+    assert np.array_equal(first["masters"].net_flow_chf, second["masters"].net_flow_chf)
+    assert not np.array_equal(first["masters"].states, first["start_working"].states)
