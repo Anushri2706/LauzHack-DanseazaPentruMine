@@ -1,0 +1,234 @@
+{
+ "sizes": {
+  "train": 958,
+  "validation": 121,
+  "test": 121
+ },
+ "target": "average monthly net cash flow over 24 months (CHF/month); cash after 24 months = opening cash + 24 x flow",
+ "validation": {
+  "everyone's average": {
+   "mae_flow_chf_per_month": 2561.304963738735,
+   "mae_cash_after_24m_chf": 61471.319129729636,
+   "median_abs_error_chf_per_month": 2284.464986951983,
+   "r2": -0.0005376703222941259,
+   "n": 121,
+   "range_hit_rate_p10_p90": 0.8016528925619835
+  },
+  "same decision (job status) average": {
+   "mae_flow_chf_per_month": 1674.6495280756012,
+   "mae_cash_after_24m_chf": 40191.58867381443,
+   "median_abs_error_chf_per_month": 1476.7323524305555,
+   "r2": 0.5225790701937618,
+   "n": 121,
+   "range_hit_rate_p10_p90": 0.7603305785123967
+  },
+  "same decision + household average": {
+   "mae_flow_chf_per_month": 1624.414145690038,
+   "mae_cash_after_24m_chf": 38985.93949656091,
+   "median_abs_error_chf_per_month": 1336.8276809210524,
+   "r2": 0.5340576210160151,
+   "n": 121,
+   "range_hit_rate_p10_p90": 0.7768595041322314
+  },
+  "kNN (people like you)": {
+   "mae_flow_chf_per_month": 236.7278964822539,
+   "mae_cash_after_24m_chf": 5681.469515574093,
+   "median_abs_error_chf_per_month": 215.52441350809244,
+   "r2": 0.9898159183746045,
+   "n": 121,
+   "range_hit_rate_p10_p90": 0.5867768595041323
+  }
+ },
+ "test": {
+  "kNN (people like you)": {
+   "mae_flow_chf_per_month": 241.0418728301604,
+   "mae_cash_after_24m_chf": 5785.00494792385,
+   "median_abs_error_chf_per_month": 167.01015435281306,
+   "r2": 0.9870275115328807,
+   "n": 121,
+   "range_hit_rate_p10_p90": 0.6363636363636364
+  },
+  "everyone's average": {
+   "mae_flow_chf_per_month": 2499.5568238898763,
+   "mae_cash_after_24m_chf": 59989.36377335703,
+   "median_abs_error_chf_per_month": 2259.6645963813503,
+   "r2": -0.0009224516663841609,
+   "n": 121,
+   "range_hit_rate_p10_p90": 0.8264462809917356
+  },
+  "same decision (job status) average": {
+   "mae_flow_chf_per_month": 1662.3890747538546,
+   "mae_cash_after_24m_chf": 39897.33779409251,
+   "median_abs_error_chf_per_month": 1341.162119200244,
+   "r2": 0.5398367916704483,
+   "n": 121,
+   "range_hit_rate_p10_p90": 0.7933884297520661
+  },
+  "same decision + household average": {
+   "mae_flow_chf_per_month": 1608.4100649156328,
+   "mae_cash_after_24m_chf": 38601.841557975196,
+   "median_abs_error_chf_per_month": 1339.9710807291667,
+   "r2": 0.5680766898630156,
+   "n": 121,
+   "range_hit_rate_p10_p90": 0.8016528925619835
+  }
+ },
+ "grid": {
+  "combinations": 327600,
+  "best": {
+   "weights": {
+    "age": 0.0,
+    "income": 2.0,
+    "rent": 0.5,
+    "wealth": 0.0,
+    "household": 0.0,
+    "canton": 0.0
+   },
+   "decision": "filter",
+   "status_weight": 0.0,
+   "distance_weighted": true,
+   "k": 3,
+   "val_mae": 236.72789648225384
+  },
+  "top5": [
+   {
+    "weights": {
+     "age": 0.0,
+     "income": 2.0,
+     "rent": 0.5,
+     "wealth": 0.0,
+     "household": 0.0,
+     "canton": 0.0
+    },
+    "decision": "filter",
+    "status_weight": 0.0,
+    "distance_weighted": true,
+    "k": 3,
+    "val_mae": 236.72789648225384
+   },
+   {
+    "weights": {
+     "age": 0.0,
+     "income": 2.0,
+     "rent": 0.5,
+     "wealth": 0.0,
+     "household": 0.0,
+     "canton": 0.0
+    },
+    "decision": "feature",
+    "status_weight": 1.0,
+    "distance_weighted": true,
+    "k": 3,
+    "val_mae": 236.72789648225384
+   },
+   {
+    "weights": {
+     "age": 0.0,
+     "income": 2.0,
+     "rent": 0.5,
+     "wealth": 0.0,
+     "household": 0.0,
+     "canton": 0.0
+    },
+    "decision": "feature",
+    "status_weight": 4.0,
+    "distance_weighted": true,
+    "k": 3,
+    "val_mae": 236.72789648225384
+   },
+   {
+    "weights": {
+     "age": 0.0,
+     "income": 2.0,
+     "rent": 0.5,
+     "wealth": 0.0,
+     "household": 0.0,
+     "canton": 0.0
+    },
+    "decision": "feature",
+    "status_weight": 16.0,
+    "distance_weighted": true,
+    "k": 3,
+    "val_mae": 236.72789648225384
+   },
+   {
+    "weights": {
+     "age": 0.0,
+     "income": 2.0,
+     "rent": 0.5,
+     "wealth": 0.0,
+     "household": 0.0,
+     "canton": 0.0
+    },
+    "decision": "feature",
+    "status_weight": 1.0,
+    "distance_weighted": true,
+    "k": 5,
+    "val_mae": 238.959041475406
+   }
+  ],
+  "k_curve_for_best_weights": {
+   "3": 236.72789648225384,
+   "5": 239.33933568440997,
+   "8": 243.54773525791651,
+   "12": 250.22482831419723,
+   "2": 255.66878759386753,
+   "20": 269.9381065123839,
+   "1": 274.4977685950414,
+   "30": 297.5670506913271,
+   "50": 355.9577391498431,
+   "80": 458.7650727151294
+  }
+ },
+ "test_by_status": {
+  "employed": {
+   "mae_flow_chf_per_month": 214.3660130946281,
+   "mae_cash_after_24m_chf": 5144.784314271074,
+   "median_abs_error_chf_per_month": 161.29628982724466,
+   "r2": 0.9863074779371545,
+   "n": 68,
+   "range_hit_rate_p10_p90": 0.6176470588235294
+  },
+  "part_time": {
+   "mae_flow_chf_per_month": 265.26636456092257,
+   "mae_cash_after_24m_chf": 6366.392749462141,
+   "median_abs_error_chf_per_month": 114.87854331326344,
+   "r2": 0.8674177451752416,
+   "n": 12,
+   "range_hit_rate_p10_p90": 0.5833333333333334
+  },
+  "self_employed": {
+   "mae_flow_chf_per_month": 446.0064918467104,
+   "mae_cash_after_24m_chf": 10704.155804321052,
+   "median_abs_error_chf_per_month": 331.99997306639693,
+   "r2": 0.9477471885706389,
+   "n": 11,
+   "range_hit_rate_p10_p90": 0.7272727272727273
+  },
+  "student": {
+   "mae_flow_chf_per_month": 541.9167493116263,
+   "mae_cash_after_24m_chf": 13006.001983479031,
+   "median_abs_error_chf_per_month": 368.78799026850425,
+   "r2": 0.4863646656540159,
+   "n": 4,
+   "range_hit_rate_p10_p90": 0.5
+  },
+  "unemployed": {
+   "mae_flow_chf_per_month": 188.4546477815477,
+   "mae_cash_after_24m_chf": 4522.911546757145,
+   "median_abs_error_chf_per_month": 147.6030038255717,
+   "r2": 0.8323213128317494,
+   "n": 4,
+   "range_hit_rate_p10_p90": 0.75
+  },
+  "retired": {
+   "mae_flow_chf_per_month": 162.6556522089597,
+   "mae_cash_after_24m_chf": 3903.7356530150328,
+   "median_abs_error_chf_per_month": 153.58194441479407,
+   "r2": 0.9575072401051559,
+   "n": 22,
+   "range_hit_rate_p10_p90": 0.6818181818181818
+  }
+ },
+ "seconds": 41.6
+}
