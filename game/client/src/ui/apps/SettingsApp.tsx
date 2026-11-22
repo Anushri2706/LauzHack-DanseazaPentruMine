@@ -45,7 +45,7 @@ export function SettingsApp({ personaId }: { personaId: string }) {
         }} /> Count joy points (a game preference score: switch it off if you prefer)</label>
       </div>
       {cat.data && <p className="tiny muted">🏠 Home prices are Lausanne prices × {cat.data.home_price_level.level} for canton {cat.data.home_price_level.canton} (rough level, our assumption). {cat.data.note}</p>}
-      <p className="tiny">{Object.entries(TAGS).filter(([k]) => ['profile', 'starter_kit', 'scenario_csv', 'ours', 'peer'].includes(k)).map(([k, t]) => <span key={k} style={{ marginRight: 12 }}>{t.dot} {t.label}</span>)}</p>
+      <p className="tiny">{Object.entries(TAGS).filter(([k]) => ['profile', 'public_data', 'starter_kit', 'scenario_csv', 'ours', 'peer'].includes(k)).map(([k, t]) => <span key={k} style={{ marginRight: 12 }}>{t.dot} {t.label}</span>)}</p>
       {rows.error && <p className="error">{rows.error}</p>}
       {groups.map((g) => (
         <details key={g} className="assume-group" open={g === 'Saving & investing'}>

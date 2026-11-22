@@ -34,7 +34,7 @@ clears the saved game.
 ### Checks
 
 ```bash
-cd game/backend && .venv/bin/pytest -q           # 134 tests
+cd game/backend && .venv/bin/pytest -q           # 141 tests
 cd game/client && npx tsc -b                     # type-check
 cd game/client && npm run smoke                  # headless walk through the whole demo (needs both servers
                                                  # and Google Chrome; BASE=http://localhost:5173 by default)
@@ -42,7 +42,7 @@ cd game/client && npm run smoke                  # headless walk through the who
 
 The smoke test walks through the whole demo story in headless Chrome. It picks Alexia, queues a full-time
 master's and eating out, then sleeps a month and on to the next birthday. It then checks the bank statement
-and opens every phone app, including a roll of another world. The live checks must all pass (11/11). After
+and opens every phone app, including a roll of another world. The live checks must all pass (13/13). After
 that it goes back to the start in the Multiverse and starts working instead. It buys the studio as soon as
 the engine allows it, compares the two realities, and fast-forwards to the 10-year postcard.
 
@@ -55,7 +55,7 @@ the engine allows it, compares the two realities, and fast-forwards to the 10-ye
 | Are long-run numbers meaningful? | 💱 toggle (timeline, Money, Matters), Money tile, timeline | **Today's CHF**: values divided by the engine's own price index (`price_level` in `/game/state`). The headline range is **at 65**; 120 is a second line ("no mortality model"). A dotted **✝︎ ≈84** line marks Swiss life expectancy (BFS 2023). |
 | Is retirement funded? | Safety tile, `/game/projection` → `retirement_runs_out` | Share of worlds where cash goes below zero after the retirement age, and the median age it happens. |
 | Comparison over what horizon? | Multiverse → Compare | `POST /compare` takes `at_age`: both realities are cut at the same age (rows, goals, bridge, ranges). Default 30, the challenge's 10-year horizon. |
-| How did you verify it? | ✅ Checks app (11 live checks), 134 + 46 pytest tests, `npm run smoke` | — |
+| How did you verify it? | ✅ Checks app (13 live checks), 141 + 46 pytest tests, `npm run smoke` | — |
 
 ## The life timeline (bottom of the screen)
 
@@ -222,9 +222,12 @@ game/
       game.py              NEW monthly turns, actions, masking with reasons, previews, letters
       metrics.py           summaries, goals, scores, scores_now, exact net-worth bridge
       montecarlo.py        seeded worlds, stress tests
+      public_data.py       defaults + cross-checks from World Bank / SNB / BIS / FRED snapshots
+      labour_data.py       job rates by age (teammate's CSVs) + Eurostat cross-check
       compare.py           "why they differ" (now with habits, housing and joy)
+    app/data/public/       dated public-data snapshots + sources.json (scripts/fetch_public_data.py)
     app/service.py         glue: persona + overrides → engine; /game/* responses
-    tests/                 134 pytest tests
+    tests/                 141 pytest tests
   client/                  Vite + React 19 + TypeScript + Phaser 3.90
     public/assets/         Kenney CC0 packs (each with its License.txt) + OFL fonts
     src/api/               typed API client (from the old frontend, extended)
@@ -294,18 +297,58 @@ loans, principal, amortization, and the down payment against the mortgage.
 | Purchases & trips (CHF once) | bike 800 · laptop 1,500 · phone 900 · clothes 200 · furniture 2,000 · treat friends 120 · weekend trip 450 · flight home 250 | |
 | Housing | Home prices studio / flat / small house (Lausanne) | 450k / 750k / 1.1M |
 | | Canton price level (× Lausanne): ZH 1.25, GE 1.2, VD 1.0, BS/LU 0.95, BE/TI 0.8, FR/SG 0.75, NE 0.65 | |
-| | Mortgage rate · down payment · purchase fees · selling fees | 2% · 20% · 2% · 3% |
-| | Amortization · maintenance (of price per year) · home value growth | 1% · 1% · 1.5%/year |
+| | Mortgage rate (🟢 SNB, see *Public data*) · down payment · purchase fees · selling fees | 2.28% · 20% · 2% · 3% |
+| | Amortization · maintenance (of price per year) · home value growth (🟢 BIS, see *Public data*) | 1% · 1% · 2.35%/year |
 | | Rent factor cheaper / similar / nicer · moving cost | 0.8 / 1.0 / 1.3 · 1,500 |
 | Work | Raise when asking works · chance · months in job first | +5% · 50% · 24 |
 | | Reduced hours · income after quitting | 80% · 0% |
 | Joy (points/month) | studying +1 · working 0 · abroad +2 · between jobs −2 · retired +1 · home owner +1 · reduced hours +1 | |
 | Joy (habits / items) | eat out 1/2/3 · shopping 0.5/1/1.5 · gym 1 · bike 6 · laptop 4 · phone 3 · clothes 2 · furniture 5 · treat 3 · trip 6 · flight home 5 | |
 
-The original assumptions are unchanged (starter-kit incomes and costs, CSV tuition, 5% return, 1%
-inflation, 2% raises, the 50% savings rule, a 3-month buffer and so on). Their table and sources are in
+The original assumptions are unchanged (starter-kit incomes and costs, CSV tuition, 5% return, 2% raises, the 50% savings rule, a 3-month buffer and so on). Their table and sources are in
 Settings. With no habits, purchases or homes, the game engine reproduces the original engine exactly. That
 includes the starter-kit cross-check, to the cent, for all three scenarios.
+
+### Public data (challenge resources)
+
+The challenge lists public datasets (`challenge-instructions-and-data/resources/data/`). We use the Swiss
+ones wherever they fit a part of the engine. `scripts/fetch_public_data.py` downloads them once into dated
+snapshots in `app/data/public/` (48 KB). `sources.json` records provider, code, unit, period, URL, retrieval
+date and terms. The engine never goes online. `app/engine/public_data.py` turns the snapshots into defaults,
+tagged 🟢 *computed from public data* in Settings, with the computation in each note.
+
+| Engine number | Dataset | How it is computed | Default (was) |
+|---|---|---|---|
+| Inflation on costs | World Bank `FP.CPI.TOTL.ZG`, Swiss CPI, annual | Geometric mean of the last 35 years (1991–2025), about one game life | 0.96% (1%) |
+| Mortgage interest | SNB `zikrepro`, new mortgages, mean, monthly | Mean 10-year fixed rate, Dec 2007–Sep 2026 (the game's mortgage keeps one rate) | 2.28% (2%) |
+| Home value growth | BIS `WS_SPP` Q.CH.R.628, real residential property prices | Real growth 1970-Q1–2026-Q2 (1.38%/year) plus the inflation default. The nominal series would bring in the inflation of the 1970s–80s | 2.35% (1.5%) |
+
+Cross-checks (they set no default, and two run in the ✅ Checks app):
+
+- **Unemployment.** The job rates by age imply 4.3% steady-state unemployment, `loss / (loss + find)`.
+  World Bank `SL.UEM.TOTL.ZS` (ILO) averages 4.6% over 2016–2025. `tests/test_public_data.py` requires a
+  gap of under 1 point.
+- **Mortgage vs policy rate.** The mortgage rate (2.28%) is above the SNB policy rate's mean since 2000
+  (0.53%, BIS `WS_CBPOL`).
+- **Moving abroad.** EUR/CHF from FRED (`DEXSZUS` × `DEXUSEU`, monthly means) was 0.919 in Nov 2026. It moved
+  ±4.5% a year, and the franc gained 2.1% a year since 2000. The note on *Income abroad* says so, because the
+  engine converts abroad income at a fixed rate.
+- **GDP.** World Bank `NY.GDP.MKTP.KD.ZG`: Swiss real GDP fell in 6 of the 46 years from 1980 (1991–93, 2003,
+  2009, 2020). This is context only; the engine has no recession model.
+
+Not used: the US series (10-year Treasury, Fed funds, US CPI, US unemployment, US house prices, Survey of
+Consumer Finances). The game models a person in Switzerland, and the lists themselves say these are not
+Swiss figures. Population and GDP per capita have no matching engine number.
+
+Refresh with `cd game/backend && .venv/bin/python scripts/fetch_public_data.py`. The defaults, DEMO.md
+figures and tests then follow the new data.
+
+Citation (challenge template): World Bank — Inflation, consumer prices (FP.CPI.TOTL.ZG); Unemployment
+(SL.UEM.TOTL.ZS); GDP growth (NY.GDP.MKTP.KD.ZG) — CH — 1960–2025 — retrieved 2026-11-22 — api.worldbank.org
+— CC BY 4.0. SNB — zikrepro — CH — 2007-12–2026-09 — retrieved 2026-11-22 — data.snb.ch — free reuse with
+source. BIS — WS_SPP, WS_CBPOL — CH — 1970-Q1–2026-Q2 / 2000-01–2026-10 — retrieved 2026-11-22 —
+stats.bis.org — BIS terms of use. FRED — DEXSZUS, DEXUSEU (Federal Reserve H.10) — 1999-01–2026-11 —
+retrieved 2026-11-22 — fred.stlouisfed.org.
 
 ### Uncertainty and your world
 

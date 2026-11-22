@@ -16,6 +16,7 @@ export const TAGS: Record<string, { dot: string; label: string }> = {
   scenario_csv: { dot: '🟡', label: 'assumption (scenario CSV)' },
   ours: { dot: '🟡', label: 'our assumption' },
   official_est: { dot: '🟢', label: 'estimated from official Swiss statistics (BFS, SECO, Eurostat)' },
+  public_data: { dot: '🟢', label: 'computed from public data (World Bank, SNB, BIS)' },
   assumption: { dot: '🟡', label: 'our assumption' },
   simulated: { dot: '🔵', label: 'simulated by the engine' },
   peer: { dot: '⚪', label: 'peer reference' },

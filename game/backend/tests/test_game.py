@@ -33,7 +33,7 @@ def test_habit_cost_appears_exactly_in_lifestyle(plain):
 
 def test_habit_cost_inflates_like_other_costs(params):
     rows = run_turns(params, [T(0, WORK, A("set_habit", "eat_out", 1))]).rows
-    assert rows[24]["lifestyle"] == pytest.approx(170 * 1.01 ** 2)
+    assert rows[24]["lifestyle"] == pytest.approx(170 * (1 + params["inflation_annual"]) ** 2)
 
 
 def test_habit_price_change_isolated(plain):
@@ -105,10 +105,10 @@ def test_amortization_is_a_transfer_and_mortgage_never_negative():
 def test_mortgage_interest_maintenance_and_growth(params):
     p = {**params, "opening_cash": 300_000}
     rows = run_turns(p, [T(0, WORK, A("buy_home", "studio"))]).rows
-    assert rows[0]["mortgage_interest"] == pytest.approx(360_000 * 0.02 / 12)
+    assert rows[0]["mortgage_interest"] == pytest.approx(360_000 * params["mortgage_rate"] / 12)
     assert rows[0]["maintenance"] == pytest.approx(450_000 * 0.01 / 12)
     assert rows[0]["rent"] == 0
-    assert rows[11]["home_value"] == pytest.approx(450_000 * 1.015)
+    assert rows[11]["home_value"] == pytest.approx(450_000 * (1 + params["home_growth_annual"]))
 
 
 def test_sell_home_clears_mortgage_and_back_to_rent():

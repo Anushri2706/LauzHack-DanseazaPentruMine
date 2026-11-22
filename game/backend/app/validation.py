@@ -5,6 +5,8 @@ from pathlib import Path
 
 from .engine.assumptions import ALEXIA_DEFAULTS
 from .engine.game import Action as A, Turn, decisions_to_turns, run_turns
+from .engine.labour_data import BANDS
+from .engine.public_data import context as public_context, implied_unemployment
 from .engine.metrics import net_worth_bridge
 from .engine.simulate import initial_state, run_branch, step_month
 from .engine.state import Decision as D
@@ -98,6 +100,16 @@ def run_checks() -> list[dict]:
     out.append(_check("Negative cash is never free", abs(orow["overdraft_interest"] - 100) < 1e-9,
                       f"Start at −10'000: the credit line costs 12%/12 × 10'000 = "
                       f"{orow['overdraft_interest']:,.2f} interest this month (an expense)"))
+
+    c = public_context()
+    implied = implied_unemployment(p, BANDS) * 100
+    out.append(_check("Job rates match World Bank unemployment", abs(implied - c["unemployment_mean_pct"]) <= 1.0,
+                      f"Losing/finding-work rates imply {implied:.1f}% unemployment; World Bank SL.UEM.TOTL.ZS "
+                      f"{c['unemployment_years'][0]}-{c['unemployment_years'][1]} mean {c['unemployment_mean_pct']:.1f}%"))
+    out.append(_check("Mortgage costs more than the SNB policy rate",
+                      p["mortgage_rate"] * 100 > c["policy_rate_mean_pct"],
+                      f"Mortgage {p['mortgage_rate']:.2%} (SNB 10-year fixed mean) vs policy rate mean "
+                      f"{c['policy_rate_mean_pct']:.2f}% since {c['policy_rate_from']} (BIS WS_CBPOL)"))
 
     sys.path.insert(0, str(KIT))
     try:

@@ -6,6 +6,7 @@ Source tags (shown in the UI as honesty tags):
   scenario_csv 🟡 taken from Data/scenario-assumptions.csv
   ours         🟡 our own labelled assumption
   official_est 🟢 estimated from official Swiss statistics (BFS, SECO, Eurostat; teammate's backend/assumptions)
+  public_data  🟢 computed from the challenge's public datasets (World Bank, SNB, BIS; app/data/public)
 Simulated outputs are 🔵 and peer references are ⚪ (not assumptions, so not listed here).
 
 Salary and income figures from the starter kit are already NET of social contributions; tax_rate and
@@ -15,10 +16,11 @@ Realism layers (all ours, all editable): income tax, investment costs, lifestyle
 raises, lower living costs after retiring. Calibrated so a typical persona saves ≈ 15% of net
 income, and Alexia's "start working" path is ≈ 90-110k at 30 (the challenge slide shows ≈ 93k).
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .catalogue import catalogue_assumptions
 from .labour_data import BANDS, team_rates
+from .public_data import context as public_context, public_defaults
 
 
 @dataclass(frozen=True)
@@ -211,6 +213,18 @@ for _k, (_v, _src) in team_rates().items():
 # Game catalogue (habits, items, homes, flats, housing rules, joy table): all our assumptions.
 for _key, _default, *_rest in catalogue_assumptions():
     ALEXIA_DEFAULTS[_key] = (_default, "ours")
+
+# Public datasets from the challenge resources (World Bank, SNB, BIS; public_data.py) replace our own
+# guesses for inflation (was 1%), the mortgage rate (was 2%) and home value growth (was 1.5%).
+for _k, (_v, _note) in public_defaults().items():
+    ALEXIA_DEFAULTS[_k] = (_v, "public_data")
+    META[_k] = replace(META[_k], note=_note)
+_ctx = public_context()
+META["abroad_income"] = replace(META["abroad_income"], note=(
+    f"Converted at a fixed, stated FX rate; no FX risk modelled. For scale: EUR/CHF was "
+    f"{_ctx['eur_chf_last']:.3f} in {_ctx['eur_chf_month']}, moved ±{_ctx['eur_chf_vol_annual']:.1%} a year "
+    f"(1 std. dev.) and the franc gained {-_ctx['eur_chf_drift_annual']:.1%} a year since 2000 "
+    f"(FRED DEXSZUS × DEXUSEU)."))
 
 # Rough "other living costs" (excluding rent) by household type for personas that have no
 # starter-kit figures. These are our labelled assumptions, not Swiss statistics.

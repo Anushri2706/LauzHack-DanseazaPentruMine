@@ -125,7 +125,7 @@ live, first job, housing).
 ### Tests
 
 ```bash
-cd game/backend && .venv/bin/pytest -q          # game engine (134 tests)
+cd game/backend && .venv/bin/pytest -q          # game engine (141 tests)
 game/backend/.venv/bin/python -m pytest backend -q   # regime twin (46 tests), run from the repo root
 cd game/client && npx tsc -b                    # client type-check
 cd game/client && npm run smoke                 # headless walk through the demo (needs both servers + Chrome)

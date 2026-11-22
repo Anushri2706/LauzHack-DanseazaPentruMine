@@ -179,7 +179,7 @@ export function PlaceDialog({ place, st }: { place: Place; st: GameState }) {
               note="Sells investments and uses the money to cut your debt. Less debt means less interest from next month." />}
           </>}
           {place === 'realestate' && <Group items={acts} queue={queue}
-            note="🟡 Prices, mortgage rate (2%), amortization, maintenance and home growth are our assumptions, editable in Settings." />}
+            note="🟢 Mortgage rate (SNB) and home value growth (BIS) come from public data; 🟡 prices, amortization and maintenance are our assumptions. All editable in Settings." />}
           {place === 'station' && <>
             <Group title="Moves" items={by((a) => a.type === 'life_choice')} queue={queue} />
             <Group title="Trips" items={by((a) => a.type === 'buy_item')} queue={queue} />

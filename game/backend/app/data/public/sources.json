@@ -1,0 +1,90 @@
+{
+  "wb_inflation": {
+    "provider": "World Bank",
+    "code": "FP.CPI.TOTL.ZG",
+    "title": "Inflation, consumer prices",
+    "geo": "CH",
+    "frequency": "annual",
+    "unit": "% per year",
+    "period": "1960-2025",
+    "dataset_updated": "2026-11-11",
+    "url": "https://api.worldbank.org/v2/country/CHE/indicator/FP.CPI.TOTL.ZG?format=json&per_page=200",
+    "retrieved": "2026-11-22",
+    "terms": "CC BY 4.0 (World Bank Open Data terms of use)"
+  },
+  "wb_unemployment": {
+    "provider": "World Bank",
+    "code": "SL.UEM.TOTL.ZS",
+    "title": "Unemployment, total (modeled ILO estimate)",
+    "geo": "CH",
+    "frequency": "annual",
+    "unit": "% of labour force",
+    "period": "1991-2025",
+    "dataset_updated": "2026-11-11",
+    "url": "https://api.worldbank.org/v2/country/CHE/indicator/SL.UEM.TOTL.ZS?format=json&per_page=200",
+    "retrieved": "2026-11-22",
+    "terms": "CC BY 4.0 (World Bank Open Data terms of use)"
+  },
+  "wb_gdp_growth": {
+    "provider": "World Bank",
+    "code": "NY.GDP.MKTP.KD.ZG",
+    "title": "GDP growth",
+    "geo": "CH",
+    "frequency": "annual",
+    "unit": "% per year, constant prices",
+    "period": "1961-2025",
+    "dataset_updated": "2026-11-11",
+    "url": "https://api.worldbank.org/v2/country/CHE/indicator/NY.GDP.MKTP.KD.ZG?format=json&per_page=200",
+    "retrieved": "2026-11-22",
+    "terms": "CC BY 4.0 (World Bank Open Data terms of use)"
+  },
+  "snb_mortgage_rates": {
+    "provider": "SNB",
+    "code": "zikrepro",
+    "title": "Interest rates on new mortgage loans, mean value (D0=M; D1=MV, 50, 10)",
+    "geo": "CH",
+    "frequency": "monthly",
+    "unit": "% per year",
+    "period": "2007-12..2026-09",
+    "dataset_updated": "2026-11-02 14:30",
+    "url": "https://data.snb.ch/api/cube/zikrepro/data/csv/en",
+    "retrieved": "2026-11-22",
+    "terms": "Free reuse with source citation (SNB data portal terms, data.snb.ch)"
+  },
+  "bis_property_prices": {
+    "provider": "BIS",
+    "code": "WS_SPP Q.CH.R.628",
+    "title": "Residential property prices, Switzerland, nominal and real (CPI-deflated), index 2010 = 100",
+    "geo": "CH",
+    "frequency": "quarterly",
+    "unit": "index",
+    "period": "1970-Q1..2026-Q2",
+    "url": "https://stats.bis.org/api/v1/data/WS_SPP/Q.CH.N.628/all?format=csv ; https://stats.bis.org/api/v1/data/WS_SPP/Q.CH.R.628/all?format=csv",
+    "retrieved": "2026-11-22",
+    "terms": "Reuse with attribution under the BIS terms of use (bis.org/terms_statistics.htm)"
+  },
+  "bis_policy_rate": {
+    "provider": "BIS",
+    "code": "WS_CBPOL M.CH",
+    "title": "Central bank policy rate, Switzerland (SNB)",
+    "geo": "CH",
+    "frequency": "monthly, end of period",
+    "unit": "% per year",
+    "period": "2000-01..2026-10",
+    "url": "https://stats.bis.org/api/v1/data/WS_CBPOL/M.CH/all?format=csv",
+    "retrieved": "2026-11-22",
+    "terms": "Reuse with attribution under the BIS terms of use (bis.org/terms_statistics.htm)"
+  },
+  "fred_eur_chf": {
+    "provider": "FRED",
+    "code": "DEXSZUS \u00d7 DEXUSEU",
+    "title": "CHF per EUR, monthly mean of daily noon buying rates (Federal Reserve H.10)",
+    "geo": "CH/EA",
+    "frequency": "monthly (from daily)",
+    "unit": "CHF per EUR",
+    "period": "1999-01..2026-11",
+    "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXSZUS ; https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXUSEU",
+    "retrieved": "2026-11-22",
+    "terms": "Federal Reserve Board H.10 data via FRED; cite FRED (fred.stlouisfed.org/legal)"
+  }
+}
