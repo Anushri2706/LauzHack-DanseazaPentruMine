@@ -5,6 +5,27 @@ Motto: *Don't predict the future. Make it explorable.*
 
 > **This is a simulation, not a prediction or financial advice. All people and data are synthetic.**
 
+## Why we built this
+
+We think it's unfair that your future depends so much on your family background. The OECD estimates that,
+on average across its member countries, it can take **around five generations** for a child from a
+low-income family to reach the average income. In some countries it takes nine generations or more
+([OECD, *A Broken Social Elevator? How to Promote Social Mobility*, 2018](https://www.oecd.org/social-issues-migration-health/broken-elevator-how-to-promote-social-mobility_9789264301085-en)).
+
+Part of that gap is knowledge: what a master's really costs, what inflation does to savings, why a loan
+costs more than its monthly payment. Children who don't hear these things at home start out behind. We
+believe everyone should have access to this knowledge. That's why we built a game: children from any
+background can try different life decisions in a safe world, see how they could play out, and learn the
+money basics along the way (the phone's 📚 Learn app).
+
+**If we win this challenge, we would like the prize money to go to [UNICEF](https://www.unicef.org/about-us).**
+We believe it is the most impactful organisation for children's wellbeing and education. UNICEF, the
+United Nations agency for children, works in more than 190 countries and territories to protect the rights
+of every child, especially the most disadvantaged and those hardest to reach
+([UNICEF, *Who we are*](https://www.unicef.org/who-we-are)). It works to provide quality learning
+opportunities in 147 countries, and in many humanitarian emergencies it is the largest provider of
+educational support ([UNICEF, *Education*](https://www.unicef.org/education)).
+
 ## What we built
 
 You pick a fictional person (Alexia, 20, a student in Lausanne, is the featured one) and walk around a small
