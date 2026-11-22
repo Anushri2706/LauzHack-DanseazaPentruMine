@@ -11,7 +11,7 @@ export const SCORE_META = {
   goals: { icon: '🎯', label: 'Goals' },
   freedom: { icon: '⛱️', label: 'Freedom' },
   experience: { icon: '🎓', label: 'Experience' },
-  joy: { icon: '🌸', label: 'Joy' },
+  joy: { icon: '😊', label: 'Joy' },
 } as const
 
 export function scoreLines(st: GameState) {

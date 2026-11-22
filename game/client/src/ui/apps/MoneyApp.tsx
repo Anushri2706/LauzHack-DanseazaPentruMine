@@ -76,7 +76,7 @@ export function ScoreTiles({ st, proj }: { st: GameState; proj?: Projection }) {
           s.experience.months_abroad > 0 && `${(s.experience.months_abroad / 12).toFixed(1)} years abroad`,
           fs && !proj?.ended && fs.experience.education !== s.experience.education && `${EDU_LABEL[fs.experience.education]} by ${endAge} if nothing changes`,
         ].filter(Boolean).join(' · ')} />
-      <Tile dim="joy" title="🌸 Joy (not money)" main={`${Math.round(s.joy.total)} pts`}
+      <Tile dim="joy" title="😊 Joy (not money)" main={`${Math.round(s.joy.total)} pts`}
         sub={<>{fs && !proj?.ended ? `≈ ${Math.round(fs.joy.total)} by ${endAge} if nothing changes · ` : ''}🟡 a game preference score, not a measure of a good life</>} />
     </div>
   )

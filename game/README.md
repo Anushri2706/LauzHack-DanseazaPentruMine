@@ -192,7 +192,7 @@ Everything works with the mouse alone.
 - 🎯 **Goals:** goals met (priority order, no double counting) and the share of worlds where each is met.
 - 🕊️ **Freedom:** months of costs covered by liquid savings; debt-free or not.
 - 🎓 **Experience:** degree, months studying, years abroad.
-- 🌸 **Joy:** a **game preference score**: points from habits, trips and your life situation. It is not
+- 😊 **Joy:** a **game preference score**: points from habits, trips and your life situation. It is not
   money and not a measure of a good life. It can be switched off in Settings. It's there to make the
   trade-offs visible: more joy can mean less wealth.
 
