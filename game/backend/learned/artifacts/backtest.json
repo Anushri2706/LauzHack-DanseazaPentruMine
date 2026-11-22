@@ -1,0 +1,297 @@
+{
+ "task": "known: 12 months of 2025; predicted: cash over the 12 months of 2026",
+ "sizes": {
+  "train": 958,
+  "validation": 121,
+  "test": 121
+ },
+ "chosen_on_validation": {
+  "n_components": 3,
+  "kappa": 12.0,
+  "noise_scale": 1.2
+ },
+ "validation": {
+  "persistence": {
+   "mae_cash_end_chf": 3081.634843187875,
+   "median_abs_error_chf": 2494.9788631939446,
+   "r2_cash_end": 0.997616482642186,
+   "range_hit_rate_p10_p90": 0.6033057851239669,
+   "monthly_range_coverage": 0.740358126721763,
+   "mean_range_width_chf": 8050.335553222959,
+   "n": 121
+  },
+  "hmm": {
+   "mae_cash_end_chf": 3645.8546501493906,
+   "median_abs_error_chf": 3228.3744374488087,
+   "r2_cash_end": 0.9968805932556161,
+   "range_hit_rate_p10_p90": 0.5950413223140496,
+   "monthly_range_coverage": 0.6046831955922864,
+   "mean_range_width_chf": 9396.557693253964,
+   "n": 121
+  },
+  "hmm+gmm": {
+   "mae_cash_end_chf": 2731.0887647747477,
+   "median_abs_error_chf": 2349.569453787699,
+   "r2_cash_end": 0.9981502638308881,
+   "range_hit_rate_p10_p90": 0.7768595041322314,
+   "monthly_range_coverage": 0.8815426997245179,
+   "mean_range_width_chf": 8231.115905068065,
+   "n": 121
+  },
+  "hmm+gmm+history": {
+   "mae_cash_end_chf": 2446.8970765364893,
+   "median_abs_error_chf": 1719.1253232287418,
+   "r2_cash_end": 0.9984188229179266,
+   "range_hit_rate_p10_p90": 0.7933884297520661,
+   "monthly_range_coverage": 0.8712121212121212,
+   "mean_range_width_chf": 8231.115905068064,
+   "n": 121
+  }
+ },
+ "grid_top5": [
+  {
+   "n_components": 3,
+   "kappa": 12.0,
+   "mae_cash_end_chf": 2446.3306883714963,
+   "median_abs_error_chf": 1763.6444247968757,
+   "r2_cash_end": 0.9984189353478218,
+   "range_hit_rate_p10_p90": 0.6942148760330579,
+   "monthly_range_coverage": 0.8085399449035813,
+   "mean_range_width_chf": 6859.2632542233905,
+   "n": 121
+  },
+  {
+   "n_components": 3,
+   "kappa": 24.0,
+   "mae_cash_end_chf": 2460.019133804169,
+   "median_abs_error_chf": 1920.6813803366967,
+   "r2_cash_end": 0.998439938787913,
+   "range_hit_rate_p10_p90": 0.7024793388429752,
+   "monthly_range_coverage": 0.8202479338842975,
+   "mean_range_width_chf": 6859.2632542233905,
+   "n": 121
+  },
+  {
+   "n_components": 4,
+   "kappa": 12.0,
+   "mae_cash_end_chf": 2485.8851565451664,
+   "median_abs_error_chf": 1821.4385466390813,
+   "r2_cash_end": 0.998396678599988,
+   "range_hit_rate_p10_p90": 0.6859504132231405,
+   "monthly_range_coverage": 0.8044077134986226,
+   "mean_range_width_chf": 6859.263254223391,
+   "n": 121
+  },
+  {
+   "n_components": 2,
+   "kappa": 12.0,
+   "mae_cash_end_chf": 2486.8593616362687,
+   "median_abs_error_chf": 1832.8431544484847,
+   "r2_cash_end": 0.998400033603039,
+   "range_hit_rate_p10_p90": 0.6859504132231405,
+   "monthly_range_coverage": 0.8050964187327824,
+   "mean_range_width_chf": 6859.26325422339,
+   "n": 121
+  },
+  {
+   "n_components": 2,
+   "kappa": 24.0,
+   "mae_cash_end_chf": 2490.363915227223,
+   "median_abs_error_chf": 1882.408028047339,
+   "r2_cash_end": 0.9984374943946873,
+   "range_hit_rate_p10_p90": 0.7107438016528925,
+   "monthly_range_coverage": 0.8174931129476584,
+   "mean_range_width_chf": 6859.263254223391,
+   "n": 121
+  }
+ ],
+ "noise_grid": [
+  {
+   "noise_scale": 0.6,
+   "mae_cash_end_chf": 2445.5451991236678,
+   "median_abs_error_chf": 1768.5363650202053,
+   "r2_cash_end": 0.9984182827940793,
+   "range_hit_rate_p10_p90": 0.48760330578512395,
+   "monthly_range_coverage": 0.5915977961432507,
+   "mean_range_width_chf": 4115.5579525340345,
+   "n": 121
+  },
+  {
+   "noise_scale": 0.8,
+   "mae_cash_end_chf": 2445.9360711637314,
+   "median_abs_error_chf": 1766.0903949085478,
+   "r2_cash_end": 0.9984187553065393,
+   "range_hit_rate_p10_p90": 0.5702479338842975,
+   "monthly_range_coverage": 0.7162534435261708,
+   "mean_range_width_chf": 5487.410603378709,
+   "n": 121
+  },
+  {
+   "noise_scale": 1.0,
+   "mae_cash_end_chf": 2446.3306883714963,
+   "median_abs_error_chf": 1763.6444247968757,
+   "r2_cash_end": 0.9984189353478218,
+   "range_hit_rate_p10_p90": 0.6942148760330579,
+   "monthly_range_coverage": 0.8085399449035813,
+   "mean_range_width_chf": 6859.2632542233905,
+   "n": 121
+  },
+  {
+   "noise_scale": 1.2,
+   "mae_cash_end_chf": 2446.8970765364893,
+   "median_abs_error_chf": 1719.1253232287418,
+   "r2_cash_end": 0.9984188229179266,
+   "range_hit_rate_p10_p90": 0.7933884297520661,
+   "monthly_range_coverage": 0.8712121212121212,
+   "mean_range_width_chf": 8231.115905068064,
+   "n": 121
+  },
+  {
+   "noise_scale": 1.5,
+   "mae_cash_end_chf": 2448.0692586627483,
+   "median_abs_error_chf": 1695.683408434852,
+   "r2_cash_end": 0.998418105889626,
+   "range_hit_rate_p10_p90": 0.8760330578512396,
+   "monthly_range_coverage": 0.9387052341597796,
+   "mean_range_width_chf": 10288.894881335083,
+   "n": 121
+  }
+ ],
+ "test": {
+  "persistence": {
+   "mae_cash_end_chf": 3029.2167945221786,
+   "median_abs_error_chf": 2210.773936299316,
+   "r2_cash_end": 0.9977111709816023,
+   "range_hit_rate_p10_p90": 0.6446280991735537,
+   "monthly_range_coverage": 0.7637741046831956,
+   "mean_range_width_chf": 8001.7192697580585,
+   "n": 121
+  },
+  "hmm": {
+   "mae_cash_end_chf": 4018.118099183249,
+   "median_abs_error_chf": 3464.776697273308,
+   "r2_cash_end": 0.9963860722130649,
+   "range_hit_rate_p10_p90": 0.5537190082644629,
+   "monthly_range_coverage": 0.6005509641873278,
+   "mean_range_width_chf": 9607.027289343176,
+   "n": 121
+  },
+  "hmm+gmm": {
+   "mae_cash_end_chf": 2713.898279990765,
+   "median_abs_error_chf": 2033.997550986256,
+   "r2_cash_end": 0.9982192971571944,
+   "range_hit_rate_p10_p90": 0.7355371900826446,
+   "monthly_range_coverage": 0.8746556473829201,
+   "mean_range_width_chf": 8230.401721816257,
+   "n": 121
+  },
+  "hmm+gmm+history": {
+   "mae_cash_end_chf": 2653.9053315318856,
+   "median_abs_error_chf": 2098.0771990866633,
+   "r2_cash_end": 0.9983927974808432,
+   "range_hit_rate_p10_p90": 0.768595041322314,
+   "monthly_range_coverage": 0.8987603305785123,
+   "mean_range_width_chf": 8230.401721816255,
+   "n": 121
+  }
+ },
+ "test_life_events_on": {
+  "persistence": {
+   "mae_cash_end_chf": 3029.2167945221786,
+   "median_abs_error_chf": 2210.773936299316,
+   "r2_cash_end": 0.9977111709816023,
+   "range_hit_rate_p10_p90": 0.6446280991735537,
+   "monthly_range_coverage": 0.7637741046831956,
+   "mean_range_width_chf": 8001.7192697580585,
+   "n": 121
+  },
+  "hmm": {
+   "mae_cash_end_chf": 6013.029131142161,
+   "median_abs_error_chf": 3899.204210721684,
+   "r2_cash_end": 0.9814876323300721,
+   "range_hit_rate_p10_p90": 0.628099173553719,
+   "monthly_range_coverage": 0.6267217630853994,
+   "mean_range_width_chf": 12292.79038771545,
+   "n": 121
+  },
+  "hmm+gmm": {
+   "mae_cash_end_chf": 4781.907261693141,
+   "median_abs_error_chf": 2218.6658718949475,
+   "r2_cash_end": 0.9842548775012522,
+   "range_hit_rate_p10_p90": 0.7603305785123967,
+   "monthly_range_coverage": 0.8643250688705234,
+   "mean_range_width_chf": 11163.953937573244,
+   "n": 121
+  },
+  "hmm+gmm+history": {
+   "mae_cash_end_chf": 4789.613855982742,
+   "median_abs_error_chf": 2363.0602665744664,
+   "r2_cash_end": 0.9844327244554377,
+   "range_hit_rate_p10_p90": 0.8016528925619835,
+   "monthly_range_coverage": 0.8898071625344353,
+   "mean_range_width_chf": 11151.687981374727,
+   "n": 121
+  }
+ },
+ "learned": {
+  "phi": {
+   "employed": -0.03716251207898687,
+   "part_time": -0.04468318043400908,
+   "self_employed": -0.11531712359620117,
+   "student": -0.058735089671577874,
+   "unemployed": -0.05809951343120686,
+   "retired": -0.04958364519995816
+  },
+  "noise_sd_alpha_beta": {
+   "employed": [
+    202.31184234690807,
+    0.08768408145109077
+   ],
+   "part_time": [
+    361.70919920220797,
+    0.014614930936946546
+   ],
+   "self_employed": [
+    107.9561157683387,
+    0.21882315543481307
+   ],
+   "student": [
+    365.38475826650847,
+    0.043832695120893224
+   ],
+   "unemployed": [
+    445.24412620062213,
+    -0.047433696951619586
+   ],
+   "retired": [
+    326.7351402283814,
+    0.04795940146044377
+   ]
+  },
+  "december_income_share": {
+   "employed": 0.315,
+   "part_time": -0.003,
+   "self_employed": 0.395,
+   "student": -0.004,
+   "unemployed": 0.168,
+   "retired": 0.041
+  },
+  "february_rent_share": {
+   "employed": -0.078,
+   "part_time": 0.0,
+   "self_employed": -0.062,
+   "student": -0.345,
+   "unemployed": -0.177,
+   "retired": -0.016
+  },
+  "august_rent_share": {
+   "employed": -0.071,
+   "part_time": -0.129,
+   "self_employed": -0.043,
+   "student": -0.046,
+   "unemployed": -0.116,
+   "retired": -0.118
+  }
+ },
+ "seconds": 16.9
+}

@@ -444,3 +444,42 @@ def catalogue(pid: str) -> dict:
         "note": "All catalogue numbers are our labelled assumptions (🟡), editable in Settings. "
                 "Purchases are consumption, not assets. Joy is a game preference score, not money.",
     }
+
+
+# ============================================================================ learned twin (HMM x learned engine)
+def twin_inputs(req: GameRequest) -> dict:
+    """The player's situation now, as the learned twin needs it (from the town engine's replay)."""
+    from .engine.game import monthly_income
+    c = game_context(req)
+    p, m = c.params, c.current
+    run = run_turns(p, c.turns, start=c.start, world=c.world, luck=c.luck, until=m, keep_states=True, strict_from=m)
+    s = run.final_state
+    infl = (1 + p["inflation_annual"]) ** (m / 12)
+    rent = 0.0 if s.owner else s.rent * s.flat_factor * infl
+    return {"persona_id": req.persona_id, "month": m, "age": c.start.start_age + m / 12, "status": s.status,
+            "work_share": s.work_share, "income": monthly_income(s, p), "rent": rent,
+            "liquid": s.cash + s.investments, "has_master": s.has_master, "abroad": s.status == "abroad",
+            "program_months_left": (s.program_end - m) if s.program and s.program_end else None,
+            "horizon_months": int(p["horizon_months"]) - m, "inflation": p["inflation_annual"]}
+
+
+@lru_cache(maxsize=64)
+def _twin_fan(key: str) -> dict:
+    from learned.twin import fan, model_card
+    req = GameProjectionRequest.model_validate_json(key)
+    inp = twin_inputs(req)
+    if inp["horizon_months"] <= 0:
+        raise InvalidAction("The timeline has ended: go back to explore the future again.")
+    out = fan(**inp, n_paths=max(50, min(400, req.n * 5)), seed=req.seed)
+    out["inputs"] = {k: (round(v, 2) if isinstance(v, float) else v) for k, v in inp.items()}
+    out["model"] = model_card()["test"]["hmm+gmm+history"]
+    return out
+
+
+def twin_fan(req: GameProjectionRequest) -> dict:
+    return _twin_fan(req.model_dump_json())
+
+
+def twin_model() -> dict:
+    from learned.twin import model_card
+    return model_card()

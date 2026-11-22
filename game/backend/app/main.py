@@ -87,6 +87,30 @@ def game_state(req: GameRequest) -> dict:
     return _guard(service.game_state, req)
 
 
+class AskRequest(BaseModel):
+    request: GameRequest
+    message: str = Field(min_length=1, max_length=500)
+
+
+@app.post("/ai/ask")
+def ai_ask(req: AskRequest) -> dict:
+    """The companion: answers with facts the engines computed; may propose one allowed action."""
+    from .ai.companion import respond
+    return _guard(lambda: respond(req.message, req.request))
+
+
+@app.post("/twin/fan")
+def twin_fan(req: GameProjectionRequest) -> dict:
+    """The learned twin from the player's state now: HMM life states x money behaviour learned from data."""
+    return _guard(service.twin_fan, req)
+
+
+@app.get("/twin/model")
+def twin_model() -> dict:
+    """Model card: backtest on the locked test people (12 months known, next 12 predicted)."""
+    return _guard(service.twin_model)
+
+
 @app.post("/game/projection")
 def game_projection(req: GameProjectionRequest) -> dict:
     """'No surprises' path from now, P10–P90 bands over the seeded worlds, stress-test ghosts, bridge."""
