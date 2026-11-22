@@ -11,7 +11,7 @@ from .engine.catalogue import (CANTON_PRICE_LEVEL, FLATS, HABITS, HOMES, ITEMS, 
                                habit_cost_key, habit_joy_key, home_price_key, item_joy_key, item_price_key)
 from .engine.decisions import CHOICE_LABELS
 from .engine.game import Action, GameRun, InvalidAction, Turn, available_actions, run_turns
-from .engine.metrics import check_goals, net_worth_bridge, scores, scores_now, summarize
+from .engine.metrics import cash_risk, check_goals, net_worth_bridge, scores, scores_now, summarize
 from .engine.montecarlo import make_worlds, run_montecarlo, sample_world, stress_world
 from .engine.narrative import chf, decision_narrative
 from .engine.simulate import initial_state, run_branch
@@ -327,8 +327,7 @@ def _game_projection(key: str) -> dict:
     worlds = make_worlds(p, N_WORLDS, req.seed)[:req.n]
     nw = np.empty((req.n, horizon - m))
     cash = np.empty((req.n, horizon - m))
-    short = np.zeros(req.n, dtype=bool)
-    past_short = any(r["cash"] < 0 for r in past)
+    below_buf = np.zeros((req.n, horizon - m), dtype=bool)
     goal_hits = {g["goal_id"]: 0 for g in c.goals}
     reg = np.zeros((len(REGIMES), horizon - m))
     for k, w in enumerate(worlds):
@@ -337,7 +336,7 @@ def _game_projection(key: str) -> dict:
             reg[REGIME_IDX[r["regime"]], i] += 1
         nw[k] = pick(rows, "net_worth")
         cash[k] = pick(rows, "cash")
-        short[k] = past_short or bool((cash[k] < 0).any())
+        below_buf[k] = ["below_buffer" in r["flags"] for r in rows]
         for g in check_goals(c.goals, past + rows):
             if g["status"] == "met":
                 goal_hits[g["goal_id"]] += 1
@@ -349,7 +348,9 @@ def _game_projection(key: str) -> dict:
     final = nw[:, -1]
     out["final_net_worth"] = {"p10": float(np.percentile(final, 10)), "p50": float(np.median(final)),
                               "p90": float(np.percentile(final, 90))}
-    out["share_worlds_shortfall"] = float(short.mean())
+    # From now on only: a past dip that was recovered from is not counted as risk.
+    out["risk"] = cash_risk(cash, below_buf)
+    out["share_worlds_shortfall"] = out["risk"]["below_zero_ahead"]
     out["regimes"] = None if ended else {
         "states": list(REGIMES), "from_month": m,
         "share": {st: (reg[i] / req.n).round(3).tolist() for i, st in enumerate(REGIMES)}}

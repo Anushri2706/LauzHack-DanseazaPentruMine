@@ -34,6 +34,10 @@ export function Tile({ dim, title, main, sub, tone, children }: {
   )
 }
 
+// 🟡 Our thresholds: high ≥ 20% of worlds below zero within 12 months, some ≥ 5% (or ≥ 20% at any point ahead).
+const RISK_LABEL = { low: 'Low risk', some: 'Some risk', high: 'High risk' } as const
+const RISK_TONE = { low: 'good', some: 'warn', high: 'bad' } as const
+
 export function ScoreTiles({ st, proj }: { st: GameState; proj?: Projection }) {
   const s = st.scores
   const f = proj?.final_net_worth
@@ -41,6 +45,7 @@ export function ScoreTiles({ st, proj }: { st: GameState; proj?: Projection }) {
   const endAge = Math.round(st.persona.age + st.horizon / 12)
   const shares = proj ? Object.values(proj.goal_met_share) : []
   const tone = { steady: 'good', tight: 'warn', shortfall: 'bad' }[s.safety.level]
+  const risk = proj?.risk
   return (
     <div className="tiles">
       <Tile dim="money" title={`💰 Money at ${endAge}`}
@@ -50,9 +55,15 @@ export function ScoreTiles({ st, proj }: { st: GameState; proj?: Projection }) {
           : <>🔵 net worth · middle {f ? k(f.p50) : '…'} · now {k(s.money.net_worth)}</>}>
         {f && <RangeBar lo={f.p10} mid={f.p50} hi={f.p90} />}
       </Tile>
-      <Tile dim="safety" title="🛡️ Safety" tone={tone} main={{ steady: 'Steady', tight: 'Tight', shortfall: 'Shortfall' }[s.safety.level]}
-        sub={<>{s.safety.months_negative_cash ? `${s.safety.months_negative_cash} months cash < 0 so far` : `${s.safety.months_below_buffer} months below buffer so far`}
-          {proj && <> · short of cash in {pct(proj.share_worlds_shortfall)} of worlds</>}</>} />
+      <Tile dim="safety" title="🛡️ Cash risk" tone={risk ? RISK_TONE[risk.level] : tone}
+        main={risk && !proj?.ended ? RISK_LABEL[risk.level] : { steady: 'Steady', tight: 'Tight', shortfall: 'Shortfall' }[s.safety.level]}
+        sub={<>
+          {risk && !proj?.ended
+            ? <>🔵 cash below zero in {pct(risk.below_zero_12m)} of worlds in the next {risk.months} months ({pct(risk.below_zero_ahead)} at any point ahead)</>
+            : proj?.ended ? <>🔵 cash below zero in {pct(proj.share_worlds_shortfall)} of worlds with the same choices</> : '…'}
+          <br />now: {{ steady: 'above your buffer', tight: 'below your buffer', shortfall: 'cash below zero, financing needed' }[s.safety.level]}
+          {s.safety.months_negative_cash > 0 && s.safety.recovered && <> · dipped below zero for {s.safety.months_negative_cash} months earlier, recovered</>}
+        </>} />
       <Tile dim="goals" title="🎯 Goals" main={fs ? `${fs.goals.met} / ${fs.goals.total}` : `${s.goals.met} / ${s.goals.total}`}
         sub={shares.length ? <>{proj?.ended ? 'met on the path you lived' : 'met if nothing surprising happens'} · in {shares.map(pct).join(', ')} of worlds</>
           : proj && fs?.goals.total === 0 ? 'no goals chosen' : '…'} />

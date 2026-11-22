@@ -97,7 +97,7 @@ export interface GameStateDict {
 
 export interface ScoresNow {
   money: { net_worth: number; cash: number; investments: number; home_equity: number; debt: number }
-  safety: { level: 'steady' | 'tight' | 'shortfall'; months_below_buffer: number; months_negative_cash: number }
+  safety: { level: 'steady' | 'tight' | 'shortfall'; months_below_buffer: number; months_negative_cash: number; recovered: boolean }
   goals: { met: number; due: number; total: number }
   freedom: { runway_months: number | null; debt_free: boolean }
   experience: { degree: boolean; studying: boolean; months_abroad: number; months_studying: number }
@@ -148,7 +148,7 @@ export interface GameState {
 export interface Band { p10: number[]; p50: number[]; p90: number[] }
 export interface FinalScores {
   wealth: { net_worth: number; cash: number; investments: number; debt: number }
-  safety: { level: 'steady' | 'tight' | 'shortfall'; months_below_buffer: number; months_negative_cash: number; min_cash: number }
+  safety: { level: 'steady' | 'tight' | 'shortfall'; months_below_buffer: number; months_negative_cash: number; min_cash: number; recovered: boolean }
   goals: { met: number; total: number; beyond_horizon: number }
   freedom: { runway_months: number | null; debt_free: boolean }
   experience: { degree: boolean; months_abroad: number; months_studying: number }
@@ -167,6 +167,8 @@ export interface Projection {
   ghosts: { kind: string; text: string; month: number; net_worth: number[]; cash: number[] }[]
   final_net_worth: { p10: number; p50: number; p90: number } | null
   share_worlds_shortfall: number
+  /** Forward-looking only: future months across the simulated worlds; past dips never count. */
+  risk: { months: number; below_zero_12m: number; below_zero_ahead: number; below_buffer_12m: number; level: 'low' | 'some' | 'high' }
   goal_met_share: Record<string, number>
   bridge: Record<string, number>
   final_scores: FinalScores

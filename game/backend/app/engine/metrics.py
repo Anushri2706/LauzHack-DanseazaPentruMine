@@ -1,4 +1,5 @@
 """Summary metrics and goal checks computed from a branch's monthly rows."""
+import numpy as np
 
 
 def summarize(rows: list[dict]) -> dict:
@@ -30,6 +31,25 @@ def summarize(rows: list[dict]) -> dict:
         "months_studying": sum(1 for r in rows if r["status"] == "studying"),
         "months_abroad": sum(1 for r in rows if r["status"] == "abroad"),
     }
+
+
+# Risk bands for "cash below zero within the next 12 months" across simulated worlds. Our assumption.
+RISK_HIGH, RISK_SOME = 0.20, 0.05
+
+
+def cash_risk(cash, below_buffer, months: int = 12) -> dict:
+    """Forward-looking risk from future paths only (worlds × months arrays, month 0 = next month).
+    The past never counts: a dip you already recovered from is history, not risk."""
+    cash, below_buffer = np.asarray(cash), np.asarray(below_buffer)
+    if cash.size == 0:
+        return {"months": months, "below_zero_12m": 0.0, "below_zero_ahead": 0.0, "below_buffer_12m": 0.0,
+                "level": "low"}
+    soon = (cash[:, :months] < 0).any(axis=1).mean()
+    ahead = (cash < 0).any(axis=1).mean()
+    buf = below_buffer[:, :months].any(axis=1).mean()
+    level = "high" if soon >= RISK_HIGH else ("some" if soon >= RISK_SOME or ahead >= RISK_HIGH else "low")
+    return {"months": months, "below_zero_12m": float(soon), "below_zero_ahead": float(ahead),
+            "below_buffer_12m": float(buf), "level": level}
 
 
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
@@ -71,9 +91,10 @@ def scores(rows: list[dict], goals_checked: list[dict], points: list[dict]) -> d
     liquid = last["cash"] + last["investments"]
     costs = monthly_costs(last)
     runway = liquid / costs if costs > 0 else None
-    if m["months_negative_cash"] > 0:
+    # A dip below zero that the path recovers from is "tight", not a lasting shortfall.
+    if last["cash"] < 0:
         safety = "shortfall"
-    elif m["months_below_buffer"] > 12:
+    elif m["months_negative_cash"] > 0 or m["months_below_buffer"] > 12:
         safety = "tight"
     else:
         safety = "steady"
@@ -83,7 +104,8 @@ def scores(rows: list[dict], goals_checked: list[dict], points: list[dict]) -> d
         "wealth": {"net_worth": last["net_worth"], "cash": last["cash"], "investments": last["investments"],
                    "debt": last["debt"]},
         "safety": {"level": safety, "months_below_buffer": m["months_below_buffer"],
-                   "months_negative_cash": m["months_negative_cash"], "min_cash": m["min_cash"]},
+                   "months_negative_cash": m["months_negative_cash"], "min_cash": m["min_cash"],
+                   "recovered": m["months_negative_cash"] > 0 and last["cash"] >= 0},
         "goals": {"met": sum(g["status"] == "met" for g in counted), "total": len(counted),
                   "beyond_horizon": len(goals_checked) - len(counted)},
         "freedom": {"runway_months": runway, "debt_free": last["debt"] <= 0},
@@ -98,14 +120,17 @@ def scores_now(rows: list[dict], goals_checked: list[dict], state, current: int)
     nw = state.cash + state.investments + state.home_value - state.debt - state.mortgage
     neg = sum(1 for r in rows if r["cash"] < 0)
     below = sum(1 for r in rows if "below_buffer" in r["flags"])
-    safety = "shortfall" if neg or state.cash < 0 else ("tight" if below > 12 else "steady")
+    # Safety is where you stand now, not a permanent mark from an earlier dip (e.g. while studying).
+    buffer_now = rows[-1]["buffer_target"] if rows else 0.0
+    safety = "shortfall" if state.cash < 0 else ("tight" if state.cash < buffer_now else "steady")
     last_costs = monthly_costs(rows[-1]) if rows else None
     liquid = state.cash + state.investments
     due = [g for g in goals_checked if g["status"] != "beyond_horizon" and g["month"] < current]
     return {
         "money": {"net_worth": nw, "cash": state.cash, "investments": state.investments,
                   "home_equity": state.home_value - state.mortgage, "debt": state.debt + state.mortgage},
-        "safety": {"level": safety, "months_below_buffer": below, "months_negative_cash": neg},
+        "safety": {"level": safety, "months_below_buffer": below, "months_negative_cash": neg,
+                   "recovered": neg > 0 and state.cash >= 0},
         "goals": {"met": sum(g["status"] == "met" for g in due), "due": len(due),
                   "total": sum(g["status"] != "beyond_horizon" for g in goals_checked)},
         "freedom": {"runway_months": (liquid / last_costs) if last_costs else None,

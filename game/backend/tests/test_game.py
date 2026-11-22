@@ -377,3 +377,41 @@ def test_bank_offers_sell_investments(plain):
     debt = [a for a in bank if a["type"] == "sell_investments" and a["id"] == "debt"]
     assert [a["value"] for a in cash] == pytest.approx([7_500, 15_000, 30_000]) and all(a["enabled"] for a in cash)
     assert [a["value"] for a in debt] == pytest.approx([4_000, 8_000]) and all(a["enabled"] for a in debt)
+
+
+# ----------------------------------------------------------------------------- safety = risk, not history
+def _row(t, cash, buffer=1000.0):
+    return {"t": t, "cash": cash, "investments": 0.0, "debt": 0.0, "net_worth": cash, "status": "working",
+            "flags": (["financing_needed"] if cash < 0 else []) + (["below_buffer"] if cash < buffer else []),
+            "buffer_target": buffer, "expenses": 500.0, "income": 0.0, "one_offs": 0.0, "interest": 0.0,
+            "investment_return": 0.0, "joy": 0.0}
+
+
+def test_recovered_dip_is_not_a_lasting_shortfall():
+    from types import SimpleNamespace
+    from app.engine.metrics import scores, scores_now
+    rows = [_row(0, -500), _row(1, -200), _row(2, 3000)]   # in the red while studying, then recovered
+    now = scores_now(rows, [], SimpleNamespace(cash=3000, investments=0, home_value=0, debt=0, mortgage=0,
+                                               has_master=False, program=None), 3)["safety"]
+    assert now["level"] == "steady" and now["recovered"] and now["months_negative_cash"] == 2
+    full = scores(rows, [], [])["safety"]
+    assert full["level"] == "tight" and full["recovered"]
+    assert scores(rows + [_row(3, -10)], [], [])["safety"]["level"] == "shortfall"   # still short at the end
+
+
+def test_cash_risk_counts_only_the_future():
+    import numpy as np
+    from app.engine.metrics import cash_risk
+    cash = np.array([[100, 50, -10] + [200] * 20, [500] * 23, [500] * 15 + [-1] * 8, [500] * 23])
+    r = cash_risk(cash, cash < 300)
+    assert r["below_zero_12m"] == 0.25 and r["below_zero_ahead"] == 0.5 and r["level"] == "high"
+    calm = cash_risk(np.full((10, 24), 800.0), np.zeros((10, 24), bool))
+    assert calm["below_zero_ahead"] == 0 and calm["level"] == "low"
+
+
+def test_projection_reports_forward_risk():
+    from app.service import game_projection
+    from app.models import GameProjectionRequest
+    out = game_projection(GameProjectionRequest(turns=[], current_month=0, n=20))
+    assert 0 <= out["risk"]["below_zero_12m"] <= out["risk"]["below_zero_ahead"] <= 1
+    assert out["share_worlds_shortfall"] == out["risk"]["below_zero_ahead"]

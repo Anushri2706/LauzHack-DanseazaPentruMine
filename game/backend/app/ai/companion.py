@@ -84,8 +84,11 @@ def build_facts(st: dict, proj: dict | None, twin: dict | None, card: dict | Non
         fn = proj["final_net_worth"]
         for k in ("p10", "p50", "p90"):
             _f(facts, f"rules.end_nw_{k}", f"town engine: net worth at the end of the timeline ({k.upper()})", fn[k], "chf", T)
-        _f(facts, "rules.shortfall", "town engine: share of worlds where cash goes below zero",
+        _f(facts, "rules.shortfall", "town engine: share of worlds where cash goes below zero from now on",
            proj.get("share_worlds_shortfall"), "share", T)
+        if proj.get("risk"):
+            _f(facts, "rules.risk_12m", "town engine: share of worlds where cash goes below zero in the next 12 months",
+               proj["risk"]["below_zero_12m"], "share", T)
     if twin:
         L = "learned twin"
         sm = twin["summary"]
@@ -205,7 +208,8 @@ def rule_answer(text: str, facts: dict, action: dict | None) -> list[dict]:
                 out.append("In {twin.job_search} of the twin's simulated lives you go through a job search before sixty-five, "
                            "typically for {twin.job_search_months} in total.")
             if has("rules.shortfall"):
-                out.append("In the town engine's worlds, cash goes below zero in {rules.shortfall} of them.")
+                out.append("From now on, cash goes below zero in {rules.shortfall} of the town engine's worlds"
+                           + (" ({rules.risk_12m} within the next 12 months)." if has("rules.risk_12m") else "."))
         elif topic == "model":
             if has("model.mae"):
                 out.append("Backtested on {model.n_test} locked test people (twelve months known, the next twelve "
