@@ -22,7 +22,6 @@ import numpy as np
 from .assumptions import validate_params
 from .catalogue import (FLATS, HABITS, HOMES, ITEMS, flat_factor_key, habit_cost_key, habit_joy_key,
                         home_price_key, item_joy_key, item_price_key)
-from . import regime as rg
 from .decisions import (InvalidDecision, _start_job, _work_terms, apply_decision, complete_programs, options,
                         repay_all, take_loan)
 from .finance import annuity_payment, inflation_factor
@@ -296,13 +295,13 @@ def apply_action(s: State, a: Action, t: int, p: dict, luck: tuple[int, int] = (
         s = _apply_life(s, t, p, a.id)
         if a.id == "graduate":
             letters.append(_letter(t, "degree", "🎓", "You got your degree!",
-                                   "Congratulations. You're looking for your first job now; "
+                                   "Congratulations. Visit the Office to start working: "
                                    f"jobs pay about {chf(_work_terms(s, p)[0])}/month."))
         elif a.id == "quit_school":
             kept = "You keep your bachelor's. " if was_master else "You have no degree: a master's is closed to you. "
             letters.append(_letter(t, "dropped_out", "🚪", "You left school",
-                                   kept + f"Jobs pay about {chf(_work_terms(s, p)[0])}/month; "
-                                   "you're looking for one now."))
+                                   kept + f"Jobs pay about {chf(_work_terms(s, p)[0])}/month: "
+                                   "visit the Office to start working."))
     elif a.type == "set_habit":
         kept = tuple(x for x in s.habits if x[0] != a.id)
         lv = int(a.value)
@@ -378,7 +377,8 @@ def _world_letters(t: int, events: list[dict], pre: State, row: dict, p: dict) -
                                    f"Markets fell {p['crash_size']:.0%} this month. Your investments are now "
                                    f"{chf(row['investments'])}. In this game nothing is sold in panic."))
         elif e["kind"] == "income_loss":
-            if pre.status in ("working", "abroad"):
+            spared = pre.has_master and e.get("keep", 0.0) >= p["masters_job_loss_factor"]
+            if pre.status in ("working", "abroad") and not spared:
                 out.append(_letter(t, "income_loss", "📮", "Your job ended",
                                    f"{e['text'].split(' from')[0]}: you get {p['unemployment_benefit_rate']:.0%} "
                                    f"of your income as benefits until you find work again."))
@@ -426,10 +426,34 @@ def pension_month(s: State, t: int, p: dict) -> tuple[State, float, list[dict]]:
     return s, extra, letters
 
 
-def life_regime(s: State, t: int, p: dict, world: dict | None) -> tuple[State, float, float, list[dict]]:
-    """This month's regime from the HMM chain, its effect on the player and the letters it sends.
+def job_mult(s: State, world: dict | None, t: int, p: dict) -> float:
+    """Income multiplier from the world's job-loss spells this month. With a master's, a spell only happens
+    if its `keep` draw is below masters_job_loss_factor (fewer job losses, same random numbers)."""
+    if world is None:
+        return 1.0
+    m = float(world["income_mult"][t])
+    if m < 1.0 and s.has_master and "keep" in world and float(world["keep"][t]) >= p["masters_job_loss_factor"]:
+        return 1.0
+    return m
 
-    Returns (state, income multiplier, extra income, letters). Runs after the player's actions."""
+
+def life_status(s: State, mult: float) -> str:
+    """What this month looks like on the timeline: employed, part_time, job_search, student or retired."""
+    if s.status == "studying":
+        return "student"
+    if s.status == "retired":
+        return "retired"
+    if s.status == "unemployed":
+        return "job_search"
+    if mult < 1.0:
+        return "job_search"  # a job-loss spell from the world while working
+    return "part_time" if s.work_share < 1 else "employed"
+
+
+def life_month(s: State, t: int, p: dict, world: dict | None) -> tuple[State, float, list[dict]]:
+    """Age rules for month t (retirement, Swiss pension). Returns (state, extra income, letters).
+
+    Runs after the player's actions and before step_month."""
     letters: list[dict] = []
     age = s.start_age + t / 12.0
     in_labour = s.status in ("working", "abroad", "unemployed") or (s.status == "studying" and s.program is None)
@@ -443,51 +467,12 @@ def life_regime(s: State, t: int, p: dict, world: dict | None) -> tuple[State, f
                                f"AHV {chf(ahv)} (adjusted to the mixed index every 2 years, plus a 13th AHV "
                                f"pension each December) and BVG {chf(pension - ahv)} (not indexed)."))
         s = fast_replace(s, status="retired", salary=pension, salary_start=t, work_share=1.0,
-                         regime="retired", regime_dwell=0, pension_ahv=ahv, pension_bvg=pension - ahv)
+                         pension_ahv=ahv, pension_bvg=pension - ahv)
+    extra = 0.0
     if s.status == "retired" or s.retiree:  # a retiree studying keeps the pension (and its rules)
         s, extra, ls = pension_month(s, t, p)
-        reg = "retired" if s.status == "retired" else "student"
-        return fast_replace(s, regime=reg, regime_dwell=0), 1.0, extra, letters + ls
-    u = world.get("regime_u") if world else None
-    if u is None:  # flat labour model (or no world): the regime follows the status
-        r = rg.regime_for_status(s.status)
-        mult = float(world["income_mult"][t]) if world is not None else 1.0
-        return fast_replace(s, regime=rg.STATES[r], regime_dwell=0), mult, 0.0, letters
-    if s.status == "studying":
-        return fast_replace(s, regime=rg.STATES[rg.regime_for_status(s.status)], regime_dwell=0), 1.0, 0.0, letters
-    prev = rg.IDX.get(s.regime)
-    if s.status == "unemployed":
-        start = rg.J
-    else:
-        start = prev if prev in rg.LABOUR else rg.E
-    dwell = s.regime_dwell if start == rg.J and prev == rg.J else 0
-    A = rg.matrix_at(world, t)
-    if s.status == "unemployed" and prev != rg.J:
-        r = rg.J  # the month you quit starts the search
-    elif t < len(u) and A is not None:
-        r = rg.step(start, age, s.has_master, dwell, A, float(u[t]))
-    else:  # "no surprises": nobody loses a job, spells end
-        r = rg.J if s.status == "unemployed" else rg.E
-    mult = 1.0
-    if s.status in ("working", "abroad"):
-        if r == rg.J:
-            mult = p["unemployment_benefit_rate"]
-            if start != rg.J:
-                letters.append(_letter(t, "income_loss", "📮", "Your job ended",
-                                       f"The labour market turned (regime HMM, age {int(age)}): you get "
-                                       f"{p['unemployment_benefit_rate']:.0%} of your income as benefits "
-                                       "until you find work again."))
-        elif start == rg.J:
-            letters.append(_letter(t, "back_to_work", "💼", "Back at work",
-                                   f"After {dwell + 1} months of searching you are working again."))
-    elif s.status == "unemployed" and r in (rg.E, rg.PT):
-        sal, living = _work_terms(s, p)
-        s = _start_job(s, t, "working", sal, p["rent"], living)
-        s = fast_replace(s, work_share=1.0)
-        letters.append(_letter(t, "found_job", "💼", "You found a job",
-                               f"After {dwell + 1} months of searching you start at {chf(sal)}/month."))
-    s = fast_replace(s, regime=rg.STATES[r], regime_dwell=dwell + 1 if r == rg.J else 0)
-    return s, mult, 0.0, letters
+        letters.extend(ls)
+    return s, extra, letters
 
 
 def run_turns(p: dict, turns: list[Turn], start: State | None = None, world: dict | None = None,
@@ -532,14 +517,15 @@ def run_turns(p: dict, turns: list[Turn], start: State | None = None, world: dic
             s = _apply_life(s, t, p, "start_work")
         if keep_states:
             applied[t] = s
-        s, mult, extra, ls = life_regime(s, t, p, world)
+        s, extra, ls = life_month(s, t, p, world)
         letters.extend(ls)
         pre = s
+        mult = job_mult(pre, world, t, p)
         if world is None:
-            s, row = step_month(s, p, income_mult=mult, income_extra=extra)
+            s, row = step_month(s, p, income_extra=extra)
         else:
             s, row = step_month(s, p, float(world["ret"][t]), mult, float(world["rent_mult"][t]), extra)
-        row["regime"] = rg.label(rg.IDX[pre.regime], pre.work_share)
+        row["regime"] = life_status(pre, mult)
         rows.append(row)
         letters.extend(_world_letters(t, events, pre, row, p))
         prev_cash = rows[-2]["cash"] if len(rows) > 1 else pre.cash
@@ -612,11 +598,11 @@ def available_actions(s: State, t: int, p: dict, queued: tuple[Action, ...] = ()
                         f"+{p['joy_reduced_hours']:g} joy/month.",
         "full_hours": f"Salary back to {chf(s.salary / s.work_share if s.work_share else s.salary)}/month.",
         "drop_out": "Remaining tuition is cancelled; you start working at the pre-master salary.",
-        "graduate": "Leave school with your degree and look for a job (the regime HMM decides when you find "
-                    f"one; about 20%/month at your age). Then {chf(p['salary_work'])}/month.",
+        "graduate": "Leave school with your degree. Then start a job at the Office: "
+                    f"{chf(p['salary_master'] if s.has_master else p['salary_work'])}/month.",
         "quit_school": ("Leave now. Remaining tuition is cancelled; you keep your bachelor's and look for a job."
                         if s.program is not None else
-                        "Leave without a degree and look for a job. Jobs pay about "
+                        "Leave without a degree. Jobs at the Office pay about "
                         f"{chf(p['salary_work'] * p['no_degree_wage_factor'])}/month "
                         f"({p['no_degree_wage_factor']:.0%}) and a master's is closed to you."),
     }

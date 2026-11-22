@@ -7,7 +7,7 @@ import { TAGS } from '../format'
 const isPct = (unit: string) => unit.startsWith('%')
 const UNCERTAINTY: { label: string; keys: string[] }[] = [
   { label: 'Market swings and drops', keys: ['return_volatility', 'crash_prob_annual'] },
-  { label: 'Income-loss spells', keys: ['job_loss_prob_annual', 'labour_market_hmm'] },
+  { label: 'Losing your job (Swiss rates by age)', keys: ['job_loss_18_24', 'job_loss_25_34', 'job_loss_35_49', 'job_loss_50_64'] },
   { label: 'Rent rises', keys: ['rent_shock_prob_annual'] },
 ]
 
@@ -19,7 +19,7 @@ export function SettingsApp({ personaId }: { personaId: string }) {
   const set = (o: Record<string, number>) => setStore({ assumptions: o })
   const groups = [...new Set(rows.data?.map((r) => r.group))]
   const val = (r: AssumptionRow) => overrides[r.key] ?? r.value
-  // A shock is on while any of its keys is non-zero (income loss: the HMM or the flat chance).
+  // A shock is on while any of its keys is non-zero.
   const on = (keys: string[]) => keys.some((k) => overrides[k] !== 0)
   const toggle = (keys: string[]) => {
     const o = { ...overrides }
@@ -37,15 +37,6 @@ export function SettingsApp({ personaId }: { personaId: string }) {
         {UNCERTAINTY.map((u) => (
           <label key={u.label}><input type="checkbox" checked={on(u.keys)} onChange={() => toggle(u.keys)} /> {u.label}</label>
         ))}
-        {on(['job_loss_prob_annual', 'labour_market_hmm']) && (
-          <label style={{ marginLeft: 20 }}><input type="checkbox" checked={overrides.labour_market_hmm !== 0} onChange={() => {
-            const o = { ...overrides }
-            if (o.labour_market_hmm === 0) delete o.labour_market_hmm
-            else o.labour_market_hmm = 0
-            delete o.job_loss_prob_annual
-            set(o)
-          }} /> Job-loss spells from the regime HMM (sourced Swiss hazards by age); off = flat yearly chance</label>
-        )}
         <label><input type="checkbox" checked={overrides.joy_enabled !== 0} onChange={() => {
           const o = { ...overrides }
           if (o.joy_enabled === 0) delete o.joy_enabled

@@ -1,9 +1,9 @@
 // The life timeline along the bottom of the screen, from today to age 120.
 //
-// Left of the playhead is the life you lived: your net worth and, below it, the regime of every month
-// (employed / part-time / job search / student / retired) as the HMM actually played it out in your world.
-// Right of the playhead is what the regime HMM fans out from where you are now: the P10–P90 net-worth
-// band over many simulated lives and, per month, the share of lives in each regime.
+// Left of the playhead is the life you lived: your net worth and, below it, your life status every month
+// (working / reduced hours / between jobs / studying / retired) in your world.
+// Right of the playhead is what the simulated worlds fan out from where you are now: the P10–P90 net-worth
+// band over many simulated lives and, per month, the share of lives in each status.
 // Your choices sit on the timeline as markers. Click or drag anywhere to move through time; click a
 // marker to go back to it or to undo it. Later choices stay ahead as plans until you choose differently.
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -185,7 +185,7 @@ export function Timeline({ st }: { st: GameState }) {
         {s.queue.length > 0 && <span className="tl-plans">🗓️ {s.queue.length} plan{s.queue.length > 1 ? 's' : ''} this month · they happen as you move forward</span>}
         <span className="tl-legend">
           {ORDER.map((r) => <span key={r}><i style={{ background: REGIME_META[r].color }} />{REGIME_META[r].label}</span>)}
-          <span className="muted">· right of 📍: {p ? `${p.n} lives from the regime HMM` : proj.loading ? 'simulating…' : ''}</span>
+          <span className="muted">· right of 📍: {p ? `${p.n} simulated lives` : proj.loading ? 'simulating…' : ''}</span>
         </span>
       </div>
       <div className="tl-area" ref={area} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp}

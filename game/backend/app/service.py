@@ -281,13 +281,8 @@ def _splice(past: dict, future: dict, m: int, horizon: int) -> dict:
     events = [e for e in past.get("events", []) if e["month"] < m] + \
              [e for e in future.get("events", []) if e["month"] >= m]
     out = {"ret": ret, "income_mult": inc, "rent_mult": rent, "events": events}
-    if "regime_u" in past:  # regime luck: lived months from the player's world, the rest from `future`
-        fu = future.get("regime_u")
-        out["regime_u"] = past["regime_u"][:m] if fu is None else np.concatenate([past["regime_u"][:m], fu[m:]])
-        segs = [x for x in past["regime_A"] if x[0] < m]
-        if future.get("regime_A"):
-            segs.append((m, future["regime_A"][0][1]))
-        out["regime_A"] = tuple(segs)
+    if "keep" in past and "keep" in future:
+        out["keep"] = np.concatenate([past["keep"][:m], future["keep"][m:]])
     return out
 
 

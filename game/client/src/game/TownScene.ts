@@ -24,6 +24,8 @@ export class TownScene extends Phaser.Scene {
   private path: Tile[] = []
   private pathTarget: string | null = null
   private frozen = false
+  private following = true          // the camera follows the player until you scroll the view
+  private manualZoom: number | null = null
   private near: string | null = null
   private signs: Record<string, Phaser.GameObjects.Text> = {}
   private trees: { x: number; y: number; kind: 'tree' | 'pine' }[] = []
@@ -59,6 +61,11 @@ export class TownScene extends Phaser.Scene {
     cam.roundPixels = true
     this.fitZoom()
     this.scale.on('resize', () => this.fitZoom())
+    // Scroll / swipe over the town moves the view; pinch or Ctrl+scroll zooms. Walking re-centres on you.
+    const canvas = this.game.canvas
+    const onWheel = (e: WheelEvent) => this.onWheel(e)
+    canvas.addEventListener('wheel', onWheel, { passive: false })
+    this.unsub.push(() => canvas.removeEventListener('wheel', onWheel))
 
     const kb = this.input.keyboard!
     this.keys = kb.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,E,ENTER,SPACE') as Record<string, Phaser.Input.Keyboard.Key>
@@ -80,10 +87,37 @@ export class TownScene extends Phaser.Scene {
   }
 
   // ------------------------------------------------------------------ world building
+  /** Smallest zoom at which the town still fills the screen (no empty margins). */
+  private minZoom() {
+    return Math.max(this.scale.width / (MAP_W * TILE), this.scale.height / (MAP_H * TILE))
+  }
+
   private fitZoom() {
     const w = this.scale.width
-    const z = Math.max(2, Math.min(4, Math.floor(w / (26 * TILE))))
-    this.cameras.main.setZoom(z)
+    const auto = Math.max(2, Math.min(4, Math.floor(w / (26 * TILE))))
+    this.cameras.main.setZoom(Math.max(this.minZoom(), this.manualZoom ?? auto))
+  }
+
+  private onWheel(e: WheelEvent) {
+    e.preventDefault() // never scroll or zoom the page itself
+    if (this.frozen) return
+    const cam = this.cameras.main
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.scale.height : 1 // lines / pages -> px
+    const dx = e.deltaX * unit, dy = e.deltaY * unit
+    if (e.ctrlKey) { // trackpad pinch (and Ctrl + wheel): zoom
+      const z = Phaser.Math.Clamp(cam.zoom * Math.exp(-dy * 0.01), this.minZoom(), 6)
+      this.manualZoom = z
+      cam.setZoom(z)
+      return
+    }
+    if (this.following) { cam.stopFollow(); this.following = false }
+    cam.setScroll(cam.scrollX + dx / cam.zoom, cam.scrollY + dy / cam.zoom) // camera bounds keep it in town
+  }
+
+  private followAgain() {
+    if (this.following) return
+    this.following = true
+    this.cameras.main.startFollow(this.player, true, 0.15, 0.15)
   }
 
   private drawBackdrop() {
@@ -299,6 +333,7 @@ export class TownScene extends Phaser.Scene {
       } else { vx = Math.sign(Math.round(dx)); vy = Math.sign(Math.round(dy)) }
     }
     if (vx || vy) {
+      this.followAgain()
       const len = Math.hypot(vx, vy)
       const step = SPEED * dt
       const nx = this.player.x + (vx / len) * step, ny = this.player.y + (vy / len) * step

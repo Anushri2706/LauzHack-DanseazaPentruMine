@@ -5,6 +5,7 @@ Source tags (shown in the UI as honesty tags):
   starter_kit  🟡 taken from the challenge starter kit (starter-kit/scenario_config.json)
   scenario_csv 🟡 taken from Data/scenario-assumptions.csv
   ours         🟡 our own labelled assumption
+  official_est 🟢 estimated from official Swiss statistics (BFS, SECO, Eurostat; teammate's backend/assumptions)
 Simulated outputs are 🔵 and peer references are ⚪ (not assumptions, so not listed here).
 
 Salary and income figures from the starter kit are already NET; tax_rate and social_rate
@@ -13,6 +14,7 @@ therefore default to 0 so nothing is taxed twice.
 from dataclasses import dataclass
 
 from .catalogue import catalogue_assumptions
+from .labour_data import BANDS, team_rates
 
 
 @dataclass(frozen=True)
@@ -75,10 +77,6 @@ META: dict[str, AssumptionMeta] = {
     "return_volatility": AssumptionMeta("Investment volatility", "%/year (std. dev.)", "Uncertainty", 0, 0.6),
     "crash_prob_annual": AssumptionMeta("Chance of a market drop per year", "%/year", "Uncertainty", 0, 1),
     "crash_size": AssumptionMeta("Size of a market drop", "% of portfolio", "Uncertainty", 0, 0.9),
-    "labour_market_hmm": AssumptionMeta(
-        "Job-loss spells from the regime HMM", "1 = on, 0 = flat chance below", "Uncertainty", 0, 1,
-        note="On: spells are sampled from a regime chain with age-banded monthly hazards from Eurostat "
-             "lfsi_long_q, BFS SAKE and SECO (backend/assumptions/transitions.csv). Off: flat yearly chance."),
     "retirement_age": AssumptionMeta("Retirement age", "years", "Life course", 55, 75,
                                      note="BSV AHV 21 (backend/assumptions/income_assumptions.csv): working, between "
                                           "jobs and abroad all move to retired at this age."),
@@ -97,10 +95,6 @@ META: dict[str, AssumptionMeta] = {
     "ahv_13th_pension": AssumptionMeta("13th AHV pension (from Dec 2026)", "1 = on, 0 = off", "Life course", 0, 1,
                                        note="Accepted by vote in March 2024: one extra monthly AHV pension each "
                                             "December, first paid in December 2026."),
-    "job_loss_prob_annual": AssumptionMeta("Chance of losing income per year (flat model)", "%/year",
-                                           "Uncertainty", 0, 1,
-                                           note="Used only when the regime HMM is off. While working or abroad; "
-                                                "lasts 3-9 months on unemployment benefit."),
     "rent_shock_prob_annual": AssumptionMeta("Chance of a rent rise per year", "%/year", "Uncertainty", 0, 1),
     "rent_shock_size": AssumptionMeta("Size of a rent rise", "% of rent", "Uncertainty", 0, 1),
     # Rules
@@ -109,6 +103,21 @@ META: dict[str, AssumptionMeta] = {
 
 for _key, _default, _label, _unit, _group, _lo, _hi, _note in catalogue_assumptions():
     META[_key] = AssumptionMeta(_label, _unit, _group, _lo, _hi, _note)
+
+# Losing and finding a job: by age band, education and time without a job (labour_data.py).
+_JOB = "Losing your job"
+for _b in BANDS:
+    _ages = _b.replace("_", "-")
+    META[f"job_loss_{_b}"] = AssumptionMeta(f"Chance of losing your job per month, age {_ages}", "%/month", _JOB,
+                                            0, 0.2, team_rates()[f"job_loss_{_b}"][1])
+    META[f"job_find_{_b}"] = AssumptionMeta(f"Chance of finding work per month, age {_ages}", "%/month", _JOB,
+                                            0, 1, team_rates()[f"job_find_{_b}"][1])
+META["masters_job_loss_factor"] = AssumptionMeta("With a master's: × chance of losing your job", "×", _JOB, 0, 2,
+                                                 team_rates()["masters_job_loss_factor"][1])
+META["long_term_find_factor"] = AssumptionMeta("After long without a job: × chance of finding work", "×", _JOB,
+                                               0, 1, team_rates()["long_term_find_factor"][1])
+META["long_term_months"] = AssumptionMeta("Long without a job means more than", "months", _JOB, 1, 60,
+                                          team_rates()["long_term_months"][1])
 
 # Alexia (P00001): values from the starter kit and the scenario CSV.
 # Starter-kit "monthly_expenses_chf" are TOTAL costs including rent, so we split them as
@@ -154,17 +163,17 @@ ALEXIA_DEFAULTS: dict[str, tuple[float, str]] = {
     "return_volatility": (0.15, "ours"),
     "crash_prob_annual": (0.05, "ours"),
     "crash_size": (0.2, "ours"),
-    "labour_market_hmm": (1, "ours"),
     "retirement_age": (65, "ours"),
     "pension_replacement_rate": (0.475, "ours"),
     "no_degree_wage_factor": (0.8, "ours"),
     "ahv_max_pension": (2520, "ours"),
     "wage_index_annual": (0.01, "ours"),
     "ahv_13th_pension": (1, "ours"),
-    "job_loss_prob_annual": (0.05, "ours"),
     "rent_shock_prob_annual": (0.1, "ours"),
     "rent_shock_size": (0.1, "ours"),
 }
+for _k, (_v, _src) in team_rates().items():
+    ALEXIA_DEFAULTS[_k] = (_v, "official_est")
 # Game catalogue (habits, items, homes, flats, housing rules, joy table): all our assumptions.
 for _key, _default, *_rest in catalogue_assumptions():
     ALEXIA_DEFAULTS[_key] = (_default, "ours")

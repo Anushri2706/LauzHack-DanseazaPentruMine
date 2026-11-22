@@ -37,7 +37,7 @@ export function PersonaPicker({ onPick }: { onPick: (p: PersonaCard) => void }) 
     <div className="screen pick-screen">
       <header className="title-block">
         <h1 className="logo">Many Lives</h1>
-        <p className="lead">A lakeside town where you live someone's whole life, to age 120, on a timeline you can move back and forth. A regime HMM shows the futures your choices open up. Go back to any choice, undo it or choose differently, and compare the realities you create.</p>
+        <p className="lead">A lakeside town where you live someone's whole life, to age 120, on a timeline you can move back and forth. The timeline fans out the futures your choices open up. Go back to any choice, undo it or choose differently, and compare the realities you create.</p>
         <p className="badge-line"><span className="badge">Simulation · not a prediction or advice</span> All 1,200 people are fictional (synthetic data).</p>
       </header>
       {alexia.data && <Card p={alexia.data} onPick={onPick} featured />}

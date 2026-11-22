@@ -7,8 +7,7 @@ You pick a fictional person (Alexia is featured), choose how they look, and walk
 lakeside town inspired by Lausanne. You visit the university, the office, the café, the shop, the bank, the
 real-estate agency and the train station, and you make life and money choices there. A **life timeline**
 along the bottom runs from today to **age 120**: click or drag to live forward or go back, click a choice to
-return to it or undo it. The **regime HMM** is the backbone: every month of a life is *working*, *job search*,
-*studying* or *retired*, sampled from sourced, age-banded hazards and conditioned on your choices. Right of
+return to it or undo it. Every month of a life is *working*, *between jobs*, *studying* or *retired*. Right of
 the playhead, the timeline fans out the possible futures from where you are. Your **in-game phone** shows your
 scores, the uncertainty ranges, and a **multiverse** of every reality you've lived.
 
@@ -52,11 +51,11 @@ the engine allows it, compares the two realities, and fast-forwards to the 10-ye
 - It is a **drawer**: only a small *▲ Life timeline* tab shows. Point at it and the timeline slides up; move
   the mouse away and it hides. It stays open while you drag, have a choice open, or time is moving. Click the
   tab, press 📌, or press **T** to pin it open.
-- **Left of 📍** is the life you lived: net worth (line) and the regime of every month (coloured strip), as
-  the HMM played it out in your world. Life events (job ended, back at work, degree, home, retirement) are
+- **Left of 📍** is the life you lived: net worth (line) and your life status every month (coloured strip)
+  in your world. Life events (job ended, back at work, degree, home, retirement) are
   small icons on the strip.
-- **Right of 📍** is what the regime HMM fans out from your current state: the P10–P90 net-worth band and the
-  median (dashed) over 60 simulated lives, and per month the share of lives in each regime. Hover anywhere
+- **Right of 📍** is what the simulated worlds fan out from your current state: the P10–P90 net-worth band and the
+  median (dashed) over 60 simulated lives, and per month the share of lives in each status. Hover anywhere
   for the numbers ("Of 60 simulated lives: Working 91% · Job search 4% · Retired 5%").
 - **Move freely:** click or drag on the timeline, or use ⏮ −1y −1m +1m +1y +10y 🌅65 🏁120. Moving forward
   lives the months (this month's plans happen first); moving back rewinds exactly (deterministic replay).
@@ -99,10 +98,10 @@ Everything works with the mouse alone.
   | Train station | move abroad / back to Switzerland · weekend trip · flight home (when abroad) |
 
   **School.** *Get your degree* and *Drop out without a degree* are only possible while you are enrolled
-  (Alexia starts enrolled; a master's enrols you). Getting the degree ends school and starts a job search: the
-  regime HMM decides when you find a job (about 20%/month at 20), at the graduate salary. During a master's
+  (Alexia starts enrolled; a master's enrols you). Getting the degree ends school; you are between jobs until you
+  start one at the Office (graduate salary). During a master's
   the degree comes by itself when the programme ends, so that button is greyed out. Dropping out cancels the
-  remaining tuition and starts a job search. Out of your first degree you have **no degree**: jobs pay
+  remaining tuition; you are between jobs until you start one at the Office. Out of your first degree you have **no degree**: jobs pay
   `no_degree_wage_factor` × the graduate salary (80%, our assumption) and a master's is closed. Out of a
   master's you keep your bachelor's. A retiree who drops out goes back to retirement.
   The engine masks what a persona can do. A retiree gets no job choices but can do a full-time master's: the pension continues, tuition is paid, and they return to retirement when they graduate or drop out. There is no age limit on studying. A student can't ask
@@ -243,31 +242,36 @@ includes the starter-kit cross-check, to the cent, for all three scenarios.
   The ghosts are stress tests one year from now. 🎲 shows one other world.
 - Distributions: monthly return ~ N(μ, σ/√12) with σ = 15%/year; a 20% market drop with
   5%/year chance; a 10% rent rise with 10%/year chance. Seed 42.
-- **The regime HMM is the backbone of a life** (`labour_market_hmm = 1`, default; `app/engine/regime.py`,
-  stepped inside `game.run_turns`). Every month is one regime of the teammate's chain (`backend/twin`):
-  `employed`, `part_time`, `job_search`, `student`, `retired`. Hazards are sourced and age-banded (Eurostat
-  `lfsi_long_q`, BFS SAKE, SECO; `backend/assumptions/transitions.csv`); each world carries its own Dirichlet
-  draw of the transition matrix (parameter uncertainty). The chain is **conditioned on your life**:
-  - it runs month by month from your *current* regime and age;
-  - your choices pin regimes: studying = `student`, quitting = `job_search` (and the chain decides when you
-    find a job), working / abroad = the free labour-market chain;
-  - a master's scales the job-loss hazard by `masters_hazard_factor` (0.81, BFS EHA); job-search exits halve
-    after 12 months (duration dependence);
-  - at `retirement_age` (65, AHV 21) everyone in the labour market retires on `pension_replacement_rate`
-    (47.5% of the last full salary, OECD net replacement rate). The pension is split into **AHV** (up to the
-    maximum AHV pension, 2,520 CHF/month in 2025) and **BVG** (the rest). The AHV part rises every two years
-    (January 2027, 2029, …) by the **mixed index**, the average of Swiss nominal wage growth (1%/year, BFS Swiss
-    Wage Index) and inflation (AHVG Art. 33ter), and a **13th AHV pension** is paid each December from
-    December 2026 (2024 vote). The BVG part is not indexed: the law leaves it to each pension fund. All four
-    numbers can be changed under Settings → Life course.
-  In `job_search` months, job income is × `unemployment_benefit_rate` (70%, AVIG Art. 22). Money stays in this
-  engine, so there is one set of accounts.
-  - **Common random numbers:** world *k* holds one uniform per month and one matrix draw, identical whether 1
-    or 500 worlds are drawn. All realities replay the same draws, so they differ because of choices.
-  - `labour_market_hmm = 0` restores the flat model (3–9 months with 5%/year chance).
-  - Tests: `tests/test_regime_backbone.py` (spells, retirement at 65, student pin, common random numbers,
-    master's lowers job-search months, quitting ends when the chain finds a job, regime shares in the
-    projection). HMM part-time months count as full pay, because hours are a player choice.
+- **Losing your job: Swiss rates by age, education and time without a job.** The same sourced numbers as the
+  teammate's regime HMM, read straight from `backend/assumptions/` (`app/engine/labour_data.py`):
+
+  | Age | Losing your job (per month) | Finding work again (per month) |
+  |---|---|---|
+  | 18–24 | 1.0% | 20% |
+  | 25–34 | 0.6% | 13% |
+  | 35–49 | 0.45% | 11% |
+  | 50–64 | 0.33% | 8% |
+
+  Job loss: BFS SAKE ILO unemployment by age (2025). Finding work: SECO durations by age (Dec 2025), full-time
+  plus 2%/month into part-time work. **A master's** lowers the chance of losing your job × 0.81 (BFS EHA 2023
+  graduate survey). **After 12 months** without a job the chance of finding one halves (ILO long-term share).
+  Each world draws its spells month by month from its own random stream, at the age you have that month; each
+  spell carries a draw that decides whether a master's graduate is spared it, so a reality with and one
+  without a master's see the same luck. During a spell income is `unemployment_benefit_rate` (70%, AVIG Art. 22)
+  × job income, only while working or abroad. All 11 numbers are 🟢 in Settings → *Losing your job*.
+  - Cross-check: the official Eurostat flows (`lfsi_long_q`, all ages, 2015-Q1–2026-Q2) give 0.44%/month,
+    between the oldest and youngest bands. Refresh that snapshot with
+    `cd game/backend && .venv/bin/python scripts/fetch_job_loss_data.py`.
+  - Not covered: how long you have been in a job and your type of job or sector. The game has neither, and the
+    open Swiss flow data has no such split. After graduating, dropping out or quitting you start a job
+    yourself at the Office.
+- **Retirement and pensions:** at `retirement_age` (65, AHV 21) everyone in the labour market retires on
+  `pension_replacement_rate` (47.5% of the last full salary, OECD net replacement rate). The pension is split
+  into **AHV** (up to the maximum AHV pension, 2,520 CHF/month in 2025) and **BVG** (the rest). The AHV part
+  rises every two years (January 2027, 2029, …) by the **mixed index**, the average of Swiss nominal wage
+  growth (1%/year, BFS Swiss Wage Index) and inflation (AHVG Art. 33ter), and a **13th AHV pension** is paid
+  each December from December 2026 (2024 vote). The BVG part is not indexed: the law leaves it to each pension
+  fund. All four numbers can be changed under Settings → Life course. Tests: `tests/test_life_course.py`.
 - Asking for a raise uses one draw from your world, `rng(seed, world, month)`, so it is reproducible.
 
 ## Design choices (made without asking; easy to change)

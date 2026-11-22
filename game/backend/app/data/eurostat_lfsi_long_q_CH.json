@@ -1,0 +1,17 @@
+{
+  "dataset": "lfsi_long_q",
+  "title": "Labour market transitions - quarterly data",
+  "doi": "10.2908/LFSI_LONG_Q",
+  "publisher": "Eurostat (from the Swiss Labour Force Survey, BFS SAKE)",
+  "license": "Eurostat copyright notice, CC BY 4.0",
+  "url": "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/lfsi_long_q?geo=CH&sex=T&s_adj=SA&format=JSON&lang=en",
+  "dataset_updated": "2026-09-15T23:00:00+0200",
+  "retrieved": "2026-11-22",
+  "geo": "CH",
+  "sex": "T",
+  "s_adj": "SA",
+  "columns": {
+    "emp_to_une_pct": "employed -> unemployed, % of employment, per quarter",
+    "une_to_emp_pct": "unemployed -> employed, % of unemployment, per quarter"
+  }
+}

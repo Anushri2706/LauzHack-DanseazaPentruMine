@@ -202,27 +202,3 @@ export interface Catalogue {
   rules: { key: string; value: number; label: string; unit: string; group: string }[]
   note: string
 }
-
-// ---- regime HMM twin (teammate's backend/twin via /hmm/*)
-export interface HmmDecision { id: string; label: string; icon: string; text: string; available: boolean }
-export interface HmmDecisions { persona_id: string; initial_state: string; states: string[]; decisions: HmmDecision[]; disclaimer: string }
-export interface HmmGoal {
-  goal_id: string; name: string; target: number; target_date: string; hit_rate: number
-  evaluated_at: string; goal_month: number; median_cash_at_goal: number
-}
-export interface HmmFanDecision {
-  id: string; label: string; icon: string
-  cash: { p10: number[]; p50: number[]; p90: number[] }
-  income_p50: number[]
-  occupancy: Record<string, number[]>
-  months_in_state: Record<string, number>
-  p_ever_negative: number
-  closing: { p10: number; p50: number; p90: number }
-  one_offs: { month: number; amount: number; label: string }[]
-  goals: HmmGoal[]
-}
-export interface HmmFan {
-  persona_id: string; name: string; age: number; initial_state: string; opening_cash: number
-  horizon: number; n_paths: number; seed: number; start: string; start_month: number; states: string[]
-  decisions: HmmFanDecision[]; note: string; disclaimer: string
-}

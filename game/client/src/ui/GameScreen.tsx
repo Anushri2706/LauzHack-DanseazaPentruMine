@@ -71,11 +71,6 @@ export function GameScreen() {
         <div className="help-hint px-box tiny">Walk with <kbd>WASD</kbd>/arrows or click. Enter a building with <kbd>E</kbd> or a click. <kbd>P</kbd> phone · <kbd>Esc</kbd> close. Point at ▲ Life timeline at the bottom to move through your life (<kbd>T</kbd> pins it open).
           <button className="icon-btn hint-close" title="Got it" aria-label="Close the instructions" onClick={() => setStore({ hintSeen: true })}>✕</button></div>
       )}
-      <div className="place-bar">
-        {Object.entries(NAMES).map(([id, n]) => (
-          <button key={id} className="chip tiny" onClick={() => bus.emit('walkTo', { place: id })} title={`Walk to the ${n}`}>{n}</button>
-        ))}
-      </div>
       {st && !phone && <Timeline st={st} />}
       {place && st && <PlaceDialog place={place} st={st} />}
       <Suspense fallback={null}>

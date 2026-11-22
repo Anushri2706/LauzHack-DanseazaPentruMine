@@ -44,13 +44,10 @@ class State:
     work_share: float = 1.0                     # 0.8 after "reduce to 80%"
     last_raise_ask: int | None = None
     retiree: bool = False                       # studying after retirement: pension continues, returns to retired
-    # Regime HMM (see regime.py): the chain's state this month and months spent in job search.
-    regime: str = ""
     no_degree: bool = False                     # left school without a degree: lower pay, no master's
     # Swiss pension (retired): AHV part follows the mixed index every 2 years; BVG part is not indexed.
     pension_ahv: float = 0.0
     pension_bvg: float = 0.0
-    regime_dwell: int = 0
 
     @property
     def owner(self) -> bool:
