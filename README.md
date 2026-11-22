@@ -54,8 +54,15 @@ The repo has three parts:
   on a normalised profile map).
 - **💬 Ask companion.** An optional LLM agent that answers only with numbers the engine produced and can propose
   one allowed action that you confirm. Without an API key the game falls back to rule-based answers.
+- **🌪️ What matters most?** A tornado chart per reality: each assumption moved ±20% on its own, ranked by how
+  much it moves net worth at 30 / 40 / 65. Assumptions with no effect are listed (scenario isolation).
+- **Negative cash is never free.** A shortfall is an automatic credit line at 10%/year up to CHF 30k; beyond that
+  the engine says the plan is not financeable instead of inventing money. The Safety tile also reports how often
+  savings run out after 65.
+- **💱 Today's CHF.** One toggle shows every chart in January-2025 francs (the engine's own price index), so decades
+  of inflation don't look like wealth.
 - **Transparent assumptions.** Every assumption is tagged with where it came from and can be edited in the
-  phone's Settings app. The Checks app runs validation live, including a to-the-cent cross-check against the
+  phone's Settings app. The Checks app runs 11 validation checks live, including a to-the-cent cross-check against the
   official starter kit.
 
 The full gameplay guide, architecture, model and limitations are in [`game/README.md`](game/README.md). There's
@@ -118,7 +125,7 @@ live, first job, housing).
 ### Tests
 
 ```bash
-cd game/backend && .venv/bin/pytest -q          # game engine (113 tests)
+cd game/backend && .venv/bin/pytest -q          # game engine (134 tests)
 game/backend/.venv/bin/python -m pytest backend -q   # regime twin (46 tests), run from the repo root
 cd game/client && npx tsc -b                    # client type-check
 cd game/client && npm run smoke                 # headless walk through the demo (needs both servers + Chrome)

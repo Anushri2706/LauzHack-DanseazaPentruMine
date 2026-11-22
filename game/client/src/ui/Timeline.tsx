@@ -11,7 +11,7 @@ import type { GameState, Regime } from '../api/types'
 import { travelTo, undoChoice, unqueue } from '../store/actions'
 import { actionIcon, actionLabel, colorOf, pathIds, setStore, tipOf, useStore } from '../store/game'
 import { chf, k, monthLabel, pct } from './format'
-import { useProjection, useTwin } from './useGame'
+import { useDeflate, useProjection, useTwin } from './useGame'
 
 export const REGIME_META: Record<Regime, { label: string; color: string }> = {
   employed: { label: 'Working', color: '#4fb38a' },
@@ -27,11 +27,14 @@ const W = 1000
 const NW_TOP = 6, NW_BOT = 84, STRIP_TOP = 92, STRIP_BOT = 112, SVG_H = 116
 
 /** Signed log scale so a 20k start and a 2M retirement both stay readable. */
+const LIFE_EXPECTANCY = 84
+
 const f = (v: number) => Math.sign(v) * Math.log10(1 + Math.abs(v) / 1000)
 
 export function Timeline({ st }: { st: GameState }) {
   const s = useStore((x) => x)
   const proj = useProjection(s)
+  const D = useDeflate(st)
   const busy = s.busy
   const H = st.horizon
   const m = st.month
@@ -63,20 +66,26 @@ export function Timeline({ st }: { st: GameState }) {
   const view = s.futureView ?? 'twin'
   const twinQ = useTwin(s, view === 'twin' && m < H)
   const tw = twinQ.data && twinQ.data.from_month === m ? twinQ.data : null
-  const fut = view === 'twin'
+  const fut0 = view === 'twin'
     ? (tw ? { band: tw.wealth, step: tw.step, shares: tw.states, n: tw.n_paths } : null)
     : (p?.bands && p.regimes ? { band: p.bands.net_worth, step: 1, shares: p.regimes.share, n: p.n } : null)
+  // In today's francs, each fan point (after m + (j+1)·step months) is divided by that month's price index.
+  const fut = useMemo(() => {
+    if (!fut0) return null
+    const dv = (a: number[]) => a.map((v, j) => D(v, m + (j + 1) * fut0.step))
+    return { ...fut0, band: { p10: dv(fut0.band.p10), p50: dv(fut0.band.p50), p90: dv(fut0.band.p90) } }
+  }, [fut0?.band, s.real, m]) // eslint-disable-line react-hooks/exhaustive-deps
   const loading = view === 'twin' ? twinQ.loading : proj.loading
-  const valueOf = (r: { net_worth: number; cash: number; investments: number }) =>
-    view === 'twin' ? r.cash + r.investments : r.net_worth
-  const metricName = view === 'twin' ? 'Liquid savings' : 'Net worth'
+  const valueOf = (r: { net_worth: number; cash: number; investments: number }, i: number) =>
+    D(view === 'twin' ? r.cash + r.investments : r.net_worth, i)
+  const metricName = (view === 'twin' ? 'Liquid savings' : 'Net worth') + (s.real ? " (today's CHF)" : '')
 
   // --------------------------------------------------------------- net worth (lived + fan)
   const nw = useMemo(() => {
-    const lived = st.rows.map(valueOf)
+    const lived = st.rows.map((r, j) => valueOf(r, j + 1))
     const band = fut?.band
     const fstep = fut?.step ?? 1
-    const nowV = valueOf(st.state)
+    const nowV = valueOf(st.state, m)
     const vals = [...lived, ...(band ? [...band.p10, ...band.p90] : []), 0, nowV]
     let lo = Math.min(...vals.map(f)), hi = Math.max(...vals.map(f))
     if (hi - lo < 1) hi = lo + 1
@@ -100,7 +109,7 @@ export function Timeline({ st }: { st: GameState }) {
     const ticks = [-1e5, 0, 1e4, 1e5, 1e6, 1e7].filter((v) => f(v) >= lo && f(v) <= hi).map((v) => ({ v, y: Y(v) }))
       .filter((t, _i, arr) => t.v === 0 || arr.every((o) => o === t || o.v === 0 || Math.abs(o.y - t.y) > 14 || Math.abs(o.v) < Math.abs(t.v)))
     return { lived: lived.length ? `M${livedPts.join(' L')}` : '', bandPath, midPath, zero, ticks }
-  }, [st.rows, st.state, fut, view, H, m]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [st.rows, st.state, fut, view, H, m, s.real]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --------------------------------------------------------------- regime strip
   const strip = useMemo(() => {
@@ -159,9 +168,9 @@ export function Timeline({ st }: { st: GameState }) {
     const head = `Age ${Math.floor(ageAt(t))} · ${monthLabel(t)}`
     if (t < m && st.rows[t]) {
       const r = st.rows[t]
-      return { head, lines: [`Lived: ${REGIME_META[r.regime]?.label ?? r.regime}`, `${metricName} ${chf(valueOf(r))}`] }
+      return { head, lines: [`Lived: ${REGIME_META[r.regime]?.label ?? r.regime}`, `${metricName} ${chf(valueOf(r, t + 1))}`] }
     }
-    if (t === m) return { head, lines: ['You are here', `${metricName} ${chf(valueOf(st.state))}`] }
+    if (t === m) return { head, lines: ['You are here', `${metricName} ${chf(valueOf(st.state, m))}`] }
     if (!fut) return { head, lines: [loading ? 'Fanning out possible lives…' : 'Future'] }
     const b = fut.band
     const i = Math.max(0, Math.min(Math.floor((t - m - 1) / fut.step), b.p50.length - 1))
@@ -172,6 +181,9 @@ export function Timeline({ st }: { st: GameState }) {
   }
 
   const retireMonth = Math.round((65 - startAge) * 12)
+  // Not a mortality model: a reference line so the run to 120 reads as "under these assumptions".
+  // BFS 2023: life expectancy at birth ≈ 82.2 (men) / 85.8 (women); ≈ 84 for both.
+  const lifeExpMonth = Math.round((LIFE_EXPECTANCY - startAge) * 12)
   const jumps: [string, number, string][] = [
     ['⏮', 0, 'Back to the start'], ['−1y', m - 12, 'One year back'], ['−1m', m - 1, 'One month back'],
     ['+1m', m + 1, 'Live one month'], ['+1y', m + 12, 'Live one year'], ['+10y', m + 120, 'Live ten years'],
@@ -209,7 +221,11 @@ export function Timeline({ st }: { st: GameState }) {
             <button className={`chip tiny ${view === 'rules' ? 'on' : ''}`} onClick={() => setStore({ futureView: 'rules' })}
               title="The town engine's seeded worlds: stated assumptions, investment returns. Shows net worth.">📐 Rules</button>
           </span>
-          <span className="muted">{fut ? `${fut.n} lives · ${metricName.toLowerCase()}` : loading ? 'simulating…' : ''}</span>
+          <button className={`chip tiny ${s.real ? 'on' : ''}`} onClick={() => setStore({ real: !s.real })}
+            title={`Amounts in today's (Jan 2025) francs: each value is divided by the engine's price index (inflation ${pct(st.inflation_annual)}/year). Off = nominal francs of that year.`}>
+            💱 {s.real ? "today's CHF" : 'nominal CHF'}</button>
+          <span className="muted" title={fut && fut.n < 200 ? 'Few simulated lives keep the whole-life fan fast; its P10–P90 edges are rough. The Money app uses more worlds.' : undefined}>
+            {fut ? `${fut.n} lives${fut.n < 200 ? ' (rough band)' : ''} · ${metricName.toLowerCase()}` : loading ? 'simulating…' : ''}</span>
         </span>
       </div>
       <div className="tl-area" ref={area} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp}
@@ -221,9 +237,15 @@ export function Timeline({ st }: { st: GameState }) {
           {nw.midPath && <path d={nw.midPath} fill="none" stroke="#9a7fd8" strokeWidth={1.5} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />}
           {nw.lived && <path d={nw.lived} fill="none" stroke={colorOf(s, s.cursor)} strokeWidth={2.5} vectorEffect="non-scaling-stroke" />}
           {strip.map((r, i) => <rect key={i} x={r.x} y={r.y} width={Math.max(r.w, 0.4)} height={r.h} fill={r.c} />)}
+          {lifeExpMonth > 0 && lifeExpMonth < H && <line x1={X(lifeExpMonth)} x2={X(lifeExpMonth)} y1={0} y2={SVG_H} stroke="#8a7d99" strokeDasharray="1 4" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />}
           <line x1={X(m)} x2={X(m)} y1={0} y2={SVG_H} stroke="var(--ink, #3b2f4a)" strokeWidth={2} vectorEffect="non-scaling-stroke" />
           {shown !== null && shown !== m && <line x1={X(shown)} x2={X(shown)} y1={0} y2={SVG_H} stroke="#3b2f4a" strokeOpacity={0.5} strokeDasharray="3 3" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />}
         </svg>
+        {lifeExpMonth > 0 && lifeExpMonth < H && (
+          <span className="tl-lifeexp" style={{ left: `${(lifeExpMonth / H) * 100}%` }}
+            title="Average Swiss life expectancy at birth ≈ 84 (BFS 2023: men 82.2, women 85.8). The engine has no mortality model: years after this are 'if you live that long, under these assumptions'.">
+            ✝︎ ≈{LIFE_EXPECTANCY}</span>
+        )}
         {nw.ticks.filter((t) => t.v !== 0).map((t) => (
           <span key={t.v} className="tl-ytick" style={{ top: `${(t.y / SVG_H) * 100}%` }}>{k(t.v)}</span>
         ))}

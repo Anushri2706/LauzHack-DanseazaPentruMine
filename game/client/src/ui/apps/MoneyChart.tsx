@@ -9,7 +9,7 @@ export type Metric = 'net_worth' | 'cash'
 
 /** Adapted from the old LifeChart: lived path (solid), "no surprises" (dotted), P10–P90 band from now on,
  *  stress-test ghosts, one rolled world, and the fog over the future. All values come from the engine. */
-export function MoneyChart({ proj, startAge, opening, metric, color, showBand, showGhosts, roll, goals, marks }: {
+export function MoneyChart({ proj, startAge, opening, metric, color, showBand, showGhosts, roll, goals, marks, D = (v) => v }: {
   proj: Projection
   startAge: number
   opening: { net_worth: number; cash: number }
@@ -20,24 +20,26 @@ export function MoneyChart({ proj, startAge, opening, metric, color, showBand, s
   roll?: Roll
   goals: CheckedGoal[]
   marks: { month: number; label: string }[]
+  /** Display conversion of a value after i months (today's francs when the toggle is on). */
+  D?: (v: number, i: number) => number
 }) {
   const H = proj.horizon
   const m = proj.month
   const lived = proj.lived[metric]
   const endAge = startAge + H / 12
   const nowAge = startAge + m / 12
-  const at = (arr: number[] | undefined, i: number) => (arr ? arr[i - m - 1] : undefined)
-  const livedAt = (i: number) => (i === 0 ? opening[metric] : lived[i - 1])
+  const at = (arr: number[] | undefined, i: number) => (arr ? D(arr[i - m - 1], i) : undefined)
+  const livedAt = (i: number) => D(i === 0 ? opening[metric] : lived[i - 1], i)
   const data = Array.from({ length: H + 1 }, (_, i) => {
     const d: Record<string, number | number[] | null | undefined> = { age: +(startAge + i / 12).toFixed(3) }
     d.lived = i <= m ? livedAt(i) : null
     if (proj.no_surprises) d.calm = i === m ? livedAt(i) : i > m ? at(proj.no_surprises[metric], i) : null
     if (proj.bands && i >= m) {
       const b = proj.bands[metric]
-      d.band = i === m ? [livedAt(i), livedAt(i)] : [b.p10[i - m - 1], b.p90[i - m - 1]]
+      d.band = i === m ? [livedAt(i), livedAt(i)] : [D(b.p10[i - m - 1], i), D(b.p90[i - m - 1], i)]
     }
-    proj.ghosts.forEach((g, j) => { d[`g${j}`] = i === m ? livedAt(i) : i > m ? g[metric][i - m - 1] : null })
-    if (roll) d.roll = i === m ? livedAt(i) : i > m ? roll[metric][i - m - 1] : null
+    proj.ghosts.forEach((g, j) => { d[`g${j}`] = i === m ? livedAt(i) : i > m ? D(g[metric][i - m - 1], i) : null })
+    if (roll) d.roll = i === m ? livedAt(i) : i > m ? D(roll[metric][i - m - 1], i) : null
     return d
   })
   return (
@@ -78,7 +80,7 @@ export function MoneyChart({ proj, startAge, opening, metric, color, showBand, s
             label={{ value: x.label, position: i % 2 ? 'bottom' : 'top', fill: '#4a4063', fontSize: 11 }} />
         ))}
         {metric === 'net_worth' && goals.filter((g) => g.status !== 'beyond_horizon').map((g) => (
-          <ReferenceDot key={g.goal_id} x={startAge + (g.month + 1) / 12} y={g.target} r={5}
+          <ReferenceDot key={g.goal_id} x={startAge + (g.month + 1) / 12} y={D(g.target, g.month + 1)} r={5}
             fill={g.status === 'met' ? '#6cc6a0' : '#ff8a8a'} stroke="#4a4063" strokeWidth={1.5}
             label={{ value: `🎯 ${g.name}`, position: 'right', fill: '#4a4063', fontSize: 11 }} />
         ))}

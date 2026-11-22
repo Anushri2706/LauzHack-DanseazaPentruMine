@@ -1,6 +1,6 @@
 import type {
   AssumptionRow, Catalogue, Check, CompareResult, GameRequest, GameState, PersonaCard, Projection,
-  Roll, TwinFan, TwinModel, AskReply,
+  Roll, Sensitivity, TwinFan, TwinModel, AskReply,
 } from './types'
 
 const BASE = '/api'
@@ -44,8 +44,10 @@ export const api = {
   state: (req: GameRequest) => call<GameState>('POST', '/game/state', req),
   projection: (req: GameRequest, n = 500) => call<Projection>('POST', '/game/projection', { ...req, n }),
   roll: (req: GameRequest, roll: number) => call<Roll>('POST', '/game/roll', { ...req, roll }),
-  compare: (a: GameRequest, b: GameRequest, name_a: string, name_b: string) =>
-    call<CompareResult>('POST', '/compare', { a, b, name_a, name_b }),
+  compare: (a: GameRequest, b: GameRequest, name_a: string, name_b: string, at_age?: number) =>
+    call<CompareResult>('POST', '/compare', { a, b, name_a, name_b, at_age }),
+  sensitivity: (req: GameRequest, target_age?: number, swing = 0.2) =>
+    call<Sensitivity>('POST', '/game/sensitivity', { ...req, target_age, swing }),
   validation: () => call<Check[]>('GET', '/validation'),
   twinFan: (req: GameRequest, n = 60) => call<TwinFan>('POST', '/twin/fan', { ...req, n }),
   twinModel: () => call<TwinModel>('GET', '/twin/model'),

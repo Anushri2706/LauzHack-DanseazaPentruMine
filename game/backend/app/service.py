@@ -5,7 +5,8 @@ from functools import lru_cache
 import numpy as np
 
 from .data.loader import Persona, build_persona
-from .engine.assumptions import validate_params
+from .engine.assumptions import META, validate_params
+from .engine.finance import inflation_factor
 from .engine.compare import compare
 from .engine.catalogue import (CANTON_PRICE_LEVEL, FLATS, HABITS, HOMES, ITEMS, RULES, flat_factor_key,
                                habit_cost_key, habit_joy_key, home_price_key, item_joy_key, item_price_key)
@@ -18,7 +19,7 @@ from .engine.narrative import chf, decision_narrative
 from .engine.simulate import initial_state, run_branch
 from .engine.state import Decision, State
 from .models import (N_WORLDS, BranchRequest, CompareRequest, GameProjectionRequest, GameRequest,
-                     GameRollRequest, MonteCarloRequest, WorldRequest)
+                     GameRollRequest, MonteCarloRequest, SensitivityRequest, WorldRequest)
 
 ROW_FIELDS = ("t", "age", "status", "income", "expenses", "one_offs", "one_off_labels", "cash",
               "investments", "debt", "net_worth", "buffer_target", "flags")
@@ -115,7 +116,7 @@ def compare_branches(req: CompareRequest) -> dict:
     if isinstance(req.a, GameRequest) != isinstance(req.b, GameRequest):
         raise ValueError("Compare two realities of the same kind (both with turns, or both with decisions)")
     if isinstance(req.a, GameRequest):
-        return compare_games(req.a, req.b, req.name_a, req.name_b)
+        return compare_games(req.a, req.b, req.name_a, req.name_b, req.at_age)
     a, b = context(req.a), context(req.b)
     ra = run_branch(a.params, a.decisions, start=a.start).rows
     rb = run_branch(b.params, b.decisions, start=b.start).rows
@@ -138,7 +139,7 @@ MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", 
 START_YEAR = 2025  # the data snapshot is 2025-01-01
 GAME_ROW_FIELDS = ROW_FIELDS + ("lifestyle", "purchases", "purchase_labels", "home_fees", "mortgage_interest",
                                 "maintenance", "amortization", "home_appreciation", "home_value", "mortgage",
-                                "rent", "joy", "interest", "principal", "debt_payment", "invested",
+                                "rent", "joy", "interest", "overdraft_interest", "principal", "debt_payment", "invested",
                                 "sold_investments", "investment_return")
 
 
@@ -207,7 +208,9 @@ def _statement(row: dict | None) -> dict | None:
         ("Other living costs", -(row["expenses"] - row["rent"]), "cost"),
         ("Habits", -row["lifestyle"], "cost"), ("Purchases & trips", -row["purchases"], "cost"),
         ("One-offs (tuition, moves)", -row["one_offs"], "cost"),
-        ("Loan interest", -row["interest"], "cost"), ("Mortgage interest", -row["mortgage_interest"], "cost"),
+        ("Loan interest", -row["interest"], "cost"),
+        ("Interest on negative cash", -row.get("overdraft_interest", 0.0), "cost"),
+        ("Mortgage interest", -row["mortgage_interest"], "cost"),
         ("Home maintenance", -row["maintenance"], "cost"), ("Home fees", -row["home_fees"], "cost"),
         ("Loan principal (transfer)", -row["principal"], "transfer"),
         ("Mortgage amortization (transfer)", -row["amortization"], "transfer"),
@@ -247,7 +250,11 @@ def _game_state(key: str) -> dict:
     horizon = int(p["horizon_months"])
     warnings = []
     if now.cash < 0:
-        warnings.append({"kind": "financing_needed", "text": f"Cash is {chf(now.cash)}: financing needed."})
+        warnings.append({"kind": "financing_needed", "text": f"Cash is {chf(now.cash)}: financing needed "
+                         f"(credit line at {p['overdraft_rate']:.0%}/year)."})
+    if now.cash < -p["overdraft_limit"]:
+        warnings.append({"kind": "beyond_credit", "text": f"🔴 The shortfall is beyond any credit line "
+                         f"({chf(p['overdraft_limit'])}): this life is not financeable as planned."})
     if rows and pending.owner:
         last = rows[-1]
         housing = last["mortgage_interest"] + last["amortization"] + last["maintenance"]
@@ -274,6 +281,10 @@ def _game_state(key: str) -> dict:
         "rows": [{k: r[k] for k in ("t", "age", "status", "regime", "cash", "investments", "net_worth",
                                     "home_value", "mortgage", "debt", "joy", "flags")} for r in rows],
         "life_end_age": LIFE_END,
+        # Price index (month 0 = 1): divide a value after i months by price_level[i] to read it in
+        # today's (Jan 2025) francs. Same inflation the engine applies to costs.
+        "inflation_annual": p["inflation_annual"],
+        "price_level": [round(inflation_factor(p["inflation_annual"], i), 8) for i in range(horizon + 1)],
         "disclaimer": "Simulation, not a prediction or financial advice. Synthetic data only.",
     }
 
@@ -343,8 +354,12 @@ def _game_projection(key: str) -> dict:
     below_buf = np.zeros((req.n, horizon - m), dtype=bool)
     goal_hits = {g["goal_id"]: 0 for g in c.goals}
     reg = np.zeros((len(REGIMES), horizon - m))
+    runs_out = []      # per world: first age, at or after retirement, with cash below zero (None = never)
+    beyond = 0         # worlds that ever go beyond the credit line
     for k, w in enumerate(worlds):
         rows = _future_rows(c, s0, _splice(c.world, w, m, horizon)).rows
+        runs_out.append(next((r["age"] for r in rows if r["cash"] < 0 and r["age"] >= p["retirement_age"]), None))
+        beyond += any("beyond_credit" in r["flags"] for r in rows)
         for i, r in enumerate(rows):
             reg[REGIME_IDX[r["regime"]], i] += 1
         nw[k] = pick(rows, "net_worth")
@@ -368,6 +383,11 @@ def _game_projection(key: str) -> dict:
         "states": list(REGIMES), "from_month": m,
         "share": {st: (reg[i] / req.n).round(3).tolist() for i, st in enumerate(REGIMES)}}
     out["goal_met_share"] = {gid: h / req.n for gid, h in goal_hits.items()}
+    hit = [a for a in runs_out if a is not None]
+    out["retirement_runs_out"] = {"share": len(hit) / req.n,
+                                  "median_age": float(np.median(hit)) if hit else None,
+                                  "retirement_age": p["retirement_age"]}
+    out["share_worlds_beyond_credit"] = beyond / req.n
     at = min(horizon - 1, m + 12)
     ghosts = []
     for kind in (() if ended else ("market_drop", "income_loss", "rent_rise")):
@@ -412,9 +432,16 @@ def game_rows(req: GameRequest) -> tuple[list[dict], GameCtx]:
                      strict_from=c.current).rows, c
 
 
-def compare_games(a: GameRequest, b: GameRequest, name_a: str, name_b: str) -> dict:
+def compare_games(a: GameRequest, b: GameRequest, name_a: str, name_b: str, at_age: float | None = None) -> dict:
     # Fairness: both realities are evaluated in the SAME world (A's seed and world).
     b = b.model_copy(update={"seed": a.seed, "world": a.world})
+    if at_age is not None:
+        # Cut both realities at the same age: rows, goals, bridge and ranges all stop there.
+        start_age = game_context(a).params["start_age"]
+        life = int(life_horizon(start_age))
+        months = max(12, a.current_month, b.current_month, min(life, int(round((at_age - start_age) * 12))))
+        a = a.model_copy(update={"assumptions": {**a.assumptions, "horizon_months": months}})
+        b = b.model_copy(update={"assumptions": {**b.assumptions, "horizon_months": months}})
     ra, ca = game_rows(a)
     rb, cb = game_rows(b)
     opening = ca.start.cash + ca.start.investments - ca.start.debt
@@ -427,6 +454,7 @@ def compare_games(a: GameRequest, b: GameRequest, name_a: str, name_b: str) -> d
     out["ranges"] = ranges
     out["scores"] = {"a": scores(ra, check_goals(ca.goals, ra), []), "b": scores(rb, check_goals(cb.goals, rb), [])}
     out["net_worth"] = {"a": [r["net_worth"] for r in ra], "b": [r["net_worth"] for r in rb]}
+    out["at_age"] = round(ca.start.start_age + len(ra) / 12, 2)
     out["note"] = (f"Both realities live in the same world (#{a.world}) with the same assumptions; "
                    "differences come from choices, not luck. Simulation, not a prediction.")
     return out
@@ -497,3 +525,65 @@ def twin_fan(req: GameProjectionRequest) -> dict:
 def twin_model() -> dict:
     from learned.twin import model_card
     return model_card()
+
+
+# ============================================================================ sensitivity ("tornado")
+# Assumptions swung one at a time. Profile facts (opening cash, age) are not swung: they are data, not guesses.
+SENSITIVITY_KEYS = ("return_annual", "inflation_annual", "raise_annual", "salary_work", "salary_master",
+                    "student_income", "abroad_income", "rent", "living_studying", "living_working",
+                    "living_working_master", "abroad_rent", "abroad_living", "tuition_annual", "income_tax_rate",
+                    "investment_costs_annual", "lifestyle_creep", "savings_rate", "overdraft_rate",
+                    "mortgage_rate", "home_growth_annual", "relocation_cost")
+
+
+def _calm_net_worth(req: GameRequest, overrides: dict, months: int) -> tuple[float, float, int]:
+    """Net worth (nominal and in month-0 prices) after `months`, replaying the reality's choices with no luck."""
+    r = req.model_copy(update={"assumptions": {**req.assumptions, **overrides, "horizon_months": months}})
+    c = game_context(r)
+    rows = run_turns(c.params, c.turns, start=c.start, world=_expected_world(c.params), luck=c.luck,
+                     strict=False).rows
+    nominal = rows[-1]["net_worth"]
+    neg = sum(1 for x in rows if x["cash"] < 0)
+    return nominal, nominal / inflation_factor(c.params["inflation_annual"], months), neg
+
+
+@lru_cache(maxsize=64)
+def _sensitivity(key: str) -> dict:
+    req = SensitivityRequest.model_validate_json(key)
+    c = game_context(req)
+    p, start_age = c.params, c.params["start_age"]
+    life = int(life_horizon(start_age))
+    target_age = req.target_age if req.target_age is not None else (30.0 if start_age < 29 else start_age + 10)
+    months = int(round((target_age - start_age) * 12))
+    months = max(12, req.current_month + 1, min(life, months))
+    target_age = start_age + months / 12
+    base, base_real, base_neg = _calm_net_worth(req, {}, months)
+    bars = []
+    for k in SENSITIVITY_KEYS:
+        v = p.get(k)
+        if k not in META or k in req.assumptions or not v:
+            continue  # not a guess for this persona, edited by the player, or 0 (a ±% swing is meaningless)
+        meta = META[k]
+        lo, hi = v * (1 - req.swing), v * (1 + req.swing)
+        lo = max(lo, meta.min) if meta.min is not None else lo
+        hi = min(hi, meta.max) if meta.max is not None else hi
+        nl, rl, negl = _calm_net_worth(req, {k: lo}, months)
+        nh, rh, negh = _calm_net_worth(req, {k: hi}, months)
+        bars.append({"key": k, "label": meta.label, "unit": meta.unit, "group": meta.group, "value": v,
+                     "low": lo, "high": hi,
+                     "net_worth_low": nl, "net_worth_high": nh, "real_low": rl, "real_high": rh,
+                     "negative_months_low": negl, "negative_months_high": negh,
+                     "spread": abs(nh - nl)})
+    bars.sort(key=lambda b: -b["spread"])
+    no_effect = [b["label"] for b in bars if b["spread"] < 0.5]
+    return {"target_age": round(target_age, 2), "months": months, "swing": req.swing,
+            "base": base, "base_real": base_real, "base_negative_months": base_neg,
+            "bars": [b for b in bars if b["spread"] >= 0.5], "no_effect": no_effect,
+            "note": (f"Each assumption moved ±{req.swing:.0%} on its own, everything else fixed, your choices "
+                     "replayed with no luck (no market swings, job losses or rent rises). This is sensitivity, "
+                     "not probability: it shows what the result leans on, not how likely anything is. "
+                     "Assumptions with no effect on this reality are listed separately (scenario isolation).")}
+
+
+def sensitivity(req: SensitivityRequest) -> dict:
+    return _sensitivity(req.model_dump_json())

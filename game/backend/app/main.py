@@ -8,7 +8,7 @@ from .data.loader import build_persona, load_dataset
 from .engine.assumptions import assumption_table
 from .engine.decisions import InvalidDecision
 from .models import (BranchRequest, BranchResult, CompareRequest, GameProjectionRequest, GameRequest,
-                     GameRollRequest, MonteCarloRequest, WorldRequest)
+                     GameRollRequest, MonteCarloRequest, SensitivityRequest, WorldRequest)
 from .validation import run_checks
 
 DISCLAIMER = "Simulation, not a prediction or financial advice. Synthetic data only."
@@ -115,6 +115,12 @@ def twin_model() -> dict:
 def game_projection(req: GameProjectionRequest) -> dict:
     """'No surprises' path from now, P10–P90 bands over the seeded worlds, stress-test ghosts, bridge."""
     return _guard(service.game_projection, req)
+
+
+@app.post("/game/sensitivity")
+def game_sensitivity(req: SensitivityRequest) -> dict:
+    """Tornado: which assumptions move net worth at the target age most (one at a time, ±swing, no luck)."""
+    return _guard(service.sensitivity, req)
 
 
 @app.post("/game/roll")

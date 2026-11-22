@@ -21,7 +21,9 @@ def summarize(rows: list[dict]) -> dict:
         "total_income_tax": sum(r.get("income_tax", 0.0) for r in rows),
         "total_expenses": sum(r["expenses"] for r in rows),
         "total_one_offs": sum(r["one_offs"] for r in rows),
-        "total_interest": sum(r["interest"] for r in rows),
+        # Loan interest + interest on negative cash (the automatic credit line).
+        "total_interest": sum(r["interest"] + r.get("overdraft_interest", 0.0) for r in rows),
+        "total_overdraft_interest": sum(r.get("overdraft_interest", 0.0) for r in rows),
         "total_investment_return": sum(r["investment_return"] for r in rows),
         "total_lifestyle": sum(r.get("lifestyle", 0.0) for r in rows),
         "total_purchases": sum(r.get("purchases", 0.0) for r in rows),

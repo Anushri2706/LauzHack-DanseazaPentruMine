@@ -58,6 +58,22 @@ const COURSES: Course[] = [
     tryIt: { text: 'Set a savings rule at the Bank, then see the range of futures in the Money app.', app: 'money' },
   },
   {
+    id: 'red', icon: '🟥', title: 'Why being in the red costs money', minutes: 2,
+    intro: 'When your account goes below zero, someone else is lending you the difference, and lenders charge for that.',
+    sections: [
+      { heading: 'A worked example', text: [
+        'In this game a shortfall works like an overdraft at 10% a year. At CHF −5,000 that is about CHF 42 in the first month and about CHF 520 over a year if nothing is paid back, because the interest is added to what you owe.',
+        'CHF 10,000 left in the red for 5 years costs about CHF 6,450 in interest. The same CHF 10,000 as a planned loan at 6%, paid back in 60 monthly steps of CHF 193, costs about CHF 1,600.',
+      ] },
+      { heading: 'There is a limit', text: [
+        'No one lends without limit. Past CHF 30,000 the game says the plan is "not financeable as planned". In real life that is when people need family help, a grant or social support.',
+        'Swiss law caps interest on consumer credit, but even capped interest adds up when a shortfall lasts for years.',
+      ] },
+    ],
+    takeaways: ['Negative cash is borrowed money, never free.', 'A planned loan is usually cheaper than staying in the red.', 'Look at how long you are in the red, not only how deep.'],
+    tryIt: { text: 'Do a full-time master’s, sleep a year, then read “Interest on negative cash” on the Bank statement.', app: 'money' },
+  },
+  {
     id: 'buffer', icon: '🛟', title: 'Emergency fund', minutes: 2,
     intro: 'An emergency fund is cash you keep for surprises: losing a job, a big bill, a broken laptop.',
     sections: [

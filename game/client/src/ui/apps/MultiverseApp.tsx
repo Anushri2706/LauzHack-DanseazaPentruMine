@@ -97,12 +97,22 @@ const LOWER_IS_SAFER = new Set(['final_debt', 'months_below_buffer', 'months_neg
 function Compare({ s, a, b }: { s: Store; a: string; b: string }) {
   const na = realityName(s, a), nb = realityName(s, b)
   const ra = requestFor(s, a, false), rb = requestFor(s, b, false)
-  const cmp = useApi(JSON.stringify([ra, rb]), () => api.compare(ra, rb, `A: ${na}`, `B: ${nb}`))
+  const startAge = s.persona?.age ?? 20
+  const ages = [30, 40, 65].filter((x) => x > startAge + 0.5)
+  // Default: 10 years on, the challenge's own horizon (Alexia: 20 → 30). "End" = the whole life.
+  const [at, setAt] = useState<number | undefined>(ages[0])
+  const cmp = useApi(JSON.stringify([ra, rb, at]), () => api.compare(ra, rb, `A: ${na}`, `B: ${nb}`, at))
   const ca = colorOf(s, a), cb = colorOf(s, b)
   const d: CompareResult | undefined = cmp.data
   return (
     <div>
       <h4>Compare <span style={{ color: ca }}>A: {na}</span> vs <span style={{ color: cb }}>B: {nb}</span></h4>
+      <div className="chart-tools">
+        <span className="tiny">Compare at age</span>
+        {ages.map((x) => <button key={x} className={`chip ${at === x ? 'on' : ''}`} onClick={() => setAt(x)}>{x}</button>)}
+        <button className={`chip ${at === undefined ? 'on' : ''}`} onClick={() => setAt(undefined)}>end</button>
+        {cmp.loading && d && <span className="tiny muted">recomputing…</span>}
+      </div>
       {cmp.loading && !d && <p className="muted small">Comparing in the same world…</p>}
       {cmp.error && <p className="error">{cmp.error}</p>}
       {d && (
@@ -110,7 +120,7 @@ function Compare({ s, a, b }: { s: Store; a: string; b: string }) {
           <table className="cmp-table">
             <thead><tr><th /><th style={{ color: ca }}>A</th><th style={{ color: cb }}>B</th></tr></thead>
             <tbody>
-              <tr><td>🔵 Net worth at the end, 80% CI (P10–P90)</td>
+              <tr><td>🔵 Net worth at {d.at_age != null ? Math.round(d.at_age) : 'the end'}, 80% CI (P10–P90)</td>
                 <td>{d.ranges.a ? `${k(d.ranges.a.p10)} – ${k(d.ranges.a.p90)}` : '—'}</td>
                 <td>{d.ranges.b ? `${k(d.ranges.b.p10)} – ${k(d.ranges.b.p90)}` : '—'}</td></tr>
               {d.table.map((r) => {
@@ -137,7 +147,7 @@ function Compare({ s, a, b }: { s: Store; a: string; b: string }) {
                 {Math.abs(l) < 1e-6 ? 'about even' : <span style={{ color: l > 0 ? cb : ca }}>{l > 0 ? 'B' : 'A'} fits better</span>}</li>
             })}
           </ul>
-          <p className="tiny muted">No reality is “best”: each trades money, safety, goals, freedom, experience and joy differently. {d.note}</p>
+          <p className="tiny muted">No reality is “best”: each trades money, safety, goals, freedom, experience and joy differently. {d.note} Amounts in nominal CHF; the 🌪️ Matters app shows which assumptions drive each reality.</p>
         </>
       )}
     </div>

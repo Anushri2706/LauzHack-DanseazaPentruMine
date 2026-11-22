@@ -151,6 +151,9 @@ export interface GameState {
   goals: CheckedGoal[]
   rows: LivedRow[]
   life_end_age: number
+  /** Engine price index: value after i months ÷ price_level[i] = value in today's (Jan 2025) francs. */
+  inflation_annual: number
+  price_level: number[]
   disclaimer: string
 }
 
@@ -179,6 +182,9 @@ export interface Projection {
   /** Forward-looking only: future months across the simulated worlds; past dips never count. */
   risk: { months: number; below_zero_12m: number; below_zero_ahead: number; below_buffer_12m: number; level: 'low' | 'some' | 'high' }
   goal_met_share: Record<string, number>
+  /** Share of worlds where cash goes below zero at/after retirement, and the median age it happens. */
+  retirement_runs_out?: { share: number; median_age: number | null; retirement_age: number }
+  share_worlds_beyond_credit?: number
   bridge: Record<string, number>
   final_scores: FinalScores
   goals: CheckedGoal[]
@@ -189,6 +195,7 @@ export interface WorldEvent { month: number; kind: string; text: string }
 export interface Roll { world: number; from_month: number; net_worth: number[]; cash: number[]; events: WorldEvent[] }
 
 export interface CompareResult {
+  at_age?: number
   table: { key: string; label: string; a: number; b: number; diff: number }[]
   bridge: { key: string; a: number; b: number; diff: number }[]
   explanation: string[]
@@ -244,4 +251,14 @@ export interface AskAction { type: string; id: string | null; value: number | nu
 export interface AskReply {
   answer: { text: string; facts: string[] }[]; action: AskAction | null; mode: 'llm' | 'rules'; llm: string
   facts_used: Record<string, { label: string; text: string; source: string }>; rejected_sentences: number; disclaimer: string
+}
+
+export interface SensitivityBar {
+  key: string; label: string; unit: string; group: string; value: number; low: number; high: number
+  net_worth_low: number; net_worth_high: number; real_low: number; real_high: number
+  negative_months_low: number; negative_months_high: number; spread: number
+}
+export interface Sensitivity {
+  target_age: number; months: number; swing: number; base: number; base_real: number
+  base_negative_months: number; bars: SensitivityBar[]; no_effect: string[]; note: string
 }

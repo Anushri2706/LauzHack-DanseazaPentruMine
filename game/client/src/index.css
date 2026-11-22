@@ -260,6 +260,7 @@ kbd { background: var(--cream); border: 2px solid var(--ink); padding: 0 4px; fo
 .tl-legend i { display: inline-block; width: 10px; height: 10px; margin-right: 4px; box-shadow: 0 0 0 1px var(--ink); vertical-align: -1px; }
 .tl-area { position: relative; height: 124px; cursor: ew-resize; touch-action: none; margin-top: 14px; }
 .tl-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.tl-lifeexp { position: absolute; top: 2px; transform: translateX(-50%); font-size: 10px; color: #8a7d99; background: #fff8; padding: 0 2px; }
 .tl-ytick { position: absolute; left: 2px; transform: translateY(-50%); font-size: 10px; color: #8a7d99; pointer-events: none; }
 .tl-axis { position: relative; height: 14px; font-size: 11px; color: #6c5f7c; }
 .tl-axis span { position: absolute; transform: translateX(-50%); }
@@ -315,3 +316,15 @@ kbd { background: var(--cream); border: 2px solid var(--ink); padding: 0 4px; fo
 .course-intro { font-size: 16px; }
 .course-box { background: var(--lilac-2); border: 2px dashed var(--lilac); padding: 6px 12px; margin: 14px 0 10px; }
 .course-box ul { margin: 4px 0; padding-left: 18px; }
+
+/* 🌪️ What matters: tornado chart */
+.tornado { list-style: none; padding: 0; margin: 8px 0; }
+.tor-row { margin: 0 0 10px; }
+.tor-label { font-size: 13px; }
+.tor-track { position: relative; height: 18px; background: #fff; box-shadow: 0 0 0 2px var(--ink); margin: 3px 0 18px; }
+.tor-seg { position: absolute; top: 3px; bottom: 3px; }
+.tor-seg.up { background: #6cc6a0; }
+.tor-seg.down { background: #ff8a8a; }
+.tor-base { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); }
+.tor-v { position: absolute; top: 19px; font-size: 11px; transform: translateX(-100%); color: var(--ink-2); white-space: nowrap; }
+.tor-v.r { transform: none; }

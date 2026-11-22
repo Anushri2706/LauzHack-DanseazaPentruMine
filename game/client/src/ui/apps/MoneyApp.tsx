@@ -3,7 +3,7 @@ import { api } from '../../api/client'
 import type { GameState, Projection, Roll } from '../../api/types'
 import { actionLabel, colorOf, getStore, pathIds, requestFor, setStore, useStore, type Dim } from '../../store/game'
 import { chf, EDU_LABEL, k, pct } from '../format'
-import { useProjection } from '../useGame'
+import { useDeflate, useProjection } from '../useGame'
 import { MoneyChart, type Metric } from './MoneyChart'
 
 /** P10–P90 range bar with a P50 tick (from the old Hud). */
@@ -46,14 +46,27 @@ export function ScoreTiles({ st, proj }: { st: GameState; proj?: Projection }) {
   const shares = proj ? Object.values(proj.goal_met_share) : []
   const tone = { steady: 'good', tight: 'warn', shortfall: 'bad' }[s.safety.level]
   const risk = proj?.risk
+  const D = useDeflate(st)
+  const real = useStore((x) => x.real)
+  const H = st.horizon
+  // Headline at 65 (before the decades a no-mortality model can't speak to), 120 as the second line.
+  const m65 = Math.round((65 - st.persona.age) * 12)
+  const nb = proj?.bands?.net_worth
+  const j65 = m65 - st.month - 1
+  const at65 = nb && j65 >= 0 && j65 < nb.p10.length ? { p10: nb.p10[j65], p50: nb.p50[j65], p90: nb.p90[j65] } : null
+  const head = at65 ?? f
+  const headAge = at65 ? 65 : endAge
+  const headM = at65 ? m65 : H
+  const ro = proj?.retirement_runs_out
   return (
     <div className="tiles">
-      <Tile dim="money" title={`💰 Money at ${endAge}`}
-        main={f ? <>≈ {k(f.p10)} – {k(f.p90)}</> : k(s.money.net_worth)}
+      <Tile dim="money" title={`💰 Money at ${headAge}${real ? " (today's CHF)" : ''}`}
+        main={head ? <>≈ {k(D(head.p10, headM))} – {k(D(head.p90, headM))}</> : k(D(s.money.net_worth, st.month))}
         sub={proj?.ended
-          ? <>🔵 lived: {k(s.money.net_worth)} · range = same choices in {proj.n} worlds (other luck)</>
-          : <>🔵 net worth · middle {f ? k(f.p50) : '…'} · now {k(s.money.net_worth)}</>}>
-        {f && <RangeBar lo={f.p10} mid={f.p50} hi={f.p90} />}
+          ? <>🔵 lived: {k(D(s.money.net_worth, st.month))} · range = same choices in {proj.n} worlds (other luck)</>
+          : <>🔵 net worth · middle {head ? k(D(head.p50, headM)) : '…'} · now {k(D(s.money.net_worth, st.month))} · 80% CI over {proj?.n ?? '…'} worlds
+            {at65 && f && <><br />at {endAge}: {k(D(f.p10, H))} – {k(D(f.p90, H))} (no mortality model: "if you live that long")</>}</>}>
+        {head && <RangeBar lo={D(head.p10, headM)} mid={D(head.p50, headM)} hi={D(head.p90, headM)} />}
       </Tile>
       <Tile dim="safety" title="🛡️ Cash risk" tone={risk ? RISK_TONE[risk.level] : tone}
         main={risk && !proj?.ended ? RISK_LABEL[risk.level] : { steady: 'Steady', tight: 'Tight', shortfall: 'Shortfall' }[s.safety.level]}
@@ -63,6 +76,8 @@ export function ScoreTiles({ st, proj }: { st: GameState; proj?: Projection }) {
             : proj?.ended ? <>🔵 cash below zero in {pct(proj.share_worlds_shortfall)} of worlds with the same choices</> : '…'}
           <br />now: {{ steady: 'above your buffer', tight: 'below your buffer', shortfall: 'cash below zero, financing needed' }[s.safety.level]}
           {s.safety.months_negative_cash > 0 && s.safety.recovered && <> · dipped below zero for {s.safety.months_negative_cash} months earlier, recovered</>}
+          {ro && ro.share > 0 && !proj?.ended && <><br />🧓 savings run out after {ro.retirement_age} in {pct(ro.share)} of worlds{ro.median_age != null && <> (typically at {Math.round(ro.median_age)})</>}: pension + savings don't cover costs</>}
+          {proj?.share_worlds_beyond_credit ? <><br />🔴 beyond the credit line in {pct(proj.share_worlds_beyond_credit)} of worlds: not financeable as planned</> : null}
         </>} />
       <Tile dim="goals" title="🎯 Goals" main={fs ? `${fs.goals.met} / ${fs.goals.total}` : `${s.goals.met} / ${s.goals.total}`}
         sub={shares.length ? <>{proj?.ended ? 'met on the path you lived' : 'met if nothing surprising happens'} · in {shares.map(pct).join(', ')} of worlds</>
@@ -84,7 +99,7 @@ export function ScoreTiles({ st, proj }: { st: GameState; proj?: Projection }) {
 
 const BRIDGE_LABELS: Record<string, string> = {
   income: 'Income', income_tax: 'Income tax (estimate)', expenses: 'Rent & living costs', lifestyle: 'Habits', purchases: 'Purchases & trips',
-  one_offs: 'Tuition & moves', interest: 'Loan interest', mortgage_interest: 'Mortgage interest',
+  one_offs: 'Tuition & moves', interest: 'Loan & overdraft interest', mortgage_interest: 'Mortgage interest',
   maintenance: 'Home maintenance', home_fees: 'Home fees', investment_return: 'Investment returns',
   home_appreciation: 'Home value growth',
 }
@@ -104,10 +119,13 @@ export function MoneyApp({ st }: { st: GameState }) {
     setRoll(await api.roll(requestFor(getStore(), undefined, false), w))
   }
   const p = proj.data
+  const D = useDeflate(st)
   return (
     <div>
       <h3>Money & life scores</h3>
-      <p className="tiny muted">Ranges are where 80% of 500 simulated worlds land under our assumptions: not probabilities, not a prediction. Tap ❤️ on what matters to you.</p>
+      <p className="tiny muted">Ranges are where 80% of {p?.n ?? 'the'} simulated worlds land under our assumptions: not probabilities, not a prediction. Tap ❤️ on what matters to you.
+        {s.real ? <> Amounts in <b>today's francs</b> (Jan 2025 prices, engine price index).</> : <> Amounts in nominal francs.</>}{' '}
+        <button className="link" onClick={() => setStore({ real: !s.real })}>💱 switch to {s.real ? 'nominal' : "today's"} CHF</button></p>
       <ScoreTiles st={st} proj={p} />
       <div className="chart-tools">
         <button className={`chip ${metric === 'net_worth' ? 'on' : ''}`} onClick={() => setMetric('net_worth')}>Net worth</button>
@@ -115,11 +133,11 @@ export function MoneyApp({ st }: { st: GameState }) {
         <label><input type="checkbox" checked={band} onChange={(e) => setBand(e.target.checked)} /> 80% CI (P10–P90)</label>
         <label><input type="checkbox" checked={ghosts} onChange={(e) => setGhosts(e.target.checked)} /> Stress tests</label>
         <button className="btn" onClick={() => void doRoll()} disabled={!p || st.ended}>🎲 Roll another world</button>
-        {proj.loading && <span className="tiny muted">computing 500 worlds…</span>}
+        {proj.loading && <span className="tiny muted">computing worlds…</span>}
       </div>
       <div className="chart-box">
         {p ? <MoneyChart proj={p} startAge={st.persona.age} opening={{ net_worth: st.persona.net_worth, cash: st.persona.opening_cash }}
-          metric={metric} color={color} showBand={band} showGhosts={ghosts} roll={roll} goals={p.goals} marks={marks} />
+          metric={metric} color={color} showBand={band} showGhosts={ghosts} roll={roll} goals={p.goals} marks={marks} D={D} />
           : <p className="muted small" style={{ padding: 20 }}>{proj.error ?? 'Simulating…'}</p>}
       </div>
       <p className="tiny muted">Solid: lived so far in world #{st.world}. Dotted: if nothing surprising happens from now on. Band: other worlds from now on, same choices.
@@ -131,7 +149,7 @@ export function MoneyApp({ st }: { st: GameState }) {
       )}
       {p && (
         <>
-          <h4>Why net worth ends where it does (if nothing surprising happens) 🔵</h4>
+          <h4>Why net worth ends where it does (if nothing surprising happens) 🔵 <span className="tiny muted">nominal CHF</span></h4>
           <table className="statement">
             <tbody>
               <tr><td>Starting net worth 🟢</td><td className="num">{chf(p.bridge.opening)}</td></tr>

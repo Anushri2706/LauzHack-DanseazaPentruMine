@@ -10,7 +10,7 @@ export function ChecksApp() {
   return (
     <div>
       <h3>✅ Is the maths right?</h3>
-      <p className="tiny muted">Live checks against the engine (the full suite of 80 tests runs with pytest).</p>
+      <p className="tiny muted">Live checks against the engine (the full suites run with pytest: 131 tests for the game engine, 46 for the regime twin).</p>
       <button className="btn" onClick={() => void run()} disabled={busy}>{busy ? 'Running…' : 'Run live checks'}</button>
       {checks && (
         <>

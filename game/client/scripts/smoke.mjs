@@ -111,7 +111,7 @@ try {
   await page.locator('.act.queued').first().waitFor()
   await page.keyboard.press('Escape')
   let bought = false
-  for (let i = 0; i < 9 && !bought; i++) {
+  for (let i = 0; i < 14 && !bought; i++) {
     await door('home')
     await page.getByRole('button', { name: /Sleep until next birthday/ }).click()
     await page.waitForFunction(() => !document.querySelector('.dialog'))

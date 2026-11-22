@@ -8,7 +8,7 @@ export interface Look { skin: number; hair: number; hairColor: number; top: numb
 export const DEFAULT_LOOK: Look = { skin: 0, hair: 2, hairColor: 0, top: 2, legs: 0 }
 
 export type Dim = 'money' | 'safety' | 'goals' | 'freedom' | 'experience' | 'joy'
-export type AppId = 'money' | 'multiverse' | 'twin' | 'ask' | 'goals' | 'settings' | 'checks' | 'mail' | 'learn'
+export type AppId = 'money' | 'matters' | 'multiverse' | 'twin' | 'ask' | 'goals' | 'settings' | 'checks' | 'mail' | 'learn'
 
 export interface TNode {
   id: string
@@ -52,6 +52,8 @@ export interface Store {
   nearPlace: string | null
   hintSeen: boolean
   futureView: 'rules' | 'twin'
+  /** Show amounts in today's (Jan 2025) francs instead of nominal francs. Display only. */
+  real: boolean
 }
 
 export const REALITY_COLORS = ['#9a7fd8', '#ef8aa0', '#4fb38a', '#e8a64a', '#5aa9d6', '#c77dc9', '#7c9a3d', '#d9785b']
@@ -62,7 +64,7 @@ const fresh = (): Store => ({
   goalSel: null, customGoals: [],
   nodes: { root: { id: 'root', parent: null, turn: null, children: [], color: 0, label: 'Start', reached: 0 } },
   root: 'root', cursor: 'root', tip: 'root', horizon: 1200, current: 0, queue: [], nextColor: 1, matters: [], place: null, phone: null,
-  pinA: null, pinB: null, toasts: [], busy: false, endSeen: false, nearPlace: null, hintSeen: false, futureView: 'twin',
+  pinA: null, pinB: null, toasts: [], busy: false, endSeen: false, nearPlace: null, hintSeen: false, futureView: 'twin', real: false,
 })
 
 function load(): Store {

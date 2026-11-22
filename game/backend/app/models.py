@@ -41,6 +41,8 @@ class CompareRequest(BaseModel):
     b: "GameRequest | BranchRequest" = Field(union_mode="left_to_right")
     name_a: str = "Reality A"
     name_b: str = "Reality B"
+    # Realities only: compare at this age (None = the end of the horizon). The challenge horizon is 20–30.
+    at_age: float | None = Field(default=None, ge=16, le=120)
 
 
 class Row(BaseModel):
@@ -126,6 +128,12 @@ class GameRequest(BaseModel):
 
 class GameProjectionRequest(GameRequest):
     n: int = Field(default=60, ge=10, le=N_WORLDS)
+
+
+class SensitivityRequest(GameRequest):
+    """'Which assumptions matter most?' One-at-a-time swings around the defaults, no luck involved."""
+    target_age: float | None = Field(default=None, ge=16, le=120)
+    swing: float = Field(default=0.2, gt=0, le=0.5)
 
 
 class GameRollRequest(GameRequest):

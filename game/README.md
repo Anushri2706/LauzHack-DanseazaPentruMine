@@ -34,7 +34,7 @@ clears the saved game.
 ### Checks
 
 ```bash
-cd game/backend && .venv/bin/pytest -q           # 95 tests
+cd game/backend && .venv/bin/pytest -q           # 134 tests
 cd game/client && npx tsc -b                     # type-check
 cd game/client && npm run smoke                  # headless walk through the whole demo (needs both servers
                                                  # and Google Chrome; BASE=http://localhost:5173 by default)
@@ -42,9 +42,20 @@ cd game/client && npm run smoke                  # headless walk through the who
 
 The smoke test walks through the whole demo story in headless Chrome. It picks Alexia, queues a full-time
 master's and eating out, then sleeps a month and on to the next birthday. It then checks the bank statement
-and opens every phone app, including a roll of another world. The live checks must all pass (10/10). After
+and opens every phone app, including a roll of another world. The live checks must all pass (11/11). After
 that it goes back to the start in the Multiverse and starts working instead. It buys the studio as soon as
 the engine allows it, compares the two realities, and fast-forwards to the 10-year postcard.
+
+## What the judges asked for, and where it is
+
+| Question | Where | How |
+|---|---|---|
+| Which assumptions matter most? | 📱 **🌪️ Matters** app, `POST /game/sensitivity` | Tornado chart: each assumption ±10/20/30% on its own, the reality's choices replayed with no luck, net worth at 30 / 40 / 65. Assumptions with **no effect** on that reality are listed (scenario isolation, live). Sensitivity, not probability. |
+| What if a constraint is violated? | Bank statement, HUD, Safety tile | Impossible actions are refused with a reason. Negative cash is an **automatic credit line at 10%/year** (`overdraft_rate`, an expense), up to `overdraft_limit` (CHF 30'000). Beyond it: 🔴 *beyond any credit line: not financeable as planned* (flag `beyond_credit`; no interest is invented on money no lender would give). |
+| Are long-run numbers meaningful? | 💱 toggle (timeline, Money, Matters), Money tile, timeline | **Today's CHF**: values divided by the engine's own price index (`price_level` in `/game/state`). The headline range is **at 65**; 120 is a second line ("no mortality model"). A dotted **✝︎ ≈84** line marks Swiss life expectancy (BFS 2023). |
+| Is retirement funded? | Safety tile, `/game/projection` → `retirement_runs_out` | Share of worlds where cash goes below zero after the retirement age, and the median age it happens. |
+| Comparison over what horizon? | Multiverse → Compare | `POST /compare` takes `at_age`: both realities are cut at the same age (rows, goals, bridge, ranges). Default 30, the challenge's 10-year horizon. |
+| How did you verify it? | ✅ Checks app (11 live checks), 134 + 46 pytest tests, `npm run smoke` | — |
 
 ## The life timeline (bottom of the screen)
 
@@ -213,7 +224,7 @@ game/
       montecarlo.py        seeded worlds, stress tests
       compare.py           "why they differ" (now with habits, housing and joy)
     app/service.py         glue: persona + overrides → engine; /game/* responses
-    tests/                 80 pytest tests
+    tests/                 134 pytest tests
   client/                  Vite + React 19 + TypeScript + Phaser 3.90
     public/assets/         Kenney CC0 packs (each with its License.txt) + OFL fonts
     src/api/               typed API client (from the old frontend, extended)
@@ -235,9 +246,10 @@ but before the month is simulated.
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/game/state` | Month, date, age, state (cash, investments, home, mortgage, debt), HUD scores, `actions` per place (enabled, reason, engine preview, tags), letters, last month's statement, warnings |
-| POST | `/game/projection` | "No surprises" path from now, P10–P90 bands over 500 worlds from now, stress ghosts, goal status, net-worth bridge. At the end: ranges of the same choices in all worlds |
+| POST | `/game/projection` | "No surprises" path from now, P10–P90 bands over `n` worlds from now (10–500; the client uses 60), stress ghosts, goal status, net-worth bridge. At the end: ranges of the same choices in all worlds |
 | POST | `/game/roll` | The same choices in another world from now on |
-| POST | `/compare` | Two realities (turns) in the same world: table, ranges, bridge, explanation, scores. Still accepts the old decision branches |
+| POST | `/compare` | Two realities (turns) in the same world: table, ranges, bridge, explanation, scores; `at_age` cuts both at the same age. Still accepts the old decision branches |
+| POST | `/game/sensitivity` | Tornado: each assumption ±`swing` on its own, choices replayed with no luck, net worth (nominal and today's CHF) at `target_age`; ranked; plus the assumptions with no effect |
 | GET | `/catalogue/{id}` | Habits, items, homes (canton-scaled), flats, rules, joy table |
 | GET | `/personas`, `/personas/{id}`, `/assumptions/defaults/{id}`, `/validation` | unchanged (validation has 4 new checks) |
 
@@ -253,8 +265,10 @@ The original `/branch/*` endpoints still exist and are still tested.
 | 3. Habits | `lifestyle = Σ habit_cost(level) × (1+i)^(t/12)` (a separate line) |
 | 4. One-offs | tuition, relocation, moving (`one_offs`); items and trips (`purchases`, **consumption**); home fees (`home_fees`) |
 | 5. Loans | `interest = debt × r/12` (expense); `principal = payment − interest` (transfer); debt never < 0 |
+| 5b. Overdraft | `overdraft_interest = min(max(0, −cash_open), overdraft_limit) × overdraft_rate/12` (expense). Negative cash is a credit line, never free money; below `−overdraft_limit` the month is flagged `beyond_credit` |
+| 5c. Income tax | `income_tax = income_tax_rate × max(0, net income − allowance × (1+i)^(t/12))` (18% above CHF 1'000/month, 🟡 rough Vaud single-person estimate; Swiss income tax is not withheld from net pay) |
 | 6. Housing | `mortgage_interest = mortgage × r_m/12` and `maintenance = 1% × price/12` are expenses; `amortization = min(mortgage, 1% × price/12)` is a **transfer**; `home_value ×= (1+g)^(1/12)` |
-| 7. Cash | `cash += income − expenses − lifestyle − purchases − one_offs − home_fees − loan payment − mortgage interest − maintenance − amortization`; if `cash < 0`, investments are sold to cover it (transfer) |
+| 7. Cash | `cash += income − income_tax − expenses − lifestyle − purchases − one_offs − home_fees − loan payment − overdraft interest − mortgage interest − maintenance − amortization`; if `cash < 0`, investments are sold to cover it (transfer) |
 | 8. Saving | cash above `buffer_months × expenses` × `savings_rate` → investments (transfer) |
 | 9. Returns | `investments × (1 + r_m)`, with `(1 + r_m)^12 = 1 + return_annual` (or the world's draw) |
 | 10. Outputs | `net_worth = cash + investments + home_value − debt − mortgage`; `cash < 0` ⇒ "financing needed" (warning + letter, not game over); joy points |
@@ -266,7 +280,7 @@ exactly. **Selling:** `cash += home_value − mortgage`, then 3% fees, the mortg
 "similar" flat again. Housing costs above ⅓ of income show a 🟡 warning; they aren't blocked.
 
 **Net-worth bridge (exact):**
-`NW_T = NW_0 + income − expenses − lifestyle − purchases − one-offs − interest − mortgage interest −
+`NW_T = NW_0 + income − income tax − expenses − lifestyle − purchases − one-offs − loan & overdraft interest − mortgage interest −
 maintenance − home fees + investment returns + home appreciation`. Transfers never appear in it: saving,
 loans, principal, amortization, and the down payment against the mortgage.
 
@@ -300,7 +314,7 @@ includes the starter-kit cross-check, to the cent, for all three scenarios.
   arrive as letters, but only when they matter to you. For example, there's no rent letter if you own your
   home.
 - **All realities use the same world**, so comparisons come from choices, not luck. Tests check this.
-- The phone fans out **500 worlds from now on**, given what you have lived (`P10–P90`, labelled "ranges
+- The phone fans out **60 worlds from now on** (the API takes up to 500), given what you have lived (`P10–P90`, labelled "ranges
   under our assumptions", never probabilities). The dotted line is "if nothing surprising happens from now".
   The ghosts are stress tests one year from now. 🎲 shows one other world.
 - Distributions: monthly return ~ N(μ, σ/√12) with σ = 15%/year; a 20% market drop with
@@ -377,8 +391,13 @@ code.
 
 ## Limitations
 
-- Net salaries come from the starter kit (tax = 0), so there is no tax model. Mortgage, home and habit
-  figures are rough labelled assumptions, not Swiss statistics.
+- Salaries are the starter kit's **net** figures (social contributions already out, so `tax_rate` and
+  `social_rate` stay 0 to avoid double counting). Income tax is one rough flat rate above an allowance
+  (18% above CHF 1'000/month), not cantonal tax tables. Mortgage, home and habit figures are rough labelled
+  assumptions, not Swiss statistics.
+- Old-age shortfalls: when savings run out after retirement, the engine keeps counting the deficit (as a
+  credit line up to the limit, then flagged `beyond_credit`). In reality supplementary benefits (EL) or
+  social assistance would step in; they are not modelled. The Safety tile reports how often this happens.
 - Home prices follow one fixed growth rate. There's no housing-market randomness, no rate changes over the
   mortgage's life, no affordability check by the bank (only the ⅓ warning) and no imputed rental value tax.
 - Abroad is one generic country at a fixed FX rate. The town is re-tinted rather than a second map.
@@ -386,11 +405,15 @@ code.
   real wellbeing.
 - Percentiles describe our model's worlds, not real-world probabilities.
 - Peer (kNN) bands from the original plan are not in the game.
-- The timeline runs to age 120 with no mortality model, and amounts are nominal. A century of 5% returns
-  compounds to large numbers (median net worth in the millions at 120); read the late decades as "under these
-  assumptions", not as wealth anyone should expect.
-- The future fan on the timeline uses 60 simulated lives (P10–P90 is rough at that size), to keep a projection
-  over a whole life to 1–3 seconds.
+- The timeline runs to age 120 with no mortality model (a ✝︎ ≈84 reference line shows Swiss life expectancy).
+  Amounts are nominal by default; 💱 switches charts and tiles to today's francs. A century of 5% returns
+  compounds to large numbers; read the late decades as "if you live that long, under these assumptions".
+  That is why the headline money range is at 65.
+- The future fan on the timeline and the phone's ranges use 60 simulated lives (P10–P90 is rough at that size;
+  the timeline says "rough band"), to keep a whole-life projection to 1–3 seconds. The Monte Carlo endpoints
+  accept up to 500.
+- Sensitivity bars move one assumption at a time. Interactions between assumptions (e.g. lower salary *and*
+  higher rent) are not shown; combine them by hand in Settings.
 
 ## Open questions for organizers (unchanged)
 

@@ -91,6 +91,15 @@ META: dict[str, AssumptionMeta] = {
     "loan_term_months": AssumptionMeta("Loan term (new and existing debt)", "months", "Borrowing", 1, 360,
                                        note="Existing debt in the data has no payment schedule; we amortize it over this term."),
     "loan_max": AssumptionMeta("Largest loan you can take", "CHF", "Borrowing", 0),
+    "overdraft_rate": AssumptionMeta("Interest on negative cash (automatic credit line)", "%/year", "Borrowing", 0, 0.3,
+                                     note="Cash below zero is never free: the shortfall is treated as an automatic "
+                                          "credit line and charged this rate every month (an expense). Swiss "
+                                          "consumer-credit interest is capped at 10-12% (KKG/VKKG). 0 = free financing."),
+    "overdraft_limit": AssumptionMeta("Largest shortfall a lender would finance", "CHF", "Borrowing", 0,
+                                      note="Interest is charged on the shortfall up to this limit. Cash below "
+                                           "−limit is flagged 'beyond any credit line': the life is not "
+                                           "financeable as planned (in Switzerland supplementary benefits or "
+                                           "social assistance would step in; not modelled), so no interest is invented."),
     # Uncertainty (Monte Carlo worlds; ranges under our assumptions, not real probabilities)
     "return_volatility": AssumptionMeta("Investment volatility", "%/year (std. dev.)", "Uncertainty", 0, 0.6),
     "crash_prob_annual": AssumptionMeta("Chance of a market drop per year", "%/year", "Uncertainty", 0, 1),
@@ -181,6 +190,8 @@ ALEXIA_DEFAULTS: dict[str, tuple[float, str]] = {
     "income_tax_allowance": (1000, "ours"),
     "loan_rate": (0.06, "ours"),
     "loan_term_months": (60, "ours"),
+    "overdraft_rate": (0.10, "ours"),
+    "overdraft_limit": (30000, "ours"),
     "loan_max": (30000, "ours"),
     "switch_cooldown_months": (12, "ours"),
     "return_volatility": (0.15, "ours"),

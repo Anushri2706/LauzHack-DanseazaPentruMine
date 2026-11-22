@@ -18,7 +18,7 @@ def make_params(**overrides) -> dict:
 # "Plain" world: no inflation, raises, returns or saving, so cash maths is easy to check by hand.
 # The realism layers (income tax, investment costs, lifestyle creep) are off too: the starter kit has none.
 PLAIN = dict(inflation_annual=0, raise_annual=0, return_annual=0, savings_rate=0,
-             income_tax_rate=0, investment_costs_annual=0, lifestyle_creep=0)
+             income_tax_rate=0, investment_costs_annual=0, lifestyle_creep=0, overdraft_rate=0)
 
 
 @pytest.fixture

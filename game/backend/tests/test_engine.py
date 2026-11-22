@@ -24,7 +24,7 @@ def test_cash_identity_every_month(params):
     run = run_branch(params, [D(0, "master_ft"), D(24, "move_abroad")])
     prev = params["opening_cash"]
     for r in run.rows:
-        expected = (prev + r["income"] - r["income_tax"] - r["expenses"] - r["one_offs"] - r["debt_payment"]
+        expected = (prev + r["income"] - r["income_tax"] - r["expenses"] - r["one_offs"] - r["debt_payment"] - r["overdraft_interest"]
                     - r["invested"] + r["sold_investments"])
         assert r["cash"] == pytest.approx(expected, abs=1e-6)
         prev = r["cash"]

@@ -11,6 +11,9 @@ Monthly update order (see README for the equations):
      housing      mortgage interest = mortgage × r_m/12 and maintenance are expenses;
                   amortization reduces cash and mortgage equally (transfer); home value × (1+g)^(1/12)
   4. debt         interest = debt × r / 12 ; principal = payment − interest ; debt −= principal
+     overdraft    overdraft_interest = min(max(0, −opening cash), overdraft_limit) × overdraft_rate / 12
+                  (negative cash is a credit line, never free money; an expense). Below −limit the
+                  shortfall is flagged "beyond_credit" (not financeable as planned).
   5. cash        += income − expenses − one_offs − debt_payment
      if cash < 0 and investments > 0: sell investments to cover (transfer, net worth unchanged)
   6. if cash > buffer: move savings_rate × (cash − buffer) to investments (transfer)
@@ -121,7 +124,9 @@ def step_month(s: State, p: dict, ret_month: float | None = None, income_mult: f
 
     # Income tax is paid separately from net pay in Switzerland: a flat rate above a tax-free allowance.
     income_tax = p["income_tax_rate"] * max(0.0, income - p["income_tax_allowance"] * infl)
-    cash = s.cash + income - income_tax - expenses - one_offs - payment
+    # Negative cash is an automatic credit line: the opening shortfall pays interest (an expense).
+    overdraft_interest = min(max(0.0, -s.cash), p["overdraft_limit"]) * p["overdraft_rate"] / 12.0
+    cash = s.cash + income - income_tax - expenses - one_offs - payment - overdraft_interest
     cash = cash - lifestyle - purchases - home_fees - mortgage_interest - maintenance - amortization
     investments = s.investments
 
@@ -151,6 +156,8 @@ def step_month(s: State, p: dict, ret_month: float | None = None, income_mult: f
     flags = []
     if cash < 0:
         flags.append("financing_needed")
+    if cash < -p["overdraft_limit"]:
+        flags.append("beyond_credit")
     if cash < buffer_target:
         flags.append("below_buffer")
 
@@ -162,7 +169,7 @@ def step_month(s: State, p: dict, ret_month: float | None = None, income_mult: f
         "t": t, "age": round(s.age, 4), "status": s.status, "program": s.program, "education": education(s),
         "income": income, "income_tax": income_tax, "expenses": expenses, "one_offs": one_offs,
         "one_off_labels": [o.label for o in due],
-        "interest": interest, "principal": principal, "debt_payment": payment,
+        "interest": interest, "overdraft_interest": overdraft_interest, "principal": principal, "debt_payment": payment,
         "invested": invested, "sold_investments": sold, "investment_return": ret,
         "cash": cash, "investments": investments, "debt": debt,
         "net_worth": net_worth,

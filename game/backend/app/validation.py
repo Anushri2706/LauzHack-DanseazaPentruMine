@@ -9,9 +9,10 @@ from .engine.metrics import net_worth_bridge
 from .engine.simulate import initial_state, run_branch, step_month
 from .engine.state import Decision as D
 
-# The realism layers (income tax, investment costs, lifestyle creep) are off too: the starter kit has none.
+# The realism layers (income tax, investment costs, lifestyle creep, overdraft interest) are off too: the starter kit has none.
 PLAIN = dict(inflation_annual=0, raise_annual=0, return_annual=0, savings_rate=0,
-             income_tax_rate=0, investment_costs_annual=0, lifestyle_creep=0)
+             income_tax_rate=0, investment_costs_annual=0, lifestyle_creep=0,
+             overdraft_rate=0)
 KIT = Path(__file__).resolve().parents[2].parent / "challenge-instructions-and-data" / "starter-kit"
 
 
@@ -91,6 +92,12 @@ def run_checks() -> list[dict]:
     loan = run_branch(_p(**PLAIN, loan_term_months=24), [D(0, "start_work", loan_amount=10_000)]).rows
     out.append(_check("Loan never below zero", min(r["debt"] for r in loan) == 0 and all(r["debt"] >= 0 for r in loan),
                       f"10'000 loan fully repaid after 24 months; principal sum {sum(r['principal'] for r in loan):,.2f}"))
+
+    od = _p(**{**PLAIN, "overdraft_rate": 0.12, "opening_cash": -10_000})
+    _, orow = step_month(initial_state(od), od)
+    out.append(_check("Negative cash is never free", abs(orow["overdraft_interest"] - 100) < 1e-9,
+                      f"Start at −10'000: the credit line costs 12%/12 × 10'000 = "
+                      f"{orow['overdraft_interest']:,.2f} interest this month (an expense)"))
 
     sys.path.insert(0, str(KIT))
     try:
