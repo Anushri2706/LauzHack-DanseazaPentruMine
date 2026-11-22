@@ -34,7 +34,7 @@ clears the saved game.
 ### Checks
 
 ```bash
-cd game/backend && .venv/bin/pytest -q           # 162 tests
+cd game/backend && .venv/bin/pytest -q           # 191 tests
 cd game/client && npx tsc -b                     # type-check
 cd game/client && npm run smoke                  # headless walk through the whole demo (needs both servers
                                                  # and Google Chrome; BASE=http://localhost:5173 by default)
@@ -55,7 +55,7 @@ the engine allows it, compares the two realities, and fast-forwards to the 10-ye
 | Are long-run numbers meaningful? | 💱 toggle (timeline, Money, Matters), Money tile, timeline | **Today's CHF**: values divided by the engine's own price index (`price_level` in `/game/state`). The headline range is **at 65**; 120 is a second line ("no mortality model"). |
 | Is retirement funded? | Safety tile, `/game/projection` → `retirement_runs_out` | Share of worlds where cash goes below zero after the retirement age, and the median age it happens. |
 | Comparison over what horizon? | Multiverse → Compare | `POST /compare` takes `at_age`: both realities are cut at the same age (rows, goals, bridge, ranges). Default 30, the challenge's 10-year horizon. |
-| How did you verify it? | ✅ Checks app (13 live checks), 162 + 46 pytest tests, `npm run smoke` | — |
+| How did you verify it? | ✅ Checks app (13 live checks), 191 + 46 pytest tests, `npm run smoke` | — |
 
 ## The life timeline (bottom of the screen)
 
@@ -68,6 +68,13 @@ the engine allows it, compares the two realities, and fast-forwards to the 10-ye
 - **Right of 📍** is what the simulated worlds fan out from your current state: the P10–P90 net-worth band and the
   median (dashed) over 60 simulated lives, and per month the share of lives in each status. Hover anywhere
   for the numbers ("Of 60 simulated lives: Working 91% · Job search 4% · Retired 5%").
+- **One story: the dotted line is your path.** It is your own world from now on if you change nothing
+  (`your_world` in `/game/projection`): exactly what you live by moving forward, and the path the ✨ notes and
+  the 💬 companion quote ("Cash runs out around 120", "About CHF 710'874 at 65"). The band around it is other
+  luck. The default view is 📐 Rules (the town engine), so the line, the band and the notes come from one
+  engine. 🧠 Learned twin is a switch: a different model (behaviour learned from data, liquid savings, no
+  investment returns) whose fan can disagree with your path; the dotted line stays drawn there too, in liquid
+  savings. The Money app draws the same line. Tests: `tests/test_one_story.py`.
 - **Move freely:** click or drag on the timeline, or use ⏮ −1y −1m +1m +1y +10y 🌅65 🏁120. Moving forward
   lives the months (this month's plans happen first); moving back rewinds exactly (deterministic replay).
 - **Your choices are markers.** Click one to *go back to this moment* or to *undo* one choice.
@@ -190,6 +197,16 @@ Everything works with the mouse alone.
   remaining tuition; you are between jobs until you start one at the Office. Out of your first degree you have **no degree**: jobs pay
   `no_degree_wage_factor` × the graduate salary (80%, our assumption) and a master's is closed. Out of a
   master's you keep your bachelor's. A retiree who drops out goes back to retirement.
+
+  **The degree you start with.** A persona who starts as a student (Alexia's bachelor's, or a student you
+  build) is asked at the start of the life: *when do you expect to finish your studies?* (6, 12, 24, 36 or any
+  1–72 months; `plan_study`, not a big life move). The future follows the answer: until then the same student
+  budget (no tuition for this degree in the engine), and at that month the same check-in: *finished with a
+  degree* (a job at the graduate salary unless you make another move that month), *keep studying* 1–24 more
+  months (asked again then), or *drop out* (no degree). With no answer the degree finishes as planned and work
+  starts. *Not sure yet* keeps the old behaviour (you stay a student until you act); the plan can be made or
+  changed any time at the University, and starting a master's (or any other big move) replaces it. The learned
+  twin uses the same planned end. Tests: `tests/test_study_plan.py`.
   The engine masks what a persona can do. A retiree gets no job choices but can do a full-time master's: the pension continues, tuition is paid, and they return to retirement when they graduate or drop out. There is no age limit on studying. A student can't ask
   for a raise.
 - **Phone apps:**
@@ -239,7 +256,7 @@ game/
       compare.py           "why they differ" (now with habits, housing and joy)
     app/data/public/       dated public-data snapshots + sources.json (scripts/fetch_public_data.py)
     app/service.py         glue: persona + overrides → engine; /game/* responses
-    tests/                 162 pytest tests
+    tests/                 191 pytest tests
   client/                  Vite + React 19 + TypeScript + Phaser 3.90
     public/assets/         Kenney CC0 packs (each with its License.txt) + OFL fonts
     src/api/               typed API client (from the old frontend, extended)

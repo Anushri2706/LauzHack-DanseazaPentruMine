@@ -7,6 +7,7 @@ import { HudBar, Toasts } from './HudBar'
 import { PlaceDialog } from './PlaceDialog'
 import { SeasonOverlay } from './SeasonOverlay'
 import { StudyCheckin } from './StudyCheckin'
+import { StudyPlan } from './StudyPlan'
 import { Timeline } from './Timeline'
 import { sfx } from './sound'
 import { useGameState } from './useGame'
@@ -28,8 +29,11 @@ export function GameScreen() {
   const st = game.data
   const near = useNear()
   const checkin = !!st?.study_checkin && !st.study_checkin.answered && !st.ended
+  const planLater = useStore((s) => s.studyPlanAsked)
+  // Asked once, at the start of a new life; afterwards a plan can be made or changed at the University.
+  const askPlan = !!st?.study_plan && st.study_plan.planned_end === null && !planLater && !checkin && !st.ended && st.month === 0
 
-  useEffect(() => { bus.emit('freeze', !!place || !!phone || checkin || (!!st?.ended && !endSeen)) }, [place, phone, checkin, st?.ended, endSeen])
+  useEffect(() => { bus.emit('freeze', !!place || !!phone || checkin || askPlan || (!!st?.ended && !endSeen)) }, [place, phone, checkin, askPlan, st?.ended, endSeen])
   useEffect(() => {
     const onDoor = ({ place }: { place: string }) => {
       if (getStore().place || getStore().phone) return
@@ -76,6 +80,7 @@ export function GameScreen() {
       {st && !phone && <Timeline st={st} />}
       {place && st && <PlaceDialog place={place} st={st} />}
       {checkin && st && !place && !phone && <StudyCheckin st={st} />}
+      {askPlan && st && !place && !phone && <StudyPlan st={st} />}
       <Suspense fallback={null}>
         {phone && st && <Phone st={st} />}
         {st?.ended && !endSeen && !phone && <EndScreen st={st} />}

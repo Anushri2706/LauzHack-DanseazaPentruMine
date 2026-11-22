@@ -89,6 +89,15 @@ def build_facts(st: dict, proj: dict | None, twin: dict | None, card: dict | Non
         if proj.get("risk"):
             _f(facts, "rules.risk_12m", "town engine: share of worlds where cash goes below zero in the next 12 months",
                proj["risk"]["below_zero_12m"], "share", T)
+    yw = (proj or {}).get("your_world")
+    if yw and yw.get("net_worth"):
+        start = st["age"]
+        lo = min(range(len(yw["cash"])), key=lambda i: yw["cash"][i])
+        _f(facts, "yours.end_nw", "your own world if you change nothing: net worth at the end of the timeline",
+           yw["net_worth"][-1], "chf", T)
+        _f(facts, "yours.low_cash", "your own world if you change nothing: lowest cash ahead", yw["cash"][lo], "chf", T)
+        _f(facts, "yours.low_age", "your own world if you change nothing: age at that lowest cash",
+           int(start + (lo + 1) / 12), "age", T)
     if twin:
         L = "learned twin"
         sm = twin["summary"]
@@ -195,12 +204,18 @@ def rule_answer(text: str, facts: dict, action: dict | None) -> list[dict]:
             if not out:
                 out.append("You have {now.cash} in cash and {now.investments} invested. Live a month to see a statement.")
         elif topic == "future":
-            if has("twin.w65_p50"):
-                out.append("The learned twin, which follows people like you through simulated life events, has "
-                           "liquid savings at sixty-five between {twin.w65_p10} and {twin.w65_p90}, typically {twin.w65_p50}.")
+            # Your own path first: it is the dotted line on the timeline and what you live by moving forward.
+            if has("yours.end_nw"):
+                out.append("If you change nothing, your own world ends the timeline with a net worth of {yours.end_nw}.")
+                if facts["yours.low_cash"]["value"] < 0:
+                    out.append("On that path cash is lowest around {yours.low_age}, at {yours.low_cash}.")
             if has("rules.end_nw_p50"):
-                out.append("The town engine, with investment returns, ends your timeline with a net worth between "
+                out.append("With other luck, the town engine ends your timeline with a net worth between "
                            "{rules.end_nw_p10} and {rules.end_nw_p90}.")
+            if has("twin.w65_p50"):
+                out.append("The learned twin, a different model that follows people like you through simulated life "
+                           "events, has liquid savings at sixty-five between {twin.w65_p10} and {twin.w65_p90}, "
+                           "typically {twin.w65_p50}.")
             if has("twin.retire_age"):
                 out.append("In the twin's lives the typical retirement age is {twin.retire_age}.")
         elif topic == "risk":

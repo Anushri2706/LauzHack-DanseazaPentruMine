@@ -6,7 +6,7 @@ import { sfx } from '../ui/sound'
 import { actionIcon, actionLabel, getStore, requestFor, resumeAt, rollbackTo, setStore, toast, travel, withoutAction } from './game'
 
 const sameSlot = (a: ActionIn, b: ActionIn) =>
-  a.type === b.type && (a.type === 'set_savings_rate' || (a.type === 'set_habit' && a.id === b.id))
+  a.type === b.type && (a.type === 'set_savings_rate' || a.type === 'plan_study' || (a.type === 'set_habit' && a.id === b.id))
 
 /** Add an action to this month's queue, after the engine accepted it (masking + affordability). */
 export async function queueAction(a: ActionIn): Promise<boolean> {
@@ -14,7 +14,7 @@ export async function queueAction(a: ActionIn): Promise<boolean> {
   const queue = [...s.queue.filter((q) => !sameSlot(q, a)), a]
   try {
     await api.state(requestFor({ ...s, queue }))
-    setStore({ queue })
+    setStore({ queue, studyPlanAsked: true })  // any choice moves past the start-of-life study question
     bus.emit('queue', queue.map(actionIcon))
     sfx('confirm')
     return true

@@ -51,6 +51,7 @@ export interface Store {
   endSeen: boolean
   nearPlace: string | null
   hintSeen: boolean
+  studyPlanAsked: boolean // the start-of-life study-plan question was answered, skipped or passed by (plan later at the University)
   futureView: 'rules' | 'twin'
   /** Show amounts in today's (Jan 2025) francs instead of nominal francs. Display only. */
   real: boolean
@@ -64,7 +65,7 @@ const fresh = (): Store => ({
   goalSel: null, customGoals: [],
   nodes: { root: { id: 'root', parent: null, turn: null, children: [], color: 0, label: 'Start', reached: 0 } },
   root: 'root', cursor: 'root', tip: 'root', horizon: 1200, current: 0, queue: [], nextColor: 1, matters: [], place: null, phone: null,
-  pinA: null, pinB: null, toasts: [], busy: false, endSeen: false, nearPlace: null, hintSeen: false, futureView: 'twin', real: false,
+  pinA: null, pinB: null, toasts: [], busy: false, endSeen: false, nearPlace: null, hintSeen: false, studyPlanAsked: false, futureView: 'rules', real: false,
 })
 
 function load(): Store {
@@ -111,13 +112,13 @@ const LABELS: Record<string, string> = {
   start_work: 'Work', master_ft: "Master's", master_pt: "PT master's", move_abroad: 'Abroad', return_home: 'Back home',
   drop_out: 'Drop out', graduate: 'Degree', finish_study: 'Finished', extend_study: 'Keep studying', quit_school: 'Drop out (no degree)', quit_job: 'Quit', retire_early: 'Retire early', reduce_hours: '80%', full_hours: '100%',
   buy_home: 'Buy home', sell_home: 'Sell home', change_flat: 'Move flat', take_loan: 'Loan', repay_debt: 'Repay', sell_investments: 'Sell investments',
-  set_savings_rate: 'Savings', ask_raise: 'Raise?', set_habit: 'Habit', buy_item: 'Buy',
+  set_savings_rate: 'Savings', ask_raise: 'Raise?', set_habit: 'Habit', buy_item: 'Buy', plan_study: 'Study plan',
 }
 export const ICONS: Record<string, string> = {
   life_choice: '⭐', set_habit: '☕', buy_item: '🛍️', change_flat: '📦', buy_home: '🏠', sell_home: '🔑',
   take_loan: '🏦', repay_debt: '✅', sell_investments: '📤', set_savings_rate: '🐷', ask_raise: '📈',
   start_work: '💼', master_ft: '🎓', master_pt: '🎓', move_abroad: '✈️', return_home: '🚆', drop_out: '🚪', graduate: '🎓', quit_school: '🚪', finish_study: '🎓', extend_study: '📚',
-  quit_job: '🚪', retire_early: '🌅', reduce_hours: '🌿', full_hours: '⏱️', weekend_trip: '🧳', flight_home: '✈️',
+  quit_job: '🚪', retire_early: '🌅', plan_study: '📅', reduce_hours: '🌿', full_hours: '⏱️', weekend_trip: '🧳', flight_home: '✈️',
 }
 export function actionIcon(a: ActionIn): string { return ICONS[a.id ?? ''] ?? ICONS[a.type] ?? '•' }
 export function actionLabel(a: ActionIn): string {

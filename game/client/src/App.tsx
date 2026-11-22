@@ -20,7 +20,7 @@ export default function App() {
   const look = useStore((s) => s.look)
   const pick = (p: PersonaCard) => {
     resetGame()
-    setStore({ persona: p, screen: 'create', world: rollWorld(), look: getStore().look })
+    setStore({ persona: p, screen: 'create', world: rollWorld(), look: getStore().look, studyPlanAsked: false })
   }
   if (screen === 'play' && persona) return <GameScreen />
   if (screen === 'create' && persona) {

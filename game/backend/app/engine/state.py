@@ -50,6 +50,9 @@ class State:
     pension_bvg: float = 0.0
     # Retired early: the full salary the pension will be based on (paid from retirement_age; 0 = none pending).
     pension_base: float = 0.0
+    # A degree without a master's programme (the bachelor's a starting student is doing): the month the
+    # player expects to finish (None = no plan yet). At that month they are asked how it went.
+    study_end: int | None = None
 
     @property
     def owner(self) -> bool:

@@ -11,8 +11,8 @@ from .engine.compare import compare
 from .engine.catalogue import (CANTON_PRICE_LEVEL, FLATS, HABITS, HOMES, ITEMS, RULES, flat_factor_key,
                                habit_cost_key, habit_joy_key, home_price_key, item_joy_key, item_price_key)
 from .engine.decisions import CHOICE_LABELS
-from .engine.game import (Action, GameRun, InvalidAction, Turn, available_actions, checkin_due, run_turns,
-                          study_default_months)
+from .engine.game import (STUDY_PLAN_BOUNDS, STUDY_PLAN_PRESETS, Action, GameRun, InvalidAction, Turn,
+                          available_actions, checkin_due, run_turns, study_default_months, study_plan_reason)
 from .engine.metrics import (RETIRE_KIND, cash_risk, check_goals, net_worth_bridge, retire_goal_end,
                              retire_goal_on_path, scores,
                              scores_now, summarize)
@@ -232,9 +232,20 @@ def _study_checkin(now: State, pending: State, m: int, p: dict) -> dict | None:
     drop out. `answered` once this month's plans settle it (any big move also counts as finished)."""
     if not checkin_due(now, m):
         return None
+    if now.program is None:  # the degree a starting student is doing (planned with "plan_study")
+        return {"program": "bachelor", "started": None, "planned_end": m, "months_studied": m,
+                "answered": not checkin_due(pending, m), "default_months": None, "retiree": False}
     return {"program": now.program, "started": now.program_start, "planned_end": m,
             "months_studied": m - (m if now.program_start is None else now.program_start), "answered": not checkin_due(pending, m),
             "default_months": study_default_months(now.program, p), "retiree": now.retiree}
+
+
+def _study_plan(pending: State, m: int) -> dict | None:
+    """A student without a planned end: ask when they expect to finish (the future follows the answer)."""
+    if study_plan_reason(pending, m) is not None:
+        return None
+    return {"planned_end": pending.study_end, "presets": list(STUDY_PLAN_PRESETS),
+            "min": STUDY_PLAN_BOUNDS[0], "max": STUDY_PLAN_BOUNDS[1]}
 
 
 @lru_cache(maxsize=256)
@@ -276,6 +287,7 @@ def _game_state(key: str) -> dict:
         "scores": scores_now(rows, goals, now, m),
         "actions": available_actions(pending, m, p, queued) if m < horizon else {},
         "study_checkin": _study_checkin(now, pending, m, p),
+        "study_plan": _study_plan(pending, m) if m < horizon else None,
         "letters": letters,
         "statement": _statement(rows[-1] if rows else None),
         "warnings": warnings,
@@ -400,6 +412,11 @@ def _game_projection(key: str) -> dict:
     pick = lambda rows, k: [r[k] for r in rows]  # noqa: E731
     out = {"month": m, "horizon": horizon, "n": req.n, "seed": req.seed, "world": req.world,
            "lived": {"net_worth": pick(past, "net_worth"), "cash": pick(past, "cash")}}
+    # Your own world from now on, if nothing else changes: exactly what you live by moving forward, and the
+    # path the timeline's AI notes describe (they read the same rows, service.game_rows).
+    ahead = lived.rows[m:]
+    out["your_world"] = {"net_worth": pick(ahead, "net_worth"), "cash": pick(ahead, "cash"),
+                         "liquid": [r["cash"] + r["investments"] for r in ahead]} if ahead else None
     ended = m >= horizon
     if ended:
         # The lived path is complete. Ranges then answer: "the same choices, replayed in every world
@@ -603,6 +620,8 @@ def twin_inputs(req: GameRequest) -> dict:
             "work_share": s.work_share, "income": monthly_income(s, p), "rent": rent,
             "liquid": s.cash + s.investments, "has_master": s.has_master, "abroad": s.status == "abroad",
             "program_months_left": (s.program_end - m) if s.program and s.program_end else None,
+            # A planned end for the degree a starting student is doing (else the twin's 12-month assumption).
+            **({"months_to_degree": max(1, s.study_end - m)} if s.program is None and s.study_end is not None else {}),
             "horizon_months": int(p["horizon_months"]) - m, "inflation": p["inflation_annual"]}
 
 

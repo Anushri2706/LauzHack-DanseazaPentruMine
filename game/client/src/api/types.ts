@@ -84,8 +84,8 @@ export interface GameAction {
 }
 /** A master's reaches the end date the player planned: finished, keep studying or drop out? */
 export interface StudyCheckin {
-  program: 'master_ft' | 'master_pt'; started: number | null; planned_end: number; months_studied: number
-  answered: boolean; default_months: number; retiree: boolean
+  program: 'master_ft' | 'master_pt' | 'bachelor'; started: number | null; planned_end: number; months_studied: number
+  answered: boolean; default_months: number | null; retiree: boolean
 }
 export interface Letter { month: number; kind: string; icon: string; title: string; text: string }
 
@@ -153,6 +153,8 @@ export interface GameState {
   queued: ActionIn[]
   queued_letters: Letter[]
   study_checkin: StudyCheckin | null
+  /** A student without a planned end for their degree: when do they expect to finish? (null = not asked) */
+  study_plan: { planned_end: number | null; presets: number[]; min: number; max: number } | null
   scores: ScoresNow
   actions: Partial<Record<Place, GameAction[]>>
   letters: Letter[]
@@ -210,6 +212,8 @@ export interface Projection {
   world: number
   lived: { net_worth: number[]; cash: number[] }
   no_surprises: { net_worth: number[]; cash: number[]; regime: Regime[]; joy_total: number } | null
+  /** Your own world from now on if nothing else changes: what you live by moving forward, and what the ✨ notes describe. */
+  your_world?: { net_worth: number[]; cash: number[]; liquid: number[] } | null
   regimes: { states: Regime[]; from_month: number; share: Record<Regime, number[]> } | null
   bands: { net_worth: Band; cash: Band } | null
   ghosts: { kind: string; text: string; month: number; net_worth: number[]; cash: number[] }[]

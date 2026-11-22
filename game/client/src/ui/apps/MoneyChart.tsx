@@ -34,6 +34,7 @@ export function MoneyChart({ proj, startAge, opening, metric, color, showBand, s
     const d: Record<string, number | number[] | null | undefined> = { age: +(startAge + i / 12).toFixed(3) }
     d.lived = i <= m ? livedAt(i) : null
     if (proj.no_surprises) d.calm = i === m ? livedAt(i) : i > m ? at(proj.no_surprises[metric], i) : null
+    if (proj.your_world) d.yours = i === m ? livedAt(i) : i > m ? at(proj.your_world[metric], i) : null
     if (proj.bands && i >= m) {
       const b = proj.bands[metric]
       d.band = i === m ? [livedAt(i), livedAt(i)] : [D(b.p10[i - m - 1], i), D(b.p90[i - m - 1], i)]
@@ -73,6 +74,7 @@ export function MoneyChart({ proj, startAge, opening, metric, color, showBand, s
         ))}
         {roll && <Line dataKey="roll" name={`world #${roll.world}`} stroke="#e8a64a" strokeWidth={1.8} dot={false} isAnimationActive={false} />}
         <Line dataKey="calm" name="if nothing surprising happens" stroke={color} strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} connectNulls={false} />
+        <Line dataKey="yours" name="your world, if you change nothing (what you'll live)" stroke="#4a4063" strokeWidth={2} strokeDasharray="1 3" dot={false} isAnimationActive={false} connectNulls={false} />
         <Line dataKey="lived" name="lived so far" stroke={color} strokeWidth={3} dot={false} isAnimationActive={false} connectNulls={false} />
         {m > 0 && m <= H && <ReferenceLine x={nowAge} stroke="#4a4063" strokeOpacity={0.6} label={{ value: 'now', position: 'top', fill: '#4a4063', fontSize: 12 }} />}
         {marks.filter((x) => x.month <= m).map((x, i) => (

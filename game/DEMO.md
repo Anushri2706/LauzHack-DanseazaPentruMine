@@ -14,6 +14,9 @@ trade-offs and sensitivities → validation.
 - Pick **Alexia, 20, student in Lausanne**: 🟢 CHF 8'000 cash, 🟢 1'200 income, 🟢 900 rent (synthetic
   profile). Her question: *"What if I start working, do a master's, or move abroad?"*
 - In the creator, click **🎲 Surprise me** once ("looks never change any number"), then **Walk into town**.
+- The student advisor asks *"When do you expect to finish your studies?"*. Point out that the future follows
+  the answer (and that she'll be asked again at that date), then click **Not sure yet**: this demo goes
+  straight into a master's, so every number below stays the same.
 - Point at the HUD badge **"Simulation · not a prediction or advice"** and at **World #9**: "Her luck comes
   from one seeded world. Every reality we try lives in the same world, so differences come from choices."
 
@@ -120,7 +123,7 @@ trade-offs and sensitivities → validation.
   - **job rates match World Bank unemployment** (they imply 4.3%; World Bank 2016–2025 mean 4.6%)
   - **the mortgage costs more than the SNB policy rate** (2.28% vs a 0.53% mean since 2000)
   - **matches the official starter kit** to the cent, for all three scenarios
-- Mention: 162 pytest tests for the game engine + 46 for the regime twin, and `npm run smoke` plays this
+- Mention: 191 pytest tests for the game engine + 46 for the regime twin, and `npm run smoke` plays this
   whole script headlessly.
 
 Close on the postcard: *"This is one of many possible futures."*
@@ -133,9 +136,9 @@ Close on the postcard: *"This is one of many possible futures."*
 |---|---|---|
 | Which assumptions most affect the result? | For a master's: the salary after it, then living costs and rent. For working: salary, living costs, income tax. Returns matter less before 40. | 🌪️ Matters |
 | How does a decision change the state? | Each action edits the state (status, salary, scheduled tuition, habits, home, debt); the month is then simulated in a fixed order; every franc shows up on the statement and in the exact net-worth bridge. | Bank statement, Money → bridge |
-| How did you verify the calculations? | 13 live checks incl. a to-the-cent match with the official starter kit and a cross-check against World Bank unemployment; 162 + 46 pytest tests; a headless run of this script. | ✅ Checks |
+| How did you verify the calculations? | 13 live checks incl. a to-the-cent match with the official starter kit and a cross-check against World Bank unemployment; 191 + 46 pytest tests; a headless run of this script. | ✅ Checks |
 | What if a constraint is violated? | Impossible actions are refused with the engine's reason (greyed out). Negative cash is allowed but costs 10% interest, raises "financing needed", and beyond CHF 30k is flagged "not financeable as planned". | Bank, HUD |
 | What would you improve next? | A mortality model and Swiss supplementary benefits (EL) for old-age shortfalls; a bank affordability test for mortgages; tax by canton; the missing `synthetic-transactions.csv`. | |
 | What's fictional vs external? | 🟢 synthetic profile, 🟢 official Swiss rates (BFS, SECO, Eurostat), 🟢 public data from the challenge list (World Bank inflation, SNB mortgage rates, BIS home prices), 🟡 our assumptions, 🔵 engine output. Every assumption is tagged in Settings. | ⚙️ Settings |
 | What stops the AI inventing numbers? | The LLM may only write sentences with `{fact_id}` placeholders; a guard rejects its own digits, unknown ids and certainty language; code fills in engine numbers. | 💬 Ask |
-| Why do 🧠 Learned twin and 📐 Rules differ? | Different questions: the learned twin predicts **liquid savings** from behaviour learned on 958 synthetic people (backtested, no investment returns, as in the data); Rules projects **net worth** under the stated assumptions, with returns and housing. | Timeline switch |
+| Why do 🧠 Learned twin and 📐 Rules differ? | The dotted line is your own path either way (what you'll live, and what the ✨ notes say). The fans answer different questions: the learned twin predicts **liquid savings** from behaviour learned on 958 synthetic people (backtested, no investment returns, as in the data); Rules projects **net worth** under the stated assumptions, with returns and housing. | Timeline switch |

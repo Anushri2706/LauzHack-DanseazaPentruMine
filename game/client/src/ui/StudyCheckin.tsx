@@ -19,7 +19,7 @@ export function StudyCheckin({ st }: { st: GameState }) {
   const presets = uni.filter((a) => a.id === 'extend_study')
   const perMonth = (presets[0]?.preview.one_off ?? 0) / (presets[0]?.value || 1)
   const [custom, setCustom] = useState(9)
-  const kind = c.program === 'master_pt' ? 'part-time master’s' : 'master’s'
+  const kind = c.program === 'master_pt' ? 'part-time master’s' : c.program === 'bachelor' ? 'degree' : 'master’s'
 
   const Choice = ({ a, children }: { a: GameAction | undefined; children: React.ReactNode }) => (
     <li className={`act ${a?.enabled ? '' : 'off'}`}>
@@ -39,13 +39,13 @@ export function StudyCheckin({ st }: { st: GameState }) {
           <div className="portrait"><Avatar look={look} scale={4} /><Npc char={6} scale={4} /></div>
           <div>
             <h2>🎓 {monthName(c.planned_end)}: your planned end date</h2>
-            <p className="greet"><b>Student advisor:</b> “You expected to finish your {kind} now, after {c.months_studied} months
-              {c.months_studied !== c.default_months ? ` (the usual length is ${c.default_months})` : ''}. How did it go?”</p>
+            <p className="greet"><b>Student advisor:</b> “You expected to finish your {kind} now{c.program === 'bachelor' ? '' : `, after ${c.months_studied} months`}
+              {c.default_months && c.months_studied !== c.default_months ? ` (the usual length is ${c.default_months})` : ''}. How did it go?”</p>
           </div>
         </header>
         <div className="dialog-body">
           <ul className="acts">
-            <Choice a={finish}>🎓 Yes, I’ve finished</Choice>
+            <Choice a={finish}>🎓 Yes, I’ve finished with a degree</Choice>
             {presets.map((a) => <Choice key={a.value} a={a}>📚 Not yet: keep studying {a.value} more months</Choice>)}
             <li className="act">
               <div className="study-plan">
@@ -54,14 +54,14 @@ export function StudyCheckin({ st }: { st: GameState }) {
                     {Array.from({ length: 24 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m} more months ({monthName(c.planned_end + m)})</option>)}
                   </select>
                 </label>
-                <p className="tiny muted">🟡 Extra tuition about {chf(perMonth * custom)}.</p>
+                {perMonth > 0 && <p className="tiny muted">🟡 Extra tuition about {chf(perMonth * custom)}.</p>}
                 <div className="row-end">
                   <button className="btn ghost" disabled={busy || !presets[0]?.enabled}
                     onClick={() => void queueAction({ type: 'life_choice', id: 'extend_study', value: custom })}>Keep studying {custom} months</button>
                 </div>
               </div>
             </li>
-            <Choice a={quit}>🚪 I’m dropping out</Choice>
+            <Choice a={quit}>🚪 I’m dropping out{c.program === 'bachelor' ? ' (without a degree)' : ''}</Choice>
           </ul>
         </div>
         <footer className="dialog-foot">

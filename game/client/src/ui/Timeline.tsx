@@ -107,13 +107,19 @@ export function Timeline({ st }: { st: GameState }) {
     D(view === 'twin' ? r.cash + r.investments : r.net_worth, i)
   const metricName = (view === 'twin' ? 'Liquid savings' : 'Net worth') + (s.real ? " (today's CHF)" : '')
 
+  // Your own world ahead if nothing else changes (town engine): what you live by moving forward and what the ✨
+  // notes describe. Drawn in both views, in the view's metric, so the graph and the notes always tell one story.
+  const yw = p?.your_world ?? null
+  const ahead = useMemo(() => (yw ? (view === 'twin' ? yw.liquid : yw.net_worth).map((v, j) => D(v, m + j + 1)) : null),
+    [yw, view, s.real, m]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // --------------------------------------------------------------- net worth (lived + fan)
   const nw = useMemo(() => {
     const lived = st.rows.map((r, j) => valueOf(r, j + 1))
     const band = fut?.band
     const fstep = fut?.step ?? 1
     const nowV = valueOf(st.state, m)
-    const vals = [...lived, ...(band ? [...band.p10, ...band.p90] : []), 0, nowV]
+    const vals = [...lived, ...(band ? [...band.p10, ...band.p90] : []), ...(ahead ?? []), 0, nowV]
     let lo = Math.min(...vals.map(f)), hi = Math.max(...vals.map(f))
     if (hi - lo < 1) hi = lo + 1
     const Y = (v: number) => NW_BOT - ((f(v) - lo) / (hi - lo)) * (NW_BOT - NW_TOP)
@@ -132,11 +138,12 @@ export function Timeline({ st }: { st: GameState }) {
       bandPath = `M${now} L${top.join(' L')} L${bot.join(' L')} Z`
       midPath = `M${now} L${line(band.p50, m, fstep).join(' L')}`
     }
+    const yoursPath = ahead && ahead.length ? `M${X(m).toFixed(1)},${Y(nowV).toFixed(1)} L${line(ahead, m).join(' L')}` : ''
     const zero = Y(0)
     const ticks = [-1e5, 0, 1e4, 1e5, 1e6, 1e7].filter((v) => f(v) >= lo && f(v) <= hi).map((v) => ({ v, y: Y(v) }))
       .filter((t, _i, arr) => t.v === 0 || arr.every((o) => o === t || o.v === 0 || Math.abs(o.y - t.y) > 14 || Math.abs(o.v) < Math.abs(t.v)))
-    return { lived: lived.length ? `M${livedPts.join(' L')}` : '', bandPath, midPath, zero, ticks }
-  }, [st.rows, st.state, fut, view, H, m, s.real]) // eslint-disable-line react-hooks/exhaustive-deps
+    return { lived: lived.length ? `M${livedPts.join(' L')}` : '', bandPath, midPath, yoursPath, zero, ticks }
+  }, [st.rows, st.state, fut, ahead, view, H, m, s.real]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --------------------------------------------------------------- regime strip
   const strip = useMemo(() => {
@@ -245,13 +252,15 @@ export function Timeline({ st }: { st: GameState }) {
           {ORDER.map((r) => <span key={r}><i style={{ background: REGIME_META[r].color }} />{REGIME_META[r].label}</span>)}
           <span className="tl-view" role="group" aria-label="Which engine draws the future">
             <button className={`chip tiny ${view === 'twin' ? 'on' : ''}`} onClick={() => setStore({ futureView: 'twin' })}
-              title="HMM life states (sourced Swiss hazards) × money behaviour learned from 958 people, backtested on a locked test set. Shows liquid savings.">🧠 Learned twin</button>
+              title="A different model: HMM life states (sourced Swiss hazards) × money behaviour learned from 958 people, backtested on a locked test set. Shows liquid savings. Its fan can disagree with your own path (dotted), which the town engine computes and the ✨ notes describe.">🧠 Learned twin</button>
             <button className={`chip tiny ${view === 'rules' ? 'on' : ''}`} onClick={() => setStore({ futureView: 'rules' })}
               title="The town engine's seeded worlds: stated assumptions, investment returns. Shows net worth.">📐 Rules</button>
           </span>
           <button className={`chip tiny ${s.real ? 'on' : ''}`} onClick={() => setStore({ real: !s.real })}
             title={`Amounts in today's (Jan 2025) francs: each value is divided by the engine's price index (inflation ${pct(st.inflation_annual)}/year). Off = nominal francs of that year.`}>
             💱 {s.real ? "today's CHF" : 'nominal CHF'}</button>
+          {nw.yoursPath && <span className="tl-yours" title="Your own world from now on if you change nothing: exactly what you live by moving forward, and what the ✨ notes describe. The band shows other luck.">
+            <i style={{ borderColor: colorOf(s, s.cursor) }} /> your path if nothing changes</span>}
           <span className="muted" title={fut && fut.n < 200 ? 'Few simulated lives keep the whole-life fan fast; the edges of its likely range are rough. The Money app uses more worlds.' : undefined}>
             {fut ? `${fut.n} lives${fut.n < 200 ? ' (rough band)' : ''} · ${metricName.toLowerCase()}` : loading ? 'simulating…' : ''}</span>
         </span>
@@ -263,6 +272,7 @@ export function Timeline({ st }: { st: GameState }) {
           {nw.ticks.map((t) => <line key={t.v} x1={0} x2={W} y1={t.y} y2={t.y} stroke="#e9dfcf" strokeDasharray={t.v === 0 ? undefined : '3 4'} vectorEffect="non-scaling-stroke" />)}
           {nw.bandPath && <path d={nw.bandPath} fill="#9a7fd8" fillOpacity={0.32} stroke="none" />}
           {nw.midPath && <path d={nw.midPath} fill="none" stroke="#9a7fd8" strokeWidth={1.5} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />}
+          {nw.yoursPath && <path d={nw.yoursPath} fill="none" stroke={colorOf(s, s.cursor)} strokeWidth={2} strokeDasharray="2 3" vectorEffect="non-scaling-stroke" />}
           {nw.lived && <path d={nw.lived} fill="none" stroke={colorOf(s, s.cursor)} strokeWidth={2.5} vectorEffect="non-scaling-stroke" />}
           {strip.map((r, i) => <rect key={i} x={r.x} y={r.y} width={Math.max(r.w, 0.4)} height={r.h} fill={r.c} />)}
           <line x1={X(m)} x2={X(m)} y1={0} y2={SVG_H} stroke="var(--ink, #3b2f4a)" strokeWidth={2} vectorEffect="non-scaling-stroke" />

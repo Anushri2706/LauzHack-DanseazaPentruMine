@@ -1,6 +1,6 @@
 # Many Lives: an AI Financial Twin you can walk around in
 
-Our entry for the **UBS × LauzHack 2026 "AI Financial Twin"** challenge.
+Our entry for the **UBS × LauzHack 2026 "AI Financial Twin" x IMC "Tech for Good"** challenge.
 Motto: *Don't predict the future. Make it explorable.*
 
 > **This is a simulation, not a prediction or financial advice. All people and data are synthetic.**
@@ -125,7 +125,7 @@ live, first job, housing).
 ### Tests
 
 ```bash
-cd game/backend && .venv/bin/pytest -q          # game engine (162 tests)
+cd game/backend && .venv/bin/pytest -q          # game engine (191 tests)
 game/backend/.venv/bin/python -m pytest backend -q   # regime twin (46 tests), run from the repo root
 cd game/client && npx tsc -b                    # client type-check
 cd game/client && npm run smoke                 # headless walk through the demo (needs both servers + Chrome)

@@ -69,6 +69,8 @@ kbd { background: var(--cream); border: 2px solid var(--ink); padding: 0 4px; fo
 .persona-stats { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-size: 13px; }
 .question { font-size: 17px; margin: 10px 0 0; color: #6b55b5; }
 .filter-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 18px; }
+.tl-yours { display: inline-flex; align-items: center; gap: 4px; }
+.tl-legend .tl-yours i { display: inline-block; width: 16px; height: 0; background: none; border: 0; border-top: 3px dotted; border-radius: 0; box-shadow: none; }
 .build-card { margin-bottom: 22px; background: var(--peach); }
 .persona-builder { padding: 18px 20px; margin-bottom: 22px; background: #fff; display: flex; flex-direction: column; gap: 12px; }
 .persona-builder h2 { margin: 0; }
