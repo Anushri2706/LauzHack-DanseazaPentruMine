@@ -52,7 +52,7 @@ the engine allows it, compares the two realities, and fast-forwards to the 10-ye
 |---|---|---|
 | Which assumptions matter most? | 📱 **🌪️ Matters** app, `POST /game/sensitivity` | Tornado chart: each assumption ±10/20/30% on its own, the reality's choices replayed with no luck, net worth at 30 / 40 / 65. Assumptions with **no effect** on that reality are listed (scenario isolation, live). Sensitivity, not probability. |
 | What if a constraint is violated? | Bank statement, HUD, Safety tile | Impossible actions are refused with a reason. Negative cash is an **automatic credit line at 10%/year** (`overdraft_rate`, an expense), up to `overdraft_limit` (CHF 30'000). Beyond it: 🔴 *beyond any credit line: not financeable as planned* (flag `beyond_credit`; no interest is invented on money no lender would give). |
-| Are long-run numbers meaningful? | 💱 toggle (timeline, Money, Matters), Money tile, timeline | **Today's CHF**: values divided by the engine's own price index (`price_level` in `/game/state`). The headline range is **at 65**; 120 is a second line ("no mortality model"). A dotted **✝︎ ≈84** line marks Swiss life expectancy (BFS 2023). |
+| Are long-run numbers meaningful? | 💱 toggle (timeline, Money, Matters), Money tile, timeline | **Today's CHF**: values divided by the engine's own price index (`price_level` in `/game/state`). The headline range is **at 65**; 120 is a second line ("no mortality model"). |
 | Is retirement funded? | Safety tile, `/game/projection` → `retirement_runs_out` | Share of worlds where cash goes below zero after the retirement age, and the median age it happens. |
 | Comparison over what horizon? | Multiverse → Compare | `POST /compare` takes `at_age`: both realities are cut at the same age (rows, goals, bridge, ranges). Default 30, the challenge's 10-year horizon. |
 | How did you verify it? | ✅ Checks app (13 live checks), 162 + 46 pytest tests, `npm run smoke` | — |
@@ -471,7 +471,7 @@ code.
   real wellbeing.
 - Percentiles describe our model's worlds, not real-world probabilities.
 - Peer (kNN) bands from the original plan are not in the game.
-- The timeline runs to age 120 with no mortality model (a ✝︎ ≈84 reference line shows Swiss life expectancy).
+- The timeline runs to age 120 with no mortality model.
   Amounts are nominal by default; 💱 switches charts and tiles to today's francs. A century of 5% returns
   compounds to large numbers; read the late decades as "if you live that long, under these assumptions".
   That is why the headline money range is at 65.

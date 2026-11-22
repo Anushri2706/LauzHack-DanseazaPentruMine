@@ -98,8 +98,7 @@ trade-offs and sensitivities → validation.
 - Toggle **Stress tests** (markets −20%, 6 months without a job, rent +20%, one year from now) and **🎲 Roll
   another world**.
 - Press **💱 today's CHF** (timeline or Money app): every value is divided by the engine's price index
-  (0.96%/year, the World Bank's Swiss CPI over 1991–2025), so the late decades stop looking like lottery wins. The dotted **✝︎ ≈84** line on the timeline is
-  average Swiss life expectancy (BFS).
+  (0.96%/year, the World Bank's Swiss CPI over 1991–2025), so the late decades stop looking like lottery wins.
 
 ## 8. Change an assumption (≈20 s)
 

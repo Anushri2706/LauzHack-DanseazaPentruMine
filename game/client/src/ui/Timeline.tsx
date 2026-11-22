@@ -28,7 +28,6 @@ const W = 1000
 const NW_TOP = 6, NW_BOT = 84, STRIP_TOP = 92, STRIP_BOT = 112, SVG_H = 116
 
 /** Signed log scale so a 20k start and a 2M retirement both stay readable. */
-const LIFE_EXPECTANCY = 84
 
 const f = (v: number) => Math.sign(v) * Math.log10(1 + Math.abs(v) / 1000)
 
@@ -209,9 +208,6 @@ export function Timeline({ st }: { st: GameState }) {
   }
 
   const retireMonth = Math.round((65 - startAge) * 12)
-  // Not a mortality model: a reference line so the run to 120 reads as "under these assumptions".
-  // BFS 2023: life expectancy at birth ≈ 82.2 (men) / 85.8 (women); ≈ 84 for both.
-  const lifeExpMonth = Math.round((LIFE_EXPECTANCY - startAge) * 12)
   const jumps: [string, number, string][] = [
     ['⏮', 0, 'Back to the start'], ['−1y', m - 12, 'One year back'], ['−1m', m - 1, 'One month back'],
     ['+1m', m + 1, 'Live one month'], ['+1y', m + 12, 'Live one year'], ['+10y', m + 120, 'Live ten years'],
@@ -269,15 +265,9 @@ export function Timeline({ st }: { st: GameState }) {
           {nw.midPath && <path d={nw.midPath} fill="none" stroke="#9a7fd8" strokeWidth={1.5} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />}
           {nw.lived && <path d={nw.lived} fill="none" stroke={colorOf(s, s.cursor)} strokeWidth={2.5} vectorEffect="non-scaling-stroke" />}
           {strip.map((r, i) => <rect key={i} x={r.x} y={r.y} width={Math.max(r.w, 0.4)} height={r.h} fill={r.c} />)}
-          {lifeExpMonth > 0 && lifeExpMonth < H && <line x1={X(lifeExpMonth)} x2={X(lifeExpMonth)} y1={0} y2={SVG_H} stroke="#8a7d99" strokeDasharray="1 4" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />}
           <line x1={X(m)} x2={X(m)} y1={0} y2={SVG_H} stroke="var(--ink, #3b2f4a)" strokeWidth={2} vectorEffect="non-scaling-stroke" />
           {shown !== null && shown !== m && <line x1={X(shown)} x2={X(shown)} y1={0} y2={SVG_H} stroke="#3b2f4a" strokeOpacity={0.5} strokeDasharray="3 3" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />}
         </svg>
-        {lifeExpMonth > 0 && lifeExpMonth < H && (
-          <span className="tl-lifeexp" style={{ left: `${(lifeExpMonth / H) * 100}%` }}
-            title="Average Swiss life expectancy at birth ≈ 84 (BFS 2023: men 82.2, women 85.8). The engine has no mortality model: years after this are 'if you live that long, under these assumptions'.">
-            ✝︎ ≈{LIFE_EXPECTANCY}</span>
-        )}
         {nw.ticks.filter((t) => t.v !== 0).map((t) => (
           <span key={t.v} className="tl-ytick" style={{ top: `${(t.y / SVG_H) * 100}%` }}>{k(t.v)}</span>
         ))}

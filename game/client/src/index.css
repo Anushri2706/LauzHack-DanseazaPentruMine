@@ -270,7 +270,6 @@ kbd { background: var(--cream); border: 2px solid var(--ink); padding: 0 4px; fo
 .tl-legend i { display: inline-block; width: 10px; height: 10px; margin-right: 4px; box-shadow: 0 0 0 1px var(--ink); vertical-align: -1px; }
 .tl-area { position: relative; height: 124px; cursor: ew-resize; touch-action: none; margin-top: 14px; }
 .tl-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.tl-lifeexp { position: absolute; top: 2px; transform: translateX(-50%); font-size: 10px; color: #8a7d99; background: #fff8; padding: 0 2px; }
 .tl-ytick { position: absolute; left: 2px; transform: translateY(-50%); font-size: 10px; color: #8a7d99; pointer-events: none; }
 .tl-axis { position: relative; height: 14px; font-size: 11px; color: #6c5f7c; }
 .tl-axis span { position: absolute; transform: translateX(-50%); }
