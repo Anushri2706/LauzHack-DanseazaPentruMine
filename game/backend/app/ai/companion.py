@@ -108,7 +108,7 @@ def build_facts(st: dict, proj: dict | None, twin: dict | None, card: dict | Non
         _f(facts, "model.mae_hmm", "HMM alone backtest: average error", t["hmm"]["mae_cash_end_chf"], "chf", M)
         _f(facts, "model.mae_persist", "'keep your past average' backtest: average error",
            t["persistence"]["mae_cash_end_chf"], "chf", M)
-        _f(facts, "model.coverage", "learned twin backtest: true value inside the P10–P90 range",
+        _f(facts, "model.coverage", "learned twin backtest: true value inside the 80% CI (P10–P90)",
            t["hmm+gmm+history"]["range_hit_rate_p10_p90"], "share", M)
         _f(facts, "model.n_test", "locked test people", t["hmm+gmm+history"]["n"], "count", M)
     return facts

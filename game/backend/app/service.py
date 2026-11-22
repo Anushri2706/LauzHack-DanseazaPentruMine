@@ -366,9 +366,9 @@ def _game_projection(key: str) -> dict:
     out["goals"] = check_goals(c.goals, full_calm)
     out["final_scores"] = scores(full_calm, out["goals"], [])
     out["ended"] = ended
-    out["note"] = (f"Ranges: P10–P90 of the same choices replayed in {req.n} seeded worlds from the start (other luck)."
+    out["note"] = (f"Ranges: 80% CI (P10–P90) of the same choices replayed in {req.n} seeded worlds from the start (other luck)."
                    if ended else
-                   f"Bands: P10–P90 over {req.n} seeded worlds from {_date(m)['label']} on, given what you "
+                   f"Bands: 80% CI (P10–P90) over {req.n} seeded worlds from {_date(m)['label']} on, given what you "
                    "have lived so far. Ranges under our assumptions, not probabilities.")
     return out
 

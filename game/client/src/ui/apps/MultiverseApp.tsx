@@ -110,7 +110,7 @@ function Compare({ s, a, b }: { s: Store; a: string; b: string }) {
           <table className="cmp-table">
             <thead><tr><th /><th style={{ color: ca }}>A</th><th style={{ color: cb }}>B</th></tr></thead>
             <tbody>
-              <tr><td>🔵 Net worth range at the end (P10–P90)</td>
+              <tr><td>🔵 Net worth at the end, 80% CI (P10–P90)</td>
                 <td>{d.ranges.a ? `${k(d.ranges.a.p10)} – ${k(d.ranges.a.p90)}` : '—'}</td>
                 <td>{d.ranges.b ? `${k(d.ranges.b.p10)} – ${k(d.ranges.b.p90)}` : '—'}</td></tr>
               {d.table.map((r) => {

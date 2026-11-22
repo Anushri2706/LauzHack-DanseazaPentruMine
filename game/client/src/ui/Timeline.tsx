@@ -167,7 +167,7 @@ export function Timeline({ st }: { st: GameState }) {
     const i = Math.max(0, Math.min(Math.floor((t - m - 1) / fut.step), b.p50.length - 1))
     const regs = ORDER.map((r) => [r, fut.shares[r][i]] as const).filter(([, v]) => v >= 0.01)
       .sort((a, c) => c[1] - a[1]).map(([r, v]) => `${REGIME_META[r].label} ${pct(v)}`)
-    return { head, lines: [`Median ${metricName.toLowerCase()} ${k(b.p50[i])} (P10–P90 ${k(b.p10[i])} to ${k(b.p90[i])})`,
+    return { head, lines: [`Median ${metricName.toLowerCase()} ${k(b.p50[i])} (80% CI, P10–P90: ${k(b.p10[i])} to ${k(b.p90[i])})`,
       `Of ${fut.n} simulated lives (${view === 'twin' ? 'learned twin' : 'town engine'}): ${regs.join(' · ')}`] }
   }
 

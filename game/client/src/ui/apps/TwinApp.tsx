@@ -51,7 +51,7 @@ export function TwinApp({ st }: { st: GameState }) {
               {fan.data.offset_chf_per_month ? ` · your data adds ${chf(fan.data.offset_chf_per_month)}/month` : ''}</div></div>
           {f.wealth_at_65 && <div className="tile"><div className="t-title">Liquid savings at 65</div>
             <div className="t-main">{chf(f.wealth_at_65.p50)}</div>
-            <div className="t-sub">P10–P90 {chf(f.wealth_at_65.p10)} – {chf(f.wealth_at_65.p90)}</div></div>}
+            <div className="t-sub">80% CI (P10–P90) {chf(f.wealth_at_65.p10)} – {chf(f.wealth_at_65.p90)}</div></div>}
           {f.share_lives_with_job_search_before_65 !== null && <div className="tile"><div className="t-title">A job search before 65</div>
             <div className="t-main">{pct(f.share_lives_with_job_search_before_65)}</div>
             <div className="t-sub">of lives · typically {f.months_in_job_search_before_65_p50} months in total</div></div>}

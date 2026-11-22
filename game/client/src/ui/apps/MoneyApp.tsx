@@ -11,7 +11,7 @@ function RangeBar({ lo, mid, hi }: { lo: number; mid: number; hi: number }) {
   const min = Math.min(0, lo), max = Math.max(hi * 1.1, 1)
   const x = (v: number) => `${((v - min) / (max - min)) * 100}%`
   return (
-    <div className="rangebar" title="Range under our assumptions (P10–P90 of simulated worlds)">
+    <div className="rangebar" title="80% CI under our assumptions (P10–P90 of simulated worlds)">
       <div className="rangebar-fill" style={{ left: x(lo), width: `calc(${x(hi)} - ${x(lo)})` }} />
       <div className="rangebar-tick" style={{ left: x(mid) }} />
     </div>
@@ -98,7 +98,7 @@ export function MoneyApp({ st }: { st: GameState }) {
       <div className="chart-tools">
         <button className={`chip ${metric === 'net_worth' ? 'on' : ''}`} onClick={() => setMetric('net_worth')}>Net worth</button>
         <button className={`chip ${metric === 'cash' ? 'on' : ''}`} onClick={() => setMetric('cash')}>Cash</button>
-        <label><input type="checkbox" checked={band} onChange={(e) => setBand(e.target.checked)} /> Range (P10–P90)</label>
+        <label><input type="checkbox" checked={band} onChange={(e) => setBand(e.target.checked)} /> 80% CI (P10–P90)</label>
         <label><input type="checkbox" checked={ghosts} onChange={(e) => setGhosts(e.target.checked)} /> Stress tests</label>
         <button className="btn" onClick={() => void doRoll()} disabled={!p || st.ended}>🎲 Roll another world</button>
         {proj.loading && <span className="tiny muted">computing 500 worlds…</span>}
