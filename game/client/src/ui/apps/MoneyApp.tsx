@@ -67,7 +67,7 @@ export function ScoreTiles({ st, proj }: { st: GameState; proj?: Projection }) {
       <Tile dim="goals" title="🎯 Goals" main={fs ? `${fs.goals.met} / ${fs.goals.total}` : `${s.goals.met} / ${s.goals.total}`}
         sub={shares.length ? <>{proj?.ended ? 'met on the path you lived' : 'met if nothing surprising happens'} · in {shares.map(pct).join(', ')} of worlds</>
           : proj && fs?.goals.total === 0 ? 'no goals chosen' : '…'} />
-      <Tile dim="freedom" title="🕊️ Freedom"
+      <Tile dim="freedom" title="⛱️ Freedom"
         main={s.freedom.runway_months == null ? '—' : `${Math.max(0, Math.round(s.freedom.runway_months))} months`}
         sub={<>of costs covered by savings now{fs?.freedom.runway_months != null ? ` · ${Math.max(0, Math.round(fs.freedom.runway_months))} at ${endAge}` : ''}{s.freedom.debt_free ? ' · debt-free' : ''}</>} />
       <Tile dim="experience" title="🎓 Experience"

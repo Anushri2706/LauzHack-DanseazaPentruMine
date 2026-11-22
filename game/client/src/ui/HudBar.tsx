@@ -9,7 +9,7 @@ export const SCORE_META = {
   money: { icon: '💰', label: 'Money' },
   safety: { icon: '🛡️', label: 'Safety' },
   goals: { icon: '🎯', label: 'Goals' },
-  freedom: { icon: '🕊️', label: 'Freedom' },
+  freedom: { icon: '⛱️', label: 'Freedom' },
   experience: { icon: '🎓', label: 'Experience' },
   joy: { icon: '🌸', label: 'Joy' },
 } as const
