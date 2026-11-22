@@ -72,7 +72,7 @@ export function ScoreTiles({ st, proj }: { st: GameState; proj?: Projection }) {
         sub={<>of costs covered by savings now{fs?.freedom.runway_months != null ? ` · ${Math.max(0, Math.round(fs.freedom.runway_months))} at ${endAge}` : ''}{s.freedom.debt_free ? ' · debt-free' : ''}</>} />
       <Tile dim="experience" title="🎓 Experience"
         main={EDU_LABEL[s.experience.education]}
-        sub={[`${s.experience.months_studying} months studying so far`,
+        sub={[s.experience.months_studying > 0 && `${s.experience.months_studying} months ${s.experience.studying ? 'studying so far' : 'studied'}`,
           s.experience.months_abroad > 0 && `${(s.experience.months_abroad / 12).toFixed(1)} years abroad`,
           fs && !proj?.ended && fs.experience.education !== s.experience.education && `${EDU_LABEL[fs.experience.education]} by ${endAge} if nothing changes`,
         ].filter(Boolean).join(' · ')} />

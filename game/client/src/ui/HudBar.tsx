@@ -22,7 +22,9 @@ export function scoreLines(st: GameState) {
     safety: { short: safety, tip: `🔵 Now: ${{ steady: 'cash above your buffer', tight: 'cash below your buffer', shortfall: 'cash below zero, financing needed' }[s.safety.level]}.${s.safety.months_negative_cash ? ` Earlier: ${s.safety.months_negative_cash} months below zero${s.safety.recovered ? ', recovered' : ''}.` : ''} ${s.safety.months_below_buffer} months below buffer so far.`, tone: { steady: 'good', tight: 'warn', shortfall: 'bad' }[s.safety.level] },
     goals: { short: s.goals.due ? `${s.goals.met}/${s.goals.due}` : `0/${s.goals.total}`, tip: `🔵 ${s.goals.met} of ${s.goals.due} goals due so far were met (${s.goals.total} in total).`, tone: '' },
     freedom: { short: s.freedom.runway_months == null ? '—' : `${Math.max(0, Math.round(s.freedom.runway_months))} mo`, tip: `🔵 Savings cover ${s.freedom.runway_months == null ? '—' : Math.max(0, Math.round(s.freedom.runway_months))} months of costs${s.freedom.debt_free ? ' · debt-free' : ''}.`, tone: '' },
-    experience: { short: [EDU_SHORT[s.experience.education], s.experience.months_abroad ? `${(s.experience.months_abroad / 12).toFixed(1)}y🌍` : ''].join(' ').trim(), tip: `🔵 ${EDU_LABEL[s.experience.education]}. ${s.experience.months_studying} months studying, ${s.experience.months_abroad} months abroad.`, tone: '' },
+    experience: { short: [EDU_SHORT[s.experience.education], s.experience.months_abroad ? `${(s.experience.months_abroad / 12).toFixed(1)}y🌍` : ''].join(' ').trim(), tip: ['🔵 ' + EDU_LABEL[s.experience.education] + '.',
+      s.experience.months_studying > 0 && `${s.experience.months_studying} months ${s.experience.studying ? 'studying so far' : 'studied'}.`,
+      s.experience.months_abroad > 0 && `${s.experience.months_abroad} months abroad.`].filter(Boolean).join(' '), tone: '' },
     joy: { short: `${Math.round(s.joy.total)}`, tip: '🟡 Joy points: a game preference score from your habits, trips and life situation. Not money, not a measure of a good life.', tone: '' },
   }
 }
