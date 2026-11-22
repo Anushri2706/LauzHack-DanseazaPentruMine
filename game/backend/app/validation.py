@@ -9,7 +9,9 @@ from .engine.metrics import net_worth_bridge
 from .engine.simulate import initial_state, run_branch, step_month
 from .engine.state import Decision as D
 
-PLAIN = dict(inflation_annual=0, raise_annual=0, return_annual=0, savings_rate=0)
+# The realism layers (income tax, investment costs, lifestyle creep) are off too: the starter kit has none.
+PLAIN = dict(inflation_annual=0, raise_annual=0, return_annual=0, savings_rate=0,
+             income_tax_rate=0, investment_costs_annual=0, lifestyle_creep=0)
 KIT = Path(__file__).resolve().parents[2].parent / "starter-kit"
 
 
@@ -46,7 +48,8 @@ def run_checks() -> list[dict]:
 
     rows = run_branch(p, full).rows
     br = net_worth_bridge(rows, 8000)
-    total = br["opening"] + br["income"] + br["expenses"] + br["one_offs"] + br["interest"] + br["investment_return"]
+    total = (br["opening"] + br["income"] + br["income_tax"] + br["expenses"] + br["one_offs"] + br["interest"]
+             + br["investment_return"])
     out.append(_check("Net worth bridge", abs(total - br["closing"]) < 1e-6,
                       f"opening + income − costs − one-offs − interest + returns = {total:,.2f} = closing"))
 

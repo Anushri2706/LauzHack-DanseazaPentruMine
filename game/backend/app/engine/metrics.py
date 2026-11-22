@@ -18,6 +18,7 @@ def summarize(rows: list[dict]) -> dict:
         "months_negative_cash": len(negative),
         "first_negative_month": negative[0] if negative else None,
         "total_income": sum(r["income"] for r in rows),
+        "total_income_tax": sum(r.get("income_tax", 0.0) for r in rows),
         "total_expenses": sum(r["expenses"] for r in rows),
         "total_one_offs": sum(r["one_offs"] for r in rows),
         "total_interest": sum(r["interest"] for r in rows),
@@ -147,7 +148,7 @@ def scores_now(rows: list[dict], goals_checked: list[dict], state, current: int)
 
 
 def net_worth_bridge(rows: list[dict], opening_net_worth: float) -> dict:
-    """Exact decomposition: NW_T = NW_0 + income − expenses − lifestyle − purchases − one-offs
+    """Exact decomposition: NW_T = NW_0 + income − income tax − expenses − lifestyle − purchases − one-offs
     − interest − mortgage interest − maintenance − home fees + investment returns + home appreciation.
 
     Transfers (saving, selling investments, loans, principal repayment, amortization, the down payment
@@ -155,7 +156,8 @@ def net_worth_bridge(rows: list[dict], opening_net_worth: float) -> dict:
     """
     s = summarize(rows)
     return {
-        "opening": opening_net_worth, "income": s["total_income"], "expenses": -s["total_expenses"],
+        "opening": opening_net_worth, "income": s["total_income"], "income_tax": -s["total_income_tax"],
+        "expenses": -s["total_expenses"],
         "one_offs": -s["total_one_offs"], "interest": -s["total_interest"],
         "investment_return": s["total_investment_return"],
         "lifestyle": -s["total_lifestyle"], "purchases": -s["total_purchases"],

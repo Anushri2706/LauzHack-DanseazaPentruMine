@@ -24,7 +24,7 @@ def test_cash_identity_every_month(params):
     run = run_branch(params, [D(0, "master_ft"), D(24, "move_abroad")])
     prev = params["opening_cash"]
     for r in run.rows:
-        expected = (prev + r["income"] - r["expenses"] - r["one_offs"] - r["debt_payment"]
+        expected = (prev + r["income"] - r["income_tax"] - r["expenses"] - r["one_offs"] - r["debt_payment"]
                     - r["invested"] + r["sold_investments"])
         assert r["cash"] == pytest.approx(expected, abs=1e-6)
         prev = r["cash"]
@@ -157,8 +157,31 @@ def test_monthly_annual_conversion_consistent():
 
 
 def test_inflation_applied_annually_consistent(params):
-    rows = run_branch(params, [D(0, "start_work")]).rows
-    assert rows[12]["expenses"] == pytest.approx(rows[0]["expenses"] * (1 + params["inflation_annual"]))
+    p = {**params, "lifestyle_creep": 0}
+    rows = run_branch(p, [D(0, "start_work")]).rows
+    assert rows[12]["expenses"] == pytest.approx(rows[0]["expenses"] * (1 + p["inflation_annual"]))
+
+
+def test_lifestyle_creep_spends_a_share_of_the_real_raise(params):
+    p = {**params, "lifestyle_creep": 0.5}
+    rows = run_branch(p, [D(0, "start_work")]).rows
+    real_raise = p["salary_work"] * (p["raise_annual"] - p["inflation_annual"])
+    infl = 1 + p["inflation_annual"]
+    assert rows[12]["expenses"] == pytest.approx(rows[0]["expenses"] * infl + 0.5 * real_raise)
+    # No real raise (raises only match inflation) ⇒ spending follows inflation only.
+    flat = run_branch({**p, "raise_annual": p["inflation_annual"]}, [D(0, "start_work")]).rows
+    assert flat[12]["expenses"] == pytest.approx(flat[0]["expenses"] * infl)
+
+
+def test_income_tax_above_allowance_and_investment_costs(plain):
+    p = {**plain, "income_tax_rate": 0.2, "income_tax_allowance": 1000, "student_income": 3000}
+    r = run_branch(p, []).rows[0]
+    assert r["income_tax"] == pytest.approx(0.2 * 2000)
+    assert run_branch({**p, "student_income": 800}, []).rows[0]["income_tax"] == 0   # below the allowance
+    q = {**plain, "opening_investments": 10_000, "return_annual": 0.05, "investment_costs_annual": 0.01,
+         "student_income": 0, "rent": 0, "living_studying": 0, "opening_cash": 0}
+    year = run_branch(q, []).rows[11]
+    assert year["investments"] == pytest.approx(10_000 * 1.05 * 0.99)
 
 
 def test_negative_cash_sells_investments_first(plain):
@@ -207,8 +230,9 @@ def test_net_worth_bridge_is_exact(params):
     rows = run_branch({**params, "opening_debt": 3000, "opening_debt_rate": 0.05},
                       [D(0, "master_ft"), D(24, "move_abroad", loan_amount=None)]).rows
     b = net_worth_bridge(rows, 8000 - 3000)
-    total = b["opening"] + b["income"] + b["expenses"] + b["one_offs"] + b["interest"] + b["investment_return"]
-    assert total == pytest.approx(b["closing"])
+    total = (b["opening"] + b["income"] + b["income_tax"] + b["expenses"] + b["one_offs"] + b["interest"]
+             + b["investment_return"])
+    assert b["income_tax"] < 0 and total == pytest.approx(b["closing"])
 
 
 def test_worlds_do_not_depend_on_decisions(params):

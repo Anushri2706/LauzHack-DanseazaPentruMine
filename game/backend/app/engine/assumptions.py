@@ -8,8 +8,12 @@ Source tags (shown in the UI as honesty tags):
   official_est 🟢 estimated from official Swiss statistics (BFS, SECO, Eurostat; teammate's backend/assumptions)
 Simulated outputs are 🔵 and peer references are ⚪ (not assumptions, so not listed here).
 
-Salary and income figures from the starter kit are already NET; tax_rate and social_rate
-therefore default to 0 so nothing is taxed twice.
+Salary and income figures from the starter kit are already NET of social contributions; tax_rate and
+social_rate therefore default to 0 so nothing is deducted twice. Swiss income tax, however, is NOT
+taken out of net pay, so it is a separate cost (income_tax_rate above income_tax_allowance).
+Realism layers (all ours, all editable): income tax, investment costs, lifestyle creep on real
+raises, lower living costs after retiring. Calibrated so a typical persona saves ≈ 15% of net
+income, and Alexia's "start working" path is ≈ 90-110k at 30 (the challenge slide shows ≈ 93k).
 """
 from dataclasses import dataclass
 
@@ -68,6 +72,20 @@ META: dict[str, AssumptionMeta] = {
     "savings_rate": AssumptionMeta("Share of cash above buffer invested each month", "%", "Saving & investing", 0, 1),
     "buffer_months": AssumptionMeta("Cash buffer kept before investing", "months of costs", "Saving & investing", 0, 24),
     "return_annual": AssumptionMeta("Investment return", "%/year", "Saving & investing", -0.5, 0.3),
+    "investment_costs_annual": AssumptionMeta("Investment costs (fees + wealth tax)", "%/year of investments",
+                                              "Saving & investing", 0, 0.05,
+                                              note="Taken off the return every month. Fund fees ≈ 0.3-1%, Swiss wealth tax ≈ 0.1-0.5%."),
+    "income_tax_rate": AssumptionMeta("Income tax on net pay (rough)", "% of net income above the allowance",
+                                      "Income", 0, 0.5,
+                                      note="Swiss income tax is not taken out of net pay: it is paid separately. "
+                                           "Rough single-person estimate for Vaud; 0 = no income tax."),
+    "income_tax_allowance": AssumptionMeta("Tax-free part of monthly income", "CHF/month (today's prices)", "Income", 0),
+    "retirement_spending_factor": AssumptionMeta("Living costs after retiring", "% of living costs before", "Costs",
+                                                 0.3, 1.5,
+                                                 note="Other living costs (not rent) change once at retirement."),
+    "lifestyle_creep": AssumptionMeta("Share of each pay rise spent", "% of the raise", "Costs", 0, 1,
+                                      note="Living costs rise by this share of every raise (after inflation), "
+                                           "as people's spending follows their income. 0 = fixed lifestyle forever."),
     # Borrowing
     "loan_rate": AssumptionMeta("Interest on new loans", "%/year", "Borrowing", 0, 0.3),
     "loan_term_months": AssumptionMeta("Loan term (new and existing debt)", "months", "Borrowing", 1, 360,
@@ -156,6 +174,11 @@ ALEXIA_DEFAULTS: dict[str, tuple[float, str]] = {
     "savings_rate": (0.5, "ours"),
     "buffer_months": (3, "ours"),
     "return_annual": (0.05, "ours"),
+    "investment_costs_annual": (0.01, "ours"),
+    "lifestyle_creep": (0.5, "ours"),
+    "retirement_spending_factor": (0.8, "ours"),
+    "income_tax_rate": (0.18, "ours"),
+    "income_tax_allowance": (1000, "ours"),
     "loan_rate": (0.06, "ours"),
     "loan_term_months": (60, "ours"),
     "loan_max": (30000, "ours"),
@@ -184,9 +207,9 @@ LIVING_BY_HOUSEHOLD = {"single": 1600, "shared_housing": 1400, "couple": 2600, "
 
 # The data gives an INDIVIDUAL net income but a HOUSEHOLD rent. For couples and families we assume
 # the persona pays this share of household rent and living costs (a partner covers the rest).
-# Other living costs (excluding rent) rise with income: we assume 50% of net income, never below the
-# household minimum above. With median rent ≈ 26% of income this leaves ≈ 20-25% saved.
-LIVING_SHARE_OF_INCOME = 0.5
+# Other living costs (excluding rent) rise with income: we assume 45% of net income, never below the
+# household minimum above. With median rent ≈ 26% and income tax ≈ 13% this leaves ≈ 15% saved.
+LIVING_SHARE_OF_INCOME = 0.45
 
 COST_SHARE_BY_HOUSEHOLD = {"single": 1.0, "shared_housing": 1.0, "couple": 0.5, "family": 0.6}
 

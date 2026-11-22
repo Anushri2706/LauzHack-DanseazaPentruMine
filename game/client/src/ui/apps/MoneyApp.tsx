@@ -83,7 +83,7 @@ export function ScoreTiles({ st, proj }: { st: GameState; proj?: Projection }) {
 }
 
 const BRIDGE_LABELS: Record<string, string> = {
-  income: 'Income', expenses: 'Rent & living costs', lifestyle: 'Habits', purchases: 'Purchases & trips',
+  income: 'Income', income_tax: 'Income tax (estimate)', expenses: 'Rent & living costs', lifestyle: 'Habits', purchases: 'Purchases & trips',
   one_offs: 'Tuition & moves', interest: 'Loan interest', mortgage_interest: 'Mortgage interest',
   maintenance: 'Home maintenance', home_fees: 'Home fees', investment_return: 'Investment returns',
   home_appreciation: 'Home value growth',

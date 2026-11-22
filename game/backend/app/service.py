@@ -201,7 +201,8 @@ def _statement(row: dict | None) -> dict | None:
     if row is None:
         return None
     lines = [
-        ("Income", row["income"], "in"), ("Rent", -row["rent"], "cost"),
+        ("Income", row["income"], "in"), ("Income tax (estimate)", -row.get("income_tax", 0.0), "cost"),
+        ("Rent", -row["rent"], "cost"),
         ("Other living costs", -(row["expenses"] - row["rent"]), "cost"),
         ("Habits", -row["lifestyle"], "cost"), ("Purchases & trips", -row["purchases"], "cost"),
         ("One-offs (tuition, moves)", -row["one_offs"], "cost"),

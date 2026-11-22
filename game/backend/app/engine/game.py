@@ -376,7 +376,9 @@ def apply_action(s: State, a: Action, t: int, p: dict, luck: tuple[int, int] = (
     elif a.type == "ask_raise":
         ok = _raise_draw(luck, t) < p["raise_ask_chance"]
         if ok:
-            s = replace(s, salary=s.salary * (1 + p["raise_ask_size"]), last_raise_ask=t)
+            gain = s.salary * p["raise_ask_size"] * (1 - p["tax_rate"] - p["social_rate"])
+            s = replace(s, salary=s.salary * (1 + p["raise_ask_size"]), last_raise_ask=t,
+                        living=s.living + p["lifestyle_creep"] * gain / infl)  # lifestyle creep
             letters.append(_letter(t, "raise", "📈", "Raise approved",
                                    f"Your salary rises {p['raise_ask_size']:.0%} to {chf(s.salary)}/month."))
         else:
@@ -496,9 +498,12 @@ def life_month(s: State, t: int, p: dict, world: dict | None) -> tuple[State, fl
                                f"At {int(age)} you leave the labour market (AHV age rule). Your pension is "
                                f"{chf(pension)}/month, {p['pension_replacement_rate']:.1%} of your last full salary: "
                                f"AHV {chf(ahv)} (adjusted to the mixed index every 2 years, plus a 13th AHV "
-                               f"pension each December) and BVG {chf(pension - ahv)} (not indexed)."))
+                               f"pension each December) and BVG {chf(pension - ahv)} (not indexed). Your other living "
+                               f"costs fall to {p['retirement_spending_factor']:.0%} of what they were."))
+        # Retirees spend less (no commuting or work costs, fewer big purchases): living costs fall once.
         s = fast_replace(s, status="retired", salary=pension, salary_start=t, work_share=1.0,
-                         pension_ahv=ahv, pension_bvg=pension - ahv)
+                         pension_ahv=ahv, pension_bvg=pension - ahv,
+                         living=s.living * p["retirement_spending_factor"])
     extra = 0.0
     if s.status == "retired" or s.retiree:  # a retiree studying keeps the pension (and its rules)
         s, extra, ls = pension_month(s, t, p)

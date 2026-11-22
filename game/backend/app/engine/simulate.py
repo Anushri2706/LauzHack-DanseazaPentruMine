@@ -2,7 +2,9 @@
 
 Monthly update order (see README for the equations):
   1. decision effects (already applied to the state before step_month is called)
-  2. income       = salary × (1 − tax_rate − social_rate)      (+ raise every 12 months in a job)
+  2. income       = salary × (1 − tax_rate − social_rate)      (+ raise every 12 months in a job;
+                  lifestyle_creep × the net raise is added to living costs, in month-0 prices)
+     income tax   = income_tax_rate × max(0, income − allowance × inflation)   (paid from cash)
   3. expenses     = (rent × flat_factor + living) × (1 + inflation) ** (t / 12)   (rent = 0 when owning)
      lifestyle    = Σ habit costs × (1 + inflation) ** (t / 12)
      purchases    = one-off items/trips due this month (consumption, never an asset)
@@ -12,7 +14,7 @@ Monthly update order (see README for the equations):
   5. cash        += income − expenses − one_offs − debt_payment
      if cash < 0 and investments > 0: sell investments to cover (transfer, net worth unchanged)
   6. if cash > buffer: move savings_rate × (cash − buffer) to investments (transfer)
-  7. investments ×= 1 + r_month
+  7. investments ×= (1 + r_month) × (1 − investment costs per month)
   8. outputs: net worth = cash + investments + home value − debt − mortgage, buffer months, flags, joy
 """
 from dataclasses import dataclass, replace
@@ -74,8 +76,15 @@ def step_month(s: State, p: dict, ret_month: float | None = None, income_mult: f
     t = s.t
     salary = s.salary
     # Raise every full year in the same job (working or abroad).
+    living = s.living
     if s.status in ("working", "abroad") and t > s.salary_start and (t - s.salary_start) % 12 == 0:
-        salary = salary * (1.0 + p["raise_annual"])
+        new_salary = salary * (1.0 + p["raise_annual"])
+        # Lifestyle creep: part of the REAL raise (above inflation, which living costs already follow)
+        # becomes permanent spending, in month-0 prices.
+        real_gain = max(0.0, new_salary - salary * (1.0 + p["inflation_annual"]))
+        living += (p["lifestyle_creep"] * real_gain * (1.0 - p["tax_rate"] - p["social_rate"])
+                   / inflation_factor(p["inflation_annual"], t))
+        salary = new_salary
 
     income = salary * (1.0 - p["tax_rate"] - p["social_rate"])
     if s.status in ("working", "abroad"):
@@ -83,7 +92,7 @@ def step_month(s: State, p: dict, ret_month: float | None = None, income_mult: f
     income += income_extra * (1.0 - p["tax_rate"] - p["social_rate"])  # e.g. the 13th AHV pension
     infl = inflation_factor(p["inflation_annual"], t)
     rent_now = 0.0 if s.owner else s.rent * rent_mult * s.flat_factor
-    expenses = (rent_now + s.living) * infl
+    expenses = (rent_now + living) * infl
     lifestyle = habit_cost(s.habits, p) * infl
 
     due = [o for o in s.scheduled if o.month == t]
@@ -110,7 +119,9 @@ def step_month(s: State, p: dict, ret_month: float | None = None, income_mult: f
         debt = 0.0
     debt_payment = s.debt_payment if debt > 0 else 0.0
 
-    cash = s.cash + income - expenses - one_offs - payment
+    # Income tax is paid separately from net pay in Switzerland: a flat rate above a tax-free allowance.
+    income_tax = p["income_tax_rate"] * max(0.0, income - p["income_tax_allowance"] * infl)
+    cash = s.cash + income - income_tax - expenses - one_offs - payment
     cash = cash - lifestyle - purchases - home_fees - mortgage_interest - maintenance - amortization
     investments = s.investments
 
@@ -128,6 +139,8 @@ def step_month(s: State, p: dict, ret_month: float | None = None, income_mult: f
         investments += invested
 
     r_m = monthly_compound_rate(p["return_annual"]) if ret_month is None else ret_month
+    # Return after investment costs (fees + wealth tax), so the bridge's "investment return" is net.
+    r_m = (1.0 + r_m) * (1.0 - p["investment_costs_annual"]) ** (1.0 / 12.0) - 1.0
     ret = investments * r_m
     investments += ret
     if s.owner:
@@ -142,12 +155,12 @@ def step_month(s: State, p: dict, ret_month: float | None = None, income_mult: f
         flags.append("below_buffer")
 
     nxt = fast_replace(s, t=t + 1, cash=cash, investments=investments, debt=debt, debt_payment=debt_payment,
-                  salary=salary, scheduled=tuple(o for o in s.scheduled if o.month > t),
+                  salary=salary, living=living, scheduled=tuple(o for o in s.scheduled if o.month > t),
                   mortgage=mortgage, home_value=home_value)
     joy = month_joy(s, due, p)
     row = {
         "t": t, "age": round(s.age, 4), "status": s.status, "program": s.program, "education": education(s),
-        "income": income, "expenses": expenses, "one_offs": one_offs,
+        "income": income, "income_tax": income_tax, "expenses": expenses, "one_offs": one_offs,
         "one_off_labels": [o.label for o in due],
         "interest": interest, "principal": principal, "debt_payment": payment,
         "invested": invested, "sold_investments": sold, "investment_return": ret,
