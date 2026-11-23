@@ -1,6 +1,6 @@
 # Many Lives: an AI Financial Twin you can walk around in
 
-Our entry for the **UBS × LauzHack 2026 "AI Financial Twin" x IMC "Tech for Good"** challenge.
+Our entry for the **UBS × LauzHack 2026 "AI Financial Twin"** challenge.
 Motto: *Don't predict the future. Make it explorable.*
 
 > **This is a simulation, not a prediction or financial advice. All people and data are synthetic.**
